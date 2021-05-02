@@ -1,0 +1,84 @@
+extern crate cursive;
+extern crate clap;
+
+mod model;
+mod ui;
+
+use cursive::{CursiveRunnable, CursiveRunner};
+use cursive::views::{TextView, ViewRef};
+
+use clap::{Arg, App, ArgMatches};
+
+use model::RootModel;
+
+use crossbeam_channel::{unbounded, Receiver, Sender};
+use crate::ui::build_ui;
+use crate::model::ModelEvent;
+
+fn main() {
+	let args = parse_args();
+
+	let (sender, receiver) = unbounded();
+	let model = create_model(args, sender);
+
+    run_ui(receiver, model);
+}
+
+fn parse_args<'a>() -> ArgMatches<'a> {
+	App::new("Log Viewer")
+		.version("0.1")
+		.author("Ildar Faizov")
+		.about("Log viewer")
+		.arg(Arg::with_name("file")
+			.short("f")
+			.value_name("FILE")
+			.help("Log file")
+			.takes_value(true)
+		)
+		.get_matches()
+}
+
+fn create_model(args: ArgMatches, sender: Sender<ModelEvent>) -> RootModel {
+	let mut model = RootModel::new(sender);
+	if let Some(file_name) = args.value_of("file") {
+		model.set_file_name(file_name.to_owned());
+	}
+	model
+}
+
+fn run_ui(receiver: Receiver<ModelEvent>, model: RootModel) {
+	let mut app = cursive::default().into_runner();
+
+	app.add_fullscreen_layer(build_ui());
+	app.set_user_data(model);
+
+	// cursive event loop
+	app.refresh();
+	while app.is_running() {
+		app.step();
+
+		let mut state_changed = false;
+		while !receiver.is_empty() {
+			if let Ok(event) = receiver.recv() {
+				match handle_model_update(&mut app, event) {
+					Ok(b) => state_changed = b,
+					Err(err) => panic!("failed to handle model update: {}", err)
+				}
+			}
+		}
+
+		if state_changed {
+			app.refresh();
+		}
+	}
+}
+
+fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, event: ModelEvent) -> Result<bool, &'static str> {
+	match event {
+		ModelEvent::FileName(file_name) => {
+			let mut v: ViewRef<TextView> = app.find_name("status").unwrap();
+			v.set_content(file_name);
+			Ok(true)
+		},
+	}
+}
