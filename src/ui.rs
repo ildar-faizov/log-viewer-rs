@@ -4,8 +4,27 @@ use cursive::traits::{Nameable, Resizable};
 use cursive::menu::MenuTree;
 use crate::model::RootModel;
 
-pub fn build_ui() -> Box<dyn View>
-{
+pub enum UIElementName {
+    MainContent,
+    Status
+}
+
+impl ToString for UIElementName {
+    fn to_string(&self) -> String {
+        match self {
+            UIElementName::MainContent => "main_content".to_string(),
+            UIElementName::Status => "status".to_string(),
+        }
+    }
+}
+
+impl From<UIElementName> for String {
+    fn from(x: UIElementName) -> Self {
+        x.to_string()
+    }
+}
+
+pub fn build_ui() -> Box<dyn View> {
     let mut menu = Menubar::new();
     menu.add_subtree("File",
                      MenuTree::new()
@@ -36,19 +55,10 @@ pub fn build_ui() -> Box<dyn View>
 
     let mut layout = LinearLayout::vertical();
     layout.add_child(menu);
-    layout.add_child(ScrollView::new(TextView::new(get_content()).with_name("main_content")));
+    layout.add_child(ScrollView::new(TextView::new("").with_name(UIElementName::MainContent)).full_height());
     layout.add_child(TextView::new("status")
-        .with_name("status")
+        .with_name(UIElementName::Status)
         .full_width());
-    Box::new(layout)
-}
 
-fn get_content() -> String {
-    (0..1000)
-        .map(|i| format!("Line {}", i))
-        .fold(String::new(), |mut acc: String, line: String| {
-            acc.push_str("\n");
-            acc.push_str(line.as_str());
-            acc
-        })
+    Box::new(layout)
 }

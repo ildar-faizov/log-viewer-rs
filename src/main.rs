@@ -12,8 +12,9 @@ use clap::{Arg, App, ArgMatches};
 use model::RootModel;
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use crate::ui::build_ui;
+use crate::ui::{build_ui, UIElementName};
 use crate::model::ModelEvent;
+use crate::model::ModelEvent::*;
 
 fn main() {
 	let args = parse_args();
@@ -75,10 +76,26 @@ fn run_ui(receiver: Receiver<ModelEvent>, model: RootModel) {
 
 fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, event: ModelEvent) -> Result<bool, &'static str> {
 	match event {
-		ModelEvent::FileName(file_name) => {
-			let mut v: ViewRef<TextView> = app.find_name("status").unwrap();
+		FileName(file_name) => {
+			let mut v: ViewRef<TextView> = app.find_name(&UIElementName::Status.to_string()).unwrap();
 			v.set_content(file_name);
 			Ok(true)
 		},
+		FileContent => {
+			let mut v: ViewRef<TextView> = app.find_name(&UIElementName::MainContent.to_string()).unwrap();
+			let model: &RootModel = app.user_data().unwrap();
+			let file_content = model.file_content();
+			if let Some(file_content) = file_content {
+				v.set_content(file_content);
+			} else {
+				v.set_content("");
+			}
+			Ok(true)
+		},
+		Error(err) => {
+			let mut v: ViewRef<TextView> = app.find_name(&UIElementName::MainContent.to_string()).unwrap();
+			v.set_content(format!("Error: {}", err));
+			Ok(true)
+		}
 	}
 }
