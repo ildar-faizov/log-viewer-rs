@@ -57,16 +57,13 @@ fn run_ui(receiver: Receiver<ModelEvent>, model: RootModel) {
 	app.refresh();
 	while app.is_running() {
 		app.step();
-
-		let mut state_changed = false;
-		while !receiver.is_empty() {
-			if let Ok(event) = receiver.recv() {
-				match handle_model_update(&mut app, event) {
-					Ok(b) => state_changed = b,
-					Err(err) => panic!("failed to handle model update: {}", err)
-				}
-			}
-		}
+        let mut state_changed = false;
+        for event in receiver.try_iter() {
+            match handle_model_update(&mut app, event) {
+                Ok(b) => state_changed = b,
+                Err(err) => panic!("failed to handle model update: {}", err)
+            }
+        }
 
 		if state_changed {
 			app.refresh();
