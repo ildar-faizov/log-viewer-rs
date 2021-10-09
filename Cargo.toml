@@ -12,6 +12,9 @@ cursive = "*"
 clap = "~2.33"
 crossbeam-channel = "0.5.1"
 uuid = { version = "0.8", features = ["v4"] }
+num-rational = "*"
+log = "~0.4"
+log4rs = "*"
 
 #[dependencies.cursive]
 #version = "*"
