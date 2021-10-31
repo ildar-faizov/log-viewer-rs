@@ -5,6 +5,7 @@ extern crate log4rs;
 mod model;
 mod ui;
 mod data_source;
+mod utils;
 
 use cursive::{CursiveRunnable, CursiveRunner, View};
 use cursive::views::{TextView, ViewRef, Canvas};
@@ -76,7 +77,8 @@ fn create_model(args: ArgMatches, sender: Sender<ModelEvent>) -> RootModel {
 		model.set_file_name(file_name.to_owned());
 	} else {
 		// TODO: sample only
-		model.set_file_name("/var/log/bootstrap.log".to_owned())
+		// model.set_file_name("/var/log/bootstrap.log".to_owned())
+		model.set_file_name("./test.txt".to_owned())
 	}
 	model
 }

@@ -9,11 +9,25 @@ use std::cmp::max;
 
 pub const BUFFER_SIZE: u64 = 8192;
 
+#[derive(Debug, Default)]
+pub struct Line {
+    pub content: String, // TODO use appropriate type
+    pub start: u64, // offset of the first symbol in line
+    pub end: u64 // offset of the first symbol of the next line
+}
+
+impl Line {
+    pub fn default_at(start: u64) -> Self {
+        let mut line = Line::default();
+        line.start = start;
+        line
+    }
+}
+
 #[derive(Debug)]
 pub struct Data {
-    pub lines: Vec<String>,
+    pub lines: Vec<Line>,
     pub offset: u64,
-    pub next_offset: u64
 }
 
 pub trait DataSource {
@@ -69,7 +83,10 @@ impl FileSource {
             let bytes_read = f.take(delta).read(&mut buffer).unwrap();
             for i in (0..bytes_read).rev() {
                 if buffer[i] == '\n' as u8 {
-                    return offset + i as u64
+                    let result = offset + (i + 1) as u64;
+                    let pos = f.seek(SeekFrom::Current(i as i64 - bytes_read as i64 + 1)).unwrap();
+                    log::trace!("FileSource#seek_to_line_start return {} file_pos={}", result, pos);
+                    return result
                 }
             }
         }
@@ -90,14 +107,15 @@ impl DataSource for FileSource {
         f.seek(Start(offset))?;
         let start_offset = FileSource::seek_to_line_start(&mut f, offset);
         let length = offset - start_offset + length;
+        let end_offset = start_offset + length;
         log::trace!("FileSource#data offset={}, length={}", start_offset, length);
         let mut offset = start_offset;
         let mut buffer = [0 as u8; BUFFER_SIZE as usize];
         let mut lines = vec![];
-        let mut line = String::new();
+        let mut line = Line::default_at(offset);
         loop {
-            let bytes_read = if offset < length {
-                f.read(&mut buffer).unwrap_or(0)
+            let bytes_read = if offset < end_offset {
+                (&mut f).take(end_offset - offset).read(&mut buffer).unwrap_or(0)
             } else {
                 0
             };
@@ -105,22 +123,26 @@ impl DataSource for FileSource {
             if bytes_read > 0 {
                 for i in 0..bytes_read {
                     let ch = buffer[i];
-                    offset += 1;
                     if ch != '\r' as u8 && ch != '\n' as u8 {
-                        line.push(ch as char)
+                        line.content.push(ch as char);
                     } else if ch == '\n' as u8 {
+                        line.end = offset;
                         lines.push(line);
-                        line = String::new();
-                        if offset >= length {
+                        line = Line::default_at(offset + 1);
+                        if offset >= end_offset {
                             break;
                         }
                     }
+                    offset += 1;
                 }
             } else {
+                if !line.content.is_empty() {
+                    line.end = offset;
+                    lines.push(line);
+                }
                 return Ok(Data{
                     lines,
-                    offset: start_offset,
-                    next_offset: offset
+                    offset: start_offset
                 })
             }
         }
