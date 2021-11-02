@@ -140,10 +140,13 @@ impl RootModel {
 
     pub fn set_scroll_position(&mut self, scroll_position: ScrollPosition) {
         if self.scroll_position != scroll_position {
+            let previous_scroll_position = self.scroll_position;
             self.scroll_position = scroll_position;
             log::info!("Scroll position set to {}", scroll_position);
+            if !self.update_viewport_content() {
+                self.scroll_position = previous_scroll_position;
+            }
             // TODO: emit update
-            self.update_viewport_content();
         }
     }
 
@@ -221,19 +224,25 @@ impl RootModel {
         })
     }
 
-    fn update_viewport_content(&mut self) {
+    fn update_viewport_content(&mut self) -> bool {
         if self.viewport_size.height == 0 {
-            return;
+            return true;
         }
         if let Some(datasource) = &self.datasource {
             let source_length = datasource.length().unwrap();
-            log::info!("Source length: {}", source_length);
-            let offset = self.scroll_position.starting_point.mul(source_length).to_integer().wrapping_add(self.scroll_position.shift as u64);
+            let offset = self.scroll_position.starting_point.mul(source_length).to_integer()
+                .wrapping_add(self.scroll_position.shift as u64);
             log::info!("Offset: {}", offset);
             let data = datasource.data(offset, 1000000).unwrap();
-            // TODO read n lines, use avg of bytes per line for length
-            log::trace!("data: {:?}", &data.lines[..3]);
+            // TODO read n lines, use avg of bytes per line for length, use LineSource
+            // log::trace!("data: {:?}", &data.lines[..3]);
+
+            // check if EOF is reached and viewport is not full
+            if data.lines.len() < self.viewport_size.height && offset > 0 {
+                return false;
+            }
             self.set_data(data);
+            true
         } else {
             panic!(String::from("Data source is not set"));
         }
