@@ -198,6 +198,11 @@ impl RootModel {
         }
     }
 
+    pub fn quit(&self) {
+        // TODO: close datasource
+        self.emit_event(Quit);
+    }
+
     fn set_error(&mut self, err: Box<dyn ToString>) {
         self.error.replace(err);
         self.emit_event(Error(self.error.as_ref().unwrap().to_string()));
