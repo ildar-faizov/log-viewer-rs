@@ -71,6 +71,7 @@ pub enum ModelEvent {
     FileContent,
     DataUpdated,
     Error(String),
+    Quit,
 }
 
 impl RootModel {
@@ -246,6 +247,11 @@ impl RootModel {
         } else {
             panic!(String::from("Data source is not set"));
         }
+    }
+
+    pub fn quit(&self) {
+        // TODO: close datasource
+        self.emit_event(Quit);
     }
 }
 

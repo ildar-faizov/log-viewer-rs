@@ -100,6 +100,11 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                     state.scroll(-1);
                     EventResult::Consumed(None)
                 },
+                Event::Char('q') => {
+                    let mut state = state.get_mut();
+                    state.quit();
+                    EventResult::Consumed(None)
+                },
                 _ => EventResult::Ignored
             }
         })

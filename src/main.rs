@@ -135,6 +135,10 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, event: ModelEve
 			v.take_focus(Direction::none());
 
 			Ok(true)
+		},
+		Quit => {
+			app.quit();
+			Ok(false)
 		}
 	}
 }
