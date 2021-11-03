@@ -79,9 +79,16 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
             state.set_viewport_size(printer.size.x, printer.size.y);
 
             if let Some(data) = state.data() {
-                data.lines.iter().take(printer.size.y).enumerate().for_each(|(i, line)| {
-                    printer.print((0, i), line.content.as_str());
-                });
+                let horizontal_scroll = state.get_horizontal_scroll();
+                log::trace!("draw hscroll = {}", horizontal_scroll);
+                data.lines.iter()
+                    .take(printer.size.y)
+                    .enumerate()
+                    .filter(|(_, line)| line.content.len() > horizontal_scroll)
+                    .for_each(|(i, line)| {
+                        log::trace!("draw line = {}", line.content.as_str());
+                        printer.print((0, i), &line.content.as_str()[horizontal_scroll..]);
+                    });
             } else {
                 printer.clear();
             }
@@ -99,6 +106,25 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                     let mut state = state.get_mut();
                     state.scroll(-1);
                     EventResult::Consumed(None)
+                },
+                Event::Key(Key::Left) => {
+                    log::info!("Left pressed");
+                    let mut state = state.get_mut();
+                    let horizontal_scroll = state.get_horizontal_scroll();
+                    if horizontal_scroll > 0 {
+                        state.set_horizontal_scroll(horizontal_scroll - 1);
+                    }
+                    EventResult::Consumed(None)
+                },
+                Event::Key(Key::Right) => {
+                    log::info!("Right pressed");
+                    let mut state = state.get_mut();
+                    let horizontal_scroll = state.get_horizontal_scroll();
+                    if state.set_horizontal_scroll(horizontal_scroll + 1) {
+                        EventResult::Consumed(None)
+                    } else {
+                        EventResult::Ignored
+                    }
                 },
                 Event::Char('q') => {
                     let mut state = state.get_mut();

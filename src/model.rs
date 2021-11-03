@@ -58,6 +58,7 @@ pub struct RootModel {
     data: Option<Data>,
     viewport_size: Dimension,
     scroll_position: ScrollPosition,
+    horizontal_scroll: usize,
     viewport_content: Option<String>,
     datasource: Option<Box<dyn DataSource>>,
     error: Option<Box<dyn ToString>>,
@@ -84,6 +85,7 @@ impl RootModel {
             data: None,
             viewport_size: Dimension::default(),
             scroll_position: ScrollPosition::default(),
+            horizontal_scroll: 0,
             viewport_content: None,
             datasource: None,
             error: None,
@@ -198,6 +200,37 @@ impl RootModel {
         }
     }
 
+    pub fn set_horizontal_scroll(&mut self, horizontal_scroll: usize) -> bool {
+        log::trace!("set_horizontal_scroll {}", horizontal_scroll);
+        if self.horizontal_scroll < horizontal_scroll {
+            if let Some(data) = &self.data {
+                let max_length = data.lines.iter()
+                    .take(self.viewport_size.height)
+                    .map(|line| line.content.len())
+                    .max();
+                log::trace!("set_horizontal_scroll max_length = {:?}", max_length);
+                if let Some(max_length) = max_length {
+                    if horizontal_scroll + self.viewport_size.width <= max_length {
+                        log::trace!("set_horizontal_scroll success");
+                        self.horizontal_scroll = horizontal_scroll;
+                        self.emit_event(DataUpdated);
+                        return true;
+                    }
+                }
+            }
+        } else if self.horizontal_scroll > horizontal_scroll {
+            log::trace!("set_horizontal_scroll success");
+            self.horizontal_scroll = horizontal_scroll;
+            self.emit_event(DataUpdated);
+            return true;
+        }
+        false
+    }
+
+    pub fn get_horizontal_scroll(&self) -> usize {
+        self.horizontal_scroll
+    }
+
     pub fn quit(&self) {
         // TODO: close datasource
         self.emit_event(Quit);
@@ -252,11 +285,6 @@ impl RootModel {
         } else {
             panic!(String::from("Data source is not set"));
         }
-    }
-
-    pub fn quit(&self) {
-        // TODO: close datasource
-        self.emit_event(Quit);
     }
 }
 
