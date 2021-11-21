@@ -6,6 +6,7 @@ mod model;
 mod ui;
 mod data_source;
 mod utils;
+mod shared;
 
 use cursive::{CursiveRunnable, CursiveRunner, View};
 use cursive::views::{TextView, ViewRef, Canvas};
@@ -21,6 +22,8 @@ use crate::model::ModelEvent::*;
 use cursive::direction::Direction;
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::fs::{File, OpenOptions};
+use std::panic;
 use log4rs::append::file::FileAppender;
 use log4rs::encode::pattern::PatternEncoder;
 use log4rs::Config;
@@ -29,6 +32,7 @@ use log::LevelFilter;
 
 fn main() {
 	init_logging();
+	init_panic_hook();
 
 	let args = parse_args();
 
@@ -39,6 +43,11 @@ fn main() {
 }
 
 fn init_logging() {
+	let file = OpenOptions::new().write(true).open("./logv.log");
+	if let Ok(file) = file {
+		file.set_len(0);
+	}
+
 	let logfile = FileAppender::builder()
 		.encoder(Box::new(PatternEncoder::new("{d} {l} {t} - {m}{n}")))
 		.build("./logv.log")
@@ -55,6 +64,20 @@ fn init_logging() {
 
 	// log::info!("=".repeat(25));
 	log::info!("Logging from logv started");
+}
+
+fn init_panic_hook() {
+	panic::set_hook(Box::new(|panic_info| {
+		if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
+			if let Some(location) = panic_info.location() {
+				log::error!("panic occurred: {:?} at {} line {}:{}", s, location.file(), location.line(), location.column());
+			} else {
+				log::error!("panic occurred: {:?}", s);
+			}
+		} else {
+			log::error!("panic occurred");
+		}
+	}));
 }
 
 fn parse_args<'a>() -> ArgMatches<'a> {
