@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::env::current_dir;
 use std::fs::read_to_string;
 use ModelEvent::*;
-use crate::data_source::{DataSource, FileSource, Data};
+use crate::data_source::{DataSource, FileSource, Data, LineSource, LineSourceImpl};
 use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
 use std::borrow::Borrow;
@@ -14,6 +14,8 @@ use std::cmp::{max, min};
 use std::io::Read;
 use std::option::Option::Some;
 use crate::utils;
+use std::panic::panic_any;
+use crate::shared::Shared;
 
 const BUFFER_SIZE: u64 = 8192;
 
@@ -60,7 +62,7 @@ pub struct RootModel {
     scroll_position: ScrollPosition,
     horizontal_scroll: usize,
     viewport_content: Option<String>,
-    datasource: Option<Box<dyn DataSource>>,
+    datasource: Option<Shared<Box<dyn LineSource>>>,
     error: Option<Box<dyn ToString>>,
 }
 
@@ -157,41 +159,38 @@ impl RootModel {
         if num_of_lines == 0 {
             return;
         }
+        log::trace!("scroll num_of_lines = {}", num_of_lines);
         if let Some(data) = &self.data {
             if let Some(first_line) = data.lines.first() {
                 let (n, sign) = utils::sign(num_of_lines);
-                if sign == 1 {
-                    if let Some(line) = data.lines.get(n - 1) {
-                        let delta = (line.end - first_line.start + 1) as i32;
-                        let starting_pont = &self.scroll_position.starting_point;
-                        let shift = &self.scroll_position.shift + delta;
-                        let new_scroll_position = ScrollPosition::new(*starting_pont, shift);
-                        self.set_scroll_position(new_scroll_position);
-                    } else {
-                        log::warn!("Scroll {} lines failed, no matching line", num_of_lines);
-                    }
-                } else if first_line.start > 0 {
-                    if let Some(ds) = &self.datasource {
-                        let mut lines_reversed: usize = 0;
-                        let mut offset = first_line.start;
-                        log::trace!("Reverse scroll from offset {}", offset);
-                        while lines_reversed < n && offset > 1 {
-                            let data = ds.data(offset - 2, 1).unwrap();
-                            lines_reversed += data.lines.len();
-                            offset = data.offset;
-                            log::trace!("Reverse scroll: {} {} {:?}", offset, lines_reversed, &data.lines[..min(data.lines.len(), 3)]);
+                let delta =
+                    if sign == 1 {
+                        if let Some(line) = data.lines.get(n - 1) {
+                            (line.end - first_line.start + 1) as i32
+                        } else {
+                            log::warn!("Scroll {} lines failed, no matching line", num_of_lines);
+                            0
                         }
-                        let delta = (first_line.start - offset) as i32;
-                        let starting_pont = &self.scroll_position.starting_point;
-                        let shift = &self.scroll_position.shift - delta;
-                        let new_scroll_position = ScrollPosition::new(*starting_pont, shift);
-                        self.set_scroll_position(new_scroll_position);
+                    } else if first_line.start > 0 {
+                        if let Some(ds) = &self.datasource {
+                            let mut ds = ds.get_mut_ref();
+                            log::trace!("scroll({}). set_offset = {}", num_of_lines, first_line.start);
+                            ds.set_offset(first_line.start);
+                            ds.read_lines(num_of_lines);
+                            let offset = ds.get_offset();
+                            offset as i32 - first_line.start as i32
+                        } else {
+                            log::warn!("Scroll {} lined failed: no datasource", num_of_lines);
+                            0
+                        }
                     } else {
-                        log::warn!("Scroll {} lined failed: no datasource", num_of_lines)
-                    }
-                } else {
-                    log::warn!("Scroll {} lines not possible, cursor is at the beginning of the source", num_of_lines);
-                }
+                        log::warn!("Scroll {} lines not possible, cursor is at the beginning of the source", num_of_lines);
+                        0
+                    };
+                let starting_pont = &self.scroll_position.starting_point;
+                let shift = &self.scroll_position.shift + delta;
+                let new_scroll_position = ScrollPosition::new(*starting_pont, shift);
+                self.set_scroll_position(new_scroll_position);
             } else {
                 log::warn!("Scroll {} lines failed, no first line", num_of_lines);
             }
@@ -243,7 +242,7 @@ impl RootModel {
 
     fn load_file(&mut self) {
         if let Some(path) = self.resolve_file_name() {
-            self.datasource = Some(Box::new(FileSource::new(path)));
+            self.datasource = Some(Shared::new(Box::new(LineSourceImpl::new(path))));
             self.update_viewport_content();
         }
     }
@@ -267,23 +266,34 @@ impl RootModel {
         if self.viewport_size.height == 0 {
             return true;
         }
-        if let Some(datasource) = &self.datasource {
-            let source_length = datasource.length().unwrap();
+        let data = if let Some(datasource) = &self.datasource {
+            let mut datasource = datasource.get_mut_ref();
+            let source_length = datasource.get_length();
             let offset = self.scroll_position.starting_point.mul(source_length).to_integer()
                 .wrapping_add(self.scroll_position.shift as u64);
-            log::info!("Offset: {}", offset);
-            let data = datasource.data(offset, 1000000).unwrap();
-            // TODO read n lines, use avg of bytes per line for length, use LineSource
-            // log::trace!("data: {:?}", &data.lines[..3]);
+            log::info!("update_viewport_content offset = {}", offset);
+            datasource.set_offset(offset);
+            let lines = datasource.read_lines(self.viewport_size.height as isize);
+            log::trace!("update_viewport_content data: {:?}", &lines[..min(3, lines.len())]);
 
             // check if EOF is reached and viewport is not full
-            if data.lines.len() < self.viewport_size.height && offset > 0 {
-                return false;
+            if lines.len() < self.viewport_size.height && offset > 0 {
+                None
+            } else {
+                Some(Data {
+                    lines,
+                    offset: datasource.get_offset()
+                })
             }
-            self.set_data(data);
-            true
         } else {
             panic!(String::from("Data source is not set"));
+        };
+        match data {
+            Some(data) => {
+                self.set_data(data);
+                true
+            },
+            _ => false
         }
     }
 }

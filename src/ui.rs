@@ -80,13 +80,11 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
 
             if let Some(data) = state.data() {
                 let horizontal_scroll = state.get_horizontal_scroll();
-                log::trace!("draw hscroll = {}", horizontal_scroll);
                 data.lines.iter()
                     .take(printer.size.y)
                     .enumerate()
                     .filter(|(_, line)| line.content.len() > horizontal_scroll)
                     .for_each(|(i, line)| {
-                        log::trace!("draw line = {}", line.content.as_str());
                         printer.print((0, i), &line.content.as_str()[horizontal_scroll..]);
                     });
             } else {
