@@ -1,6 +1,5 @@
 use std::rc::Rc;
 use std::cell::{RefCell, RefMut};
-use std::ops::{Deref, DerefMut};
 use std::borrow::Borrow;
 
 pub struct Shared<T: ?Sized> {

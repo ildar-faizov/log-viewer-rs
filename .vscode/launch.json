@@ -1,0 +1,28 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug",
+            "program": "${workspaceRoot}/target/debug/logv",
+            "args": ["-f", "/var/log/bootstrap.log"],
+            "cwd": "${workspaceRoot}/target/debug/",
+            "sourceLanguages": ["rust"],
+            "console": "integratedTerminal"
+        },
+        {
+            "type": "lldb",
+            "request": "attach",
+            "name": "Attach",
+            "sourceLanguages": ["rust"],
+            "program": "${workspaceRoot}/target/debug/logv",
+            "args": ["-f", "/var/log/bootstrap.log"],
+            "cwd": "${workspaceRoot}/target/debug/",
+            "processId": "${command.pickProcess}"
+        },
+    ]
+}

@@ -1,20 +1,16 @@
 use crossbeam_channel::{Receiver, Sender, unbounded};
-use std::path::{Path, PathBuf};
-use std::io::{Error, Read, Seek, ErrorKind, BufReader, BufRead, SeekFrom};
+use std::path::PathBuf;
+use std::io::{Error, Read, Seek, BufReader, BufRead, SeekFrom};
 use std::io::SeekFrom::Start;
-use std::ptr::write_bytes;
-use std::str::from_utf8;
 use std::fs::File;
-use std::cmp::{max, min};
+use std::cmp::min;
 use crate::utils;
-use std::cell::{RefCell, RefMut};
-use std::rc::Rc;
-use std::borrow::{BorrowMut, Borrow};
+use std::cell::RefMut;
 use crate::shared::Shared;
 
 pub const BUFFER_SIZE: u64 = 8192;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Line {
     pub content: String, // TODO use appropriate type
     pub start: u64, // offset of the first symbol in line
@@ -32,7 +28,6 @@ impl Line {
 #[derive(Debug)]
 pub struct Data {
     pub lines: Vec<Line>,
-    pub offset: u64,
 }
 
 pub trait DataSource {
@@ -147,7 +142,6 @@ impl DataSource for FileSource {
                 }
                 return Ok(Data{
                     lines,
-                    offset: start_offset
                 })
             }
         }
@@ -174,6 +168,16 @@ pub trait LineSource {
 
     /// Reads requested number of lines in any direction
     fn read_lines(&mut self, number_of_lines: isize) -> Vec<Line>;
+
+    /// Reads next line
+    fn read_next_line(&mut self) -> Option<Line> {
+        self.read_lines(1).pop()
+    }
+
+    /// Reads previous line
+    fn read_prev_line(&mut self) -> Option<Line> {
+        self.read_lines(-1).pop()
+    }
 }
 
 pub struct LineSourceImpl {
@@ -259,12 +263,12 @@ impl LineSource for LineSourceImpl {
                 let mut buf = [0 as u8; BUFFER_SIZE as usize];
                 loop {
                     let delta = min(offset, BUFFER_SIZE);
-                    log::trace!("read_lines offset = {}, delta = {}", offset, delta);
+                    // log::trace!("read_lines offset = {}, delta = {}", offset, delta);
                     let file_offset = f.seek(SeekFrom::Current(delta as i64 * -1)).unwrap();
                     let bytes_read = {
                         f.by_ref().take(delta).read(&mut buf).unwrap()
                     };
-                    log::trace!("read_lines file_offset={} bytes_read={}", file_offset, bytes_read);
+                    // log::trace!("read_lines file_offset={} bytes_read={}", file_offset, bytes_read);
                     for i in (0..bytes_read).rev() {
                         if buf[i] == 0x0A && !stack.is_empty() {
                             let mut current_stack = stack;
@@ -280,13 +284,13 @@ impl LineSource for LineSourceImpl {
                                 end: line_offset + line_length - b as u64
                             });
                             offset = line_offset;
-                            log::trace!("read_lines line {:?}, offset = {}", result.last(), offset);
+                            // log::trace!("read_lines line {:?}, offset = {}", result.last(), offset);
                             if result.len() == number_of_lines {
                                 break;
                             }
                         }
                         stack.push(buf[i]);
-                        log::trace!("read_lines i={} stack = {:?}", i, stack);
+                        // log::trace!("read_lines i={} stack = {:?}", i, stack);
                     }
                     if offset == 0 || result.len() == number_of_lines {
                         break;

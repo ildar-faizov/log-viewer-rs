@@ -20,9 +20,7 @@ use crate::ui::{build_ui, UIElementName};
 use crate::model::{ModelEvent, RootModelRef};
 use crate::model::ModelEvent::*;
 use cursive::direction::Direction;
-use std::rc::Rc;
-use std::cell::RefCell;
-use std::fs::{File, OpenOptions};
+use std::fs::OpenOptions;
 use std::panic;
 use log4rs::append::file::FileAppender;
 use log4rs::encode::pattern::PatternEncoder;
@@ -68,14 +66,10 @@ fn init_logging() {
 
 fn init_panic_hook() {
 	panic::set_hook(Box::new(|panic_info| {
-		if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
-			if let Some(location) = panic_info.location() {
-				log::error!("panic occurred: {:?} at {} line {}:{}", s, location.file(), location.line(), location.column());
-			} else {
-				log::error!("panic occurred: {:?}", s);
-			}
+		if let Some(location) = panic_info.location() {
+			log::error!("panic occurred: {:?} at {} line {}:{}", panic_info, location.file(), location.line(), location.column());
 		} else {
-			log::error!("panic occurred");
+			log::error!("panic occurred: {:?}", panic_info);
 		}
 	}));
 }
@@ -108,7 +102,7 @@ fn create_model(args: ArgMatches, sender: Sender<ModelEvent>) -> RootModel {
 
 fn run_ui(receiver: Receiver<ModelEvent>, model: RootModel) {
 	// let mut model_ref = Rc::new(RefCell::new(model));
-	let mut model_ref = RootModelRef::new(model);
+	let model_ref = RootModelRef::new(model);
 
 	let mut app = cursive::default().into_runner();
 
@@ -150,7 +144,7 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, event: ModelEve
 			v.take_focus(Direction::none());
 			Ok(true)
 		}
-		Error(err) => {
+		Error(_err) => {
 			// let mut v: ViewRef<TextView> = app.find_name(&UIElementName::MainContent.to_string()).unwrap();
 			// v.set_content(format!("Error: {}", err));
 
@@ -159,6 +153,7 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, event: ModelEve
 
 			Ok(true)
 		},
+		CursorMoved(_) => Ok(true),
 		Quit => {
 			app.quit();
 			Ok(false)

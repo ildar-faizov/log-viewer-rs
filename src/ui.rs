@@ -1,13 +1,12 @@
-use cursive::{View, With, CursiveRunner, CursiveRunnable};
-use cursive::views::{LinearLayout, ScrollView, TextView, Menubar, Dialog, Canvas, NamedView};
+use cursive::View;
+use cursive::views::{LinearLayout, TextView, Canvas, NamedView};
 use cursive::traits::{Nameable, Resizable};
-use cursive::menu::MenuTree;
-use crate::model::{RootModel, RootModelRef};
+use crate::model::{RootModelRef, CursorShift};
 use cursive::event::{Event, EventResult, Key};
-use std::rc::Rc;
-use std::cell::RefCell;
-use std::borrow::BorrowMut;
 use cursive::view::Selector;
+use cursive::theme::{Style, ColorStyle, Theme};
+use cursive::theme::PaletteColor::{HighlightText, Primary};
+use cursive::utils::span::{SpannedStr, IndexedSpan, SpannedString, IndexedCow};
 
 pub enum UIElementName {
     MainContent,
@@ -79,13 +78,39 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
             state.set_viewport_size(printer.size.x, printer.size.y);
 
             if let Some(data) = state.data() {
+                let palette = Theme::default().palette;
+                let regular_style = Style::from(ColorStyle::new(palette[Primary], palette[HighlightText]));
+                let cursor_style = Style::from(ColorStyle::new(palette[HighlightText], palette[Primary]));
+
                 let horizontal_scroll = state.get_horizontal_scroll();
+                let cursor = state.get_cursor_on_screen();
                 data.lines.iter()
                     .take(printer.size.y)
                     .enumerate()
                     .filter(|(_, line)| line.content.len() > horizontal_scroll)
-                    .for_each(|(i, line)| {
-                        printer.print((0, i), &line.content.as_str()[horizontal_scroll..]);
+                    .map(|(i, line)| {
+                        let slice = &line.content.as_str()[horizontal_scroll..];
+                        let mut spans = vec![];
+                        if let Some(cursor) = cursor {
+                            if cursor.height == i {
+                                let w = cursor.width;
+                                if w > 0 {
+                                    spans.push(indexed_span(0, w, regular_style));
+                                }
+                                spans.push(indexed_span(w, w + 1, cursor_style));
+                                if w < slice.len() {
+                                    spans.push(indexed_span(w + 1, slice.len(), regular_style));
+                                }
+                                log::trace!("w = {}; spans = {:?}", w, spans);
+                            }
+                        }
+                        if spans.is_empty() {
+                            spans.push(IndexedSpan::simple_borrowed(slice, regular_style));
+                        }
+                        (i, SpannedString::with_spans(slice, spans))
+                    })
+                    .for_each(|(i, ss)| {
+                        printer.print_styled((0, i), SpannedStr::from(&ss));
                     });
             } else {
                 printer.clear();
@@ -93,20 +118,20 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
         })
         .with_on_event(|state, event| {
             match event {
-                Event::Key(Key::Down) => {
-                    log::info!("Down pressed");
+                Event::Ctrl(Key::Down) => {
+                    log::info!("Ctrl+Down pressed");
                     let mut state = state.get_mut();
                     state.scroll(1);
                     EventResult::Consumed(None)
                 },
-                Event::Key(Key::Up) => {
-                    log::info!("Up pressed");
+                Event::Ctrl(Key::Up) => {
+                    log::info!("Ctrl+Up pressed");
                     let mut state = state.get_mut();
                     state.scroll(-1);
                     EventResult::Consumed(None)
                 },
-                Event::Key(Key::Left) => {
-                    log::info!("Left pressed");
+                Event::Ctrl(Key::Left) => {
+                    log::info!("Ctrl+Left pressed");
                     let mut state = state.get_mut();
                     let horizontal_scroll = state.get_horizontal_scroll();
                     if horizontal_scroll > 0 {
@@ -114,8 +139,8 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                     }
                     EventResult::Consumed(None)
                 },
-                Event::Key(Key::Right) => {
-                    log::info!("Right pressed");
+                Event::Ctrl(Key::Right) => {
+                    log::info!("Ctrl+Right pressed");
                     let mut state = state.get_mut();
                     let horizontal_scroll = state.get_horizontal_scroll();
                     if state.set_horizontal_scroll(horizontal_scroll + 1) {
@@ -124,8 +149,28 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                         EventResult::Ignored
                     }
                 },
-                Event::Char('q') => {
+                Event::Key(Key::Down) => {
                     let mut state = state.get_mut();
+                    state.move_cursor(CursorShift::down());
+                    EventResult::Consumed(None)
+                },
+                Event::Key(Key::Up) => {
+                    let mut state = state.get_mut();
+                    state.move_cursor(CursorShift::up());
+                    EventResult::Consumed(None)
+                },
+                Event::Key(Key::Left) => {
+                    let mut state = state.get_mut();
+                    state.move_cursor(CursorShift::left());
+                    EventResult::Consumed(None)
+                },
+                Event::Key(Key::Right) => {
+                    let mut state = state.get_mut();
+                    state.move_cursor(CursorShift::right());
+                    EventResult::Consumed(None)
+                },
+                Event::Char('q') => {
+                    let state = state.get_mut();
                     state.quit();
                     EventResult::Consumed(None)
                 },
@@ -133,4 +178,14 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
             }
         })
         .with_name(UIElementName::MainContent)
+}
+
+fn indexed_span<T>(start: usize, end: usize, attr: T) -> IndexedSpan<T> {
+    IndexedSpan {
+        content: IndexedCow::Borrowed {
+            start, end
+        },
+        attr,
+        width: end - start
+    }
 }
