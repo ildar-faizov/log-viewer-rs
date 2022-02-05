@@ -3,7 +3,7 @@ use std::io::BufRead;
 use cursive::View;
 use cursive::views::{LinearLayout, TextView, Canvas, NamedView};
 use cursive::traits::{Nameable, Resizable};
-use crate::model::{RootModelRef, CursorShift};
+use crate::model::{RootModelRef, CursorShift, Dimension};
 use cursive::event::{Event, EventResult, Key};
 use cursive::view::Selector;
 use cursive::theme::{Style, ColorStyle, Theme};
@@ -179,14 +179,14 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                             .and_then(|data| data.lines.first())
                             .map(|line| line.start);
                         if let Some(p) = p {
-                            state.set_cursor(p);
+                            state.move_cursor_to_offset(p);
                         }
                     } else {
                         let p = state.data()
                             .and_then(|data| data.lines.last())
                             .map(|line| line.start);
                         if let Some(p) = p {
-                            state.set_cursor(p);
+                            state.move_cursor_to_offset(p);
                         }
                     }
                     EventResult::Consumed(None)
@@ -199,17 +199,51 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                             .and_then(|data| data.lines.first())
                             .map(|line| line.start);
                         if let Some(p) = p {
-                            state.set_cursor(p);
+                            state.move_cursor_to_offset(p);
                         }
                     } else {
                         let p = state.data()
                             .and_then(|data| data.lines.first())
                             .map(|line| line.start);
                         if let Some(p) = p {
-                            state.set_cursor(p);
+                            state.move_cursor_to_offset(p);
                         }
                     }
                     EventResult::Consumed(None)
+                },
+                Event::Key(Key::Home) => {
+                    let mut state = state.get_mut();
+                    match state.get_cursor_on_screen() {
+                        Some(Dimension {height: h, width: _} ) => {
+                            let p = state.data()
+                                .and_then(|data| data.lines.get(h))
+                                .map(|line| line.start);
+                            if let Some(p) = p {
+                                state.move_cursor_to_offset(p);
+                                EventResult::Consumed(None)
+                            } else {
+                                EventResult::Ignored
+                            }
+                        },
+                        _ => EventResult::Ignored
+                    }
+                },
+                Event::Key(Key::End) => {
+                    let mut state = state.get_mut();
+                    match state.get_cursor_on_screen() {
+                        Some(Dimension {height: h, width: w} ) => {
+                            let p = state.data()
+                                .and_then(|data| data.lines.get(h))
+                                .map(|line| line.end);
+                            if let Some(p) = p {
+                                state.move_cursor_to_offset(p - 1);
+                                EventResult::Consumed(None)
+                            } else {
+                                EventResult::Ignored
+                            }
+                        },
+                        _ => EventResult::Ignored
+                    }
                 },
                 Event::Char('q') => {
                     let state = state.get_mut();

@@ -282,7 +282,7 @@ impl RootModel {
         self.horizontal_scroll
     }
 
-    pub fn set_cursor(&mut self, pos: u64) {
+    fn set_cursor(&mut self, pos: u64) {
         if self.cursor != pos {
             self.cursor = pos;
             log::trace!("Cursor position set to {:?}", pos);
@@ -304,7 +304,11 @@ impl RootModel {
             todo!("Moving cursor simultaneously vertically and horizontally is not supported")
         };
 
-        self.set_cursor(new_cursor_offset);
+        self.move_cursor_to_offset(new_cursor_offset);
+    }
+
+    pub fn move_cursor_to_offset(&mut self, pos: u64) {
+        self.set_cursor(pos);
         self.bring_cursor_into_view();
     }
 
