@@ -296,7 +296,7 @@ impl LineSource for LineSourceImpl {
                         break;
                     }
                 }
-                f.seek(SeekFrom::Start(offset));
+                f.seek(SeekFrom::Start(offset)).unwrap();
 
                 result.reverse();
             }

@@ -1,3 +1,5 @@
+use std::io::BufRead;
+
 use cursive::View;
 use cursive::views::{LinearLayout, TextView, Canvas, NamedView};
 use cursive::traits::{Nameable, Resizable};
@@ -167,6 +169,46 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                 Event::Key(Key::Right) => {
                     let mut state = state.get_mut();
                     state.move_cursor(CursorShift::right());
+                    EventResult::Consumed(None)
+                },
+                Event::Key(Key::PageDown) => {
+                    let mut state = state.get_mut();
+                    let h = state.get_viewport_size().height as isize;
+                    if state.scroll(h) {
+                        let p = state.data()
+                            .and_then(|data| data.lines.first())
+                            .map(|line| line.start);
+                        if let Some(p) = p {
+                            state.set_cursor(p);
+                        }
+                    } else {
+                        let p = state.data()
+                            .and_then(|data| data.lines.last())
+                            .map(|line| line.start);
+                        if let Some(p) = p {
+                            state.set_cursor(p);
+                        }
+                    }
+                    EventResult::Consumed(None)
+                },
+                Event::Key(Key::PageUp) => {
+                    let mut state = state.get_mut();
+                    let h = state.get_viewport_size().height as isize;
+                    if state.scroll(-h) {
+                        let p = state.data()
+                            .and_then(|data| data.lines.first())
+                            .map(|line| line.start);
+                        if let Some(p) = p {
+                            state.set_cursor(p);
+                        }
+                    } else {
+                        let p = state.data()
+                            .and_then(|data| data.lines.first())
+                            .map(|line| line.start);
+                        if let Some(p) = p {
+                            state.set_cursor(p);
+                        }
+                    }
                     EventResult::Consumed(None)
                 },
                 Event::Char('q') => {

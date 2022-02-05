@@ -14,7 +14,6 @@ use std::option::Option::Some;
 use crate::utils;
 use crate::shared::Shared;
 
-const BUFFER_SIZE: u64 = 8192;
 const OFFSET_THRESHOLD: u64 = 8192;
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
@@ -118,7 +117,6 @@ pub struct RootModelRef(Rc<RefCell<RootModel>>);
 
 pub enum ModelEvent {
     FileName(String),
-    FileContent,
     DataUpdated,
     CursorMoved(u64),
     Error(String),
@@ -181,16 +179,19 @@ impl RootModel {
         }
     }
 
-    pub fn set_scroll_position(&mut self, scroll_position: ScrollPosition) -> bool {
+    pub fn get_viewport_size(&self) -> Dimension {
+        self.viewport_size
+    }
+
+    fn set_scroll_position(&mut self, scroll_position: ScrollPosition) -> bool {
         if self.scroll_position != scroll_position {
             let previous_scroll_position = self.scroll_position;
             self.scroll_position = scroll_position;
             log::info!("Scroll position set to {}", scroll_position);
             if !self.update_viewport_content() {
                 self.scroll_position = previous_scroll_position;
-                return true;
+                return false;
             }
-            return false;
             // TODO: emit update
         }
         return true
@@ -206,8 +207,17 @@ impl RootModel {
                 let (n, sign) = utils::sign(num_of_lines);
                 let delta =
                     if sign == 1 {
-                        if let Some(line) = data.lines.get(n - 1) {
-                            (line.end - first_line.start + 1) as i32
+                        if let Some(ds) = &self.datasource {
+                            let mut ds = ds.get_mut_ref();
+                            ds.set_offset(first_line.start);
+                            let h = self.viewport_size.height;
+                            let lines = ds.read_lines((n + h) as isize);
+                            let k = lines.len();
+                            if k > h {
+                                (lines.get(k - h).unwrap().start - first_line.start) as i32
+                            } else {
+                                0
+                            }
                         } else {
                             log::warn!("Scroll {} lines failed, no matching line", num_of_lines);
                             0

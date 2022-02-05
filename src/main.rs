@@ -134,11 +134,6 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, event: ModelEve
 			v.set_content(file_name);
 			Ok(true)
 		},
-		FileContent => {
-			let mut v: ViewRef<Canvas<RootModelRef>> = app.find_name(&UIElementName::MainContent.to_string()).unwrap();
-			v.take_focus(Direction::none());
-			Ok(true)
-		},
 		DataUpdated => {
 			let mut v: ViewRef<Canvas<RootModelRef>> = app.find_name(&UIElementName::MainContent.to_string()).unwrap();
 			v.take_focus(Direction::none());
