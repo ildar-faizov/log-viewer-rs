@@ -100,7 +100,7 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                                     spans.push(indexed_span(0, w, regular_style));
                                 }
                                 spans.push(indexed_span(w, w + 1, cursor_style));
-                                if w < slice.len() {
+                                if w + 1 < slice.len() {
                                     spans.push(indexed_span(w + 1, slice.len(), regular_style));
                                 }
                                 log::trace!("w = {}; spans = {:?}", w, spans);
@@ -243,6 +243,19 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                             }
                         },
                         _ => EventResult::Ignored
+                    }
+                },
+                Event::Ctrl(Key::Home) => {
+                    let mut state = state.get_mut();
+                    state.move_cursor_to_offset(0);
+                    EventResult::Consumed(None)
+                },
+                Event::Ctrl(Key::End) => {
+                    let mut state = state.get_mut();
+                    if state.move_cursor_to_end() {
+                        EventResult::Consumed(None)
+                    } else {
+                        EventResult::Ignored
                     }
                 },
                 Event::Char('q') => {

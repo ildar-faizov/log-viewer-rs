@@ -307,9 +307,9 @@ impl RootModel {
         self.move_cursor_to_offset(new_cursor_offset);
     }
 
-    pub fn move_cursor_to_offset(&mut self, pos: u64) {
+    pub fn move_cursor_to_offset(&mut self, pos: u64) -> bool {
         self.set_cursor(pos);
-        self.bring_cursor_into_view();
+        self.bring_cursor_into_view()
     }
 
     fn move_cursor_vertically(&mut self, dy: isize, current_pos: Option<Dimension>) -> u64 {
@@ -430,6 +430,31 @@ impl RootModel {
     pub fn quit(&self) {
         // TODO: close datasource
         self.emit_event(Quit);
+    }
+
+    pub fn move_cursor_to_end(&mut self) -> bool {
+        let offset = self
+            .get_datasource_ref()
+            .and_then(|mut ds| {
+                let len = ds.get_length();
+                if len > 0 {
+                    ds.set_offset(len - 1);
+                    ds.read_next_line()
+                } else {
+                    None
+                }
+            })
+            .map(|line| {
+                if line.end > 0 {
+                    line.end - 1
+                } else {
+                    line.start
+                }
+            });
+        match offset {
+            Some(offset) => self.move_cursor_to_offset(offset),
+            None => false
+        }
     }
 
     fn set_error(&mut self, err: Box<dyn ToString>) {
@@ -579,7 +604,8 @@ impl RootModel {
                             false
                         }
                     } else {
-                        todo!("Not implemented yet")
+                        drop(datasource);
+                        self.scroll_forcibly(offset) && self.bring_into_view(offset)
                     }
                 } else { // offset > end_offset
                     // TODO check 2 cases: when difference is fairly small and when it is huge
@@ -606,7 +632,8 @@ impl RootModel {
                             false
                         }
                     } else {
-                        todo!("Not implemented yet")
+                        drop(datasource);
+                        self.scroll_forcibly(offset) && self.bring_into_view(offset)
                     }
                 }
             } else {
@@ -629,6 +656,22 @@ impl RootModel {
 
     fn get_datasource_ref(&self) -> Option<RefMut<Box<dyn LineSource>>> {
         self.datasource.as_ref().map(|ds| ds.get_mut_ref())
+    }
+
+    fn scroll_forcibly(&mut self, offset: u64) -> bool {
+        let mut datasource = self.get_datasource_ref().unwrap();
+        let mut new_offset = datasource.set_offset(offset);
+        let h = self.viewport_size.height;
+        let lines_below = datasource.read_lines(h as isize);
+        if lines_below.len() < h {
+            let k = h - lines_below.len();
+            datasource.set_offset(new_offset);
+            datasource.read_lines(-(k as isize));
+            new_offset = datasource.get_offset();
+        }
+        let scroll_starting_point = Ratio::new(new_offset, datasource.get_length());
+        drop(datasource);
+        self.set_scroll_position(ScrollPosition::new(scroll_starting_point, 0))
     }
 }
 
