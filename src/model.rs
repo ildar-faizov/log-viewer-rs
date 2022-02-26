@@ -2,15 +2,16 @@ use crossbeam_channel::Sender;
 use std::path::{Path, PathBuf};
 use std::env::current_dir;
 use ModelEvent::*;
-use crate::data_source::{Data, LineSource, LineSourceImpl, Line, DataSource};
+use crate::data_source::{Data, LineSource, LineSourceImpl, Line};
 use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
 use std::borrow::Borrow;
 use num_rational::Ratio;
 use std::fmt;
-use std::ops::Mul;
 use std::cmp::{max, min};
 use std::option::Option::Some;
+use fluent_integer::Integer;
+use num_traits::identities::Zero;
 use crate::utils;
 use crate::shared::Shared;
 
@@ -18,8 +19,8 @@ const OFFSET_THRESHOLD: u64 = 8192;
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub struct Dimension {
-    pub width: usize,
-    pub height: usize,
+    pub width: Integer,
+    pub height: Integer,
 }
 
 impl fmt::Display for Dimension {
@@ -28,53 +29,47 @@ impl fmt::Display for Dimension {
     }
 }
 
-impl Into<(i32, i32)> for Dimension {
-    fn into(self) -> (i32, i32) {
-        (self.width as i32, self.height as i32)
-    }
-}
-
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub struct CursorShift {
-    x: isize,
-    y: isize,
+    x: Integer,
+    y: Integer,
 }
 
 impl CursorShift {
-    pub fn new(x: isize, y: isize) -> Self {
+    pub fn new(x: Integer, y: Integer) -> Self {
         CursorShift{x, y}
     }
 
-    pub fn down_by_n(n: isize) -> Self {
-        Self::new(0, n)
+    pub fn down_by_n(n: Integer) -> Self {
+        Self::new(0.into(), n)
     }
 
     pub fn down() -> Self {
-        Self::down_by_n(1)
+        Self::down_by_n(1.into())
     }
 
-    pub fn up_by_n(n: isize) -> Self {
-        Self::new(0, -1 * n)
+    pub fn up_by_n(n: Integer) -> Self {
+        Self::new(0.into(), -1 * n)
     }
 
     pub fn up() -> Self {
-        Self::up_by_n(1)
+        Self::up_by_n(1.into())
     }
 
-    pub fn left_by_n(n: isize) -> Self {
-        Self::new(-1 * n, 0)
+    pub fn left_by_n(n: Integer) -> Self {
+        Self::new(-1 * n, 0.into())
     }
 
     pub fn left() -> Self {
-        Self::left_by_n(1)
+        Self::left_by_n(1.into())
     }
 
-    pub fn right_by_n(n: isize) -> Self {
-        Self::new(n, 0)
+    pub fn right_by_n(n: Integer) -> Self {
+        Self::new(n, 0.into())
     }
 
     pub fn right() -> Self {
-        Self::right_by_n(1)
+        Self::right_by_n(1.into())
     }
 }
 
@@ -88,26 +83,26 @@ impl CursorShift {
  */
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
 struct ScrollPosition {
-    starting_point: Ratio<u64>,
+    starting_point: Ratio<Integer>,
     // [0, 1] - initial point in scroll area
-    shift: i32,
+    shift: Integer,
 }
 
 impl fmt::Display for ScrollPosition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ScrollPosition(starting_point={}, shift={})", self.starting_point, self.shift)
+        write!(f, "ScrollPosition(starting_point={}/{}, shift={})", self.starting_point.numer(), self.starting_point.denom(), self.shift)
     }
 }
 
 pub struct RootModel {
     model_sender: Sender<ModelEvent>,
     file_name: Option<String>,
-    file_size: u64,
+    file_size: Integer,
     data: Option<Data>,
     viewport_size: Dimension,
     scroll_position: ScrollPosition,
-    horizontal_scroll: usize,
-    cursor: u64,
+    horizontal_scroll: Integer,
+    cursor: Integer,
     datasource: Option<Shared<Box<dyn LineSource>>>,
     error: Option<Box<dyn ToString>>,
 }
@@ -118,7 +113,7 @@ pub struct RootModelRef(Rc<RefCell<RootModel>>);
 pub enum ModelEvent {
     FileName(String),
     DataUpdated,
-    CursorMoved(u64),
+    CursorMoved(Integer),
     Error(String),
     Quit,
 }
@@ -128,12 +123,12 @@ impl RootModel {
         RootModel {
             model_sender,
             file_name: None,
-            file_size: 0,
+            file_size: 0.into(),
             data: None,
             viewport_size: Dimension::default(),
             scroll_position: ScrollPosition::default(),
-            horizontal_scroll: 0,
-            cursor: 0,
+            horizontal_scroll: 0.into(),
+            cursor: 0.into(),
             datasource: None,
             error: None,
         }
@@ -169,7 +164,7 @@ impl RootModel {
         self.error.as_ref().map(|t| t.to_string())
     }
 
-    pub fn set_viewport_size(&mut self, width: usize, height: usize) {
+    pub fn set_viewport_size(&mut self, width: Integer, height: Integer) {
         let d = Dimension::new(width, height);
         if self.viewport_size != d {
             log::info!("Viewport size set to {}", d);
@@ -197,7 +192,7 @@ impl RootModel {
         return true
     }
 
-    pub fn scroll(&mut self, num_of_lines: isize) -> bool {
+    pub fn scroll(&mut self, num_of_lines: Integer) -> bool {
         if num_of_lines == 0 {
             return true;
         }
@@ -211,16 +206,16 @@ impl RootModel {
                             let mut ds = ds.get_mut_ref();
                             ds.set_offset(first_line.start);
                             let h = self.viewport_size.height;
-                            let lines = ds.read_lines((n + h) as isize);
+                            let lines = ds.read_lines(n + h);
                             let k = lines.len();
                             if k > h {
-                                (lines.get(k - h).unwrap().start - first_line.start) as i32
+                                lines.get((k - h).as_usize()).unwrap().start - first_line.start
                             } else {
-                                0
+                                Integer::zero()
                             }
                         } else {
                             log::warn!("Scroll {} lines failed, no matching line", num_of_lines);
-                            0
+                            Integer::zero()
                         }
                     } else if first_line.start > 0 {
                         if let Some(ds) = &self.datasource {
@@ -229,18 +224,18 @@ impl RootModel {
                             ds.set_offset(first_line.start);
                             ds.read_lines(num_of_lines);
                             let offset = ds.get_offset();
-                            offset as i32 - first_line.start as i32
+                            offset - first_line.start
                         } else {
                             log::warn!("Scroll {} lined failed: no datasource", num_of_lines);
-                            0
+                            Integer::zero()
                         }
                     } else {
                         log::warn!("Scroll {} lines not possible, cursor is at the beginning of the source", num_of_lines);
-                        0
+                        Integer::zero()
                     };
-                let starting_pont = &self.scroll_position.starting_point;
-                let shift = &self.scroll_position.shift + delta;
-                let new_scroll_position = ScrollPosition::new(*starting_pont, shift);
+                let starting_pont = self.scroll_position.starting_point;
+                let shift = self.scroll_position.shift + delta;
+                let new_scroll_position = ScrollPosition::new(starting_pont, shift);
                 return self.set_scroll_position(new_scroll_position)
             } else {
                 log::warn!("Scroll {} lines failed, no first line", num_of_lines);
@@ -251,12 +246,12 @@ impl RootModel {
         return false
     }
 
-    pub fn set_horizontal_scroll(&mut self, horizontal_scroll: usize) -> bool {
+    pub fn set_horizontal_scroll(&mut self, horizontal_scroll: Integer) -> bool {
         log::trace!("set_horizontal_scroll {}", horizontal_scroll);
         if self.horizontal_scroll < horizontal_scroll {
             if let Some(data) = &self.data {
                 let max_length = data.lines.iter()
-                    .take(self.viewport_size.height)
+                    .take(self.viewport_size.height.as_usize())
                     .map(|line| line.content.len())
                     .max();
                 log::trace!("set_horizontal_scroll max_length = {:?}", max_length);
@@ -278,11 +273,11 @@ impl RootModel {
         false
     }
 
-    pub fn get_horizontal_scroll(&self) -> usize {
+    pub fn get_horizontal_scroll(&self) -> Integer {
         self.horizontal_scroll
     }
 
-    fn set_cursor(&mut self, pos: u64) {
+    fn set_cursor(&mut self, pos: Integer) {
         if self.cursor != pos {
             self.cursor = pos;
             log::trace!("Cursor position set to {:?}", pos);
@@ -307,43 +302,43 @@ impl RootModel {
         self.move_cursor_to_offset(new_cursor_offset);
     }
 
-    pub fn move_cursor_to_offset(&mut self, pos: u64) -> bool {
+    pub fn move_cursor_to_offset(&mut self, pos: Integer) -> bool {
         self.set_cursor(pos);
         self.bring_cursor_into_view()
     }
 
-    fn move_cursor_vertically(&mut self, dy: isize, current_pos: Option<Dimension>) -> u64 {
+    fn move_cursor_vertically(&mut self, dy: Integer, current_pos: Option<Dimension>) -> Integer {
         log::trace!("move_cursor_vertically current_pos = {:?}, deltaY = {}", current_pos, dy);
         if let Some(pos) = current_pos {
             let calc_offset_in_line = |line: &Line| {
-                let line_offset = min(max(line.content.len(), 1) - 1, pos.width);
-                line.start + line_offset as u64
+                let line_offset = min(Integer::from(max(line.content.len(), 1) - 1), pos.width);
+                line.start + line_offset
             };
 
-            let y = pos.height as isize + dy;
+            let y = pos.height + dy;
             let data = self.data.as_ref().unwrap();
             let n = data.lines.len();
-            if y >= 0 && (y as usize) < n {
-                let line = data.lines.get(y as usize).unwrap();
+            if y >= 0 && y < n {
+                let line = data.lines.get(y.as_usize()).unwrap();
                 calc_offset_in_line(line)
             } else {
                 let mut datasource = self.datasource.as_ref().unwrap().get_mut_ref();
-                if y >= 0 && (y as usize) >= n {
-                    let y = y as usize - n;
+                if y >= n {
+                    let y = y - n;
                     datasource.set_offset(if n > 0 {
                         data.lines.last().unwrap().end + 1
                     } else {
-                        0
+                        0.into()
                     });
-                    let new_lines = datasource.read_lines((y + 1) as isize);
+                    let new_lines = datasource.read_lines(y + 1);
                     if y < new_lines.len() {
-                        let line = new_lines.get(y).unwrap();
+                        let line = new_lines.get(y.as_usize()).unwrap();
                         calc_offset_in_line(line)
                     } else {
                         new_lines.last()
                             .or_else(|| data.lines.last())
                             .map(calc_offset_in_line)
-                            .unwrap_or(0)
+                            .unwrap_or(0.into())
                     }
                 } else { // y < 0
                     datasource.set_offset(data.lines.first().unwrap().start);
@@ -360,22 +355,22 @@ impl RootModel {
         }
     }
 
-    fn move_cursor_horizontally(&mut self, dx: isize, current_pos: Option<Dimension>) -> u64 {
+    fn move_cursor_horizontally(&mut self, dx: Integer, current_pos: Option<Dimension>) -> Integer {
         if let Some(pos) = current_pos {
-            let mut x = pos.width as isize + dx;
+            let mut x = pos.width + dx;
             let mut line_no = pos.height;
             let data = self.data.as_ref().unwrap();
             let mut datasource = self.datasource.as_ref().unwrap().get_mut_ref();
-            let mut line = data.lines.get(pos.height).unwrap().clone();
+            let mut line = data.lines.get(pos.height.as_usize()).unwrap().clone();
             if x >= 0 {
                 loop {
-                    if (x as usize) < line.content.len() {
-                        break line.start + x as u64
+                    if x < line.content.len() {
+                        break line.start + x
                     }
-                    x -= line.content.len() as isize;
+                    x -= line.content.len();
                     line_no += 1;
                     if line_no < data.lines.len() {
-                        line = data.lines.get(line_no).unwrap().clone();
+                        line = data.lines.get(line_no.as_usize()).unwrap().clone();
                     } else {
                         datasource.set_offset(line.end + 1);
                         if let Some(next_line) = datasource.read_next_line() {
@@ -386,15 +381,15 @@ impl RootModel {
                     }
                 }
             } else {
-                let mut x = -x as usize;
-                let mut line_no = line_no as isize;
+                let mut x = -x;
+                let mut line_no = line_no;
                 loop {
                     if x == 0 {
                         break line.end
                     }
                     line_no -= 1;
                     if line_no >= 0 {
-                        line = data.lines.get(line_no as usize).unwrap().clone();
+                        line = data.lines.get(line_no.as_usize()).unwrap().clone();
                     } else {
                         datasource.set_offset(line.start);
                         if let Some(prev_line) = datasource.read_prev_line() {
@@ -404,9 +399,9 @@ impl RootModel {
                         }
                     }
                     if x < line.content.len() {
-                        break line.end - x as u64
+                        break line.end - x
                     } else {
-                        x -= line.content.len() as usize;
+                        x -= line.content.len();
                     }
                 }
             }
@@ -415,7 +410,7 @@ impl RootModel {
         }
     }
 
-    pub fn get_cursor(&self) -> u64 {
+    pub fn get_cursor(&self) -> Integer {
         self.cursor
     }
 
@@ -491,11 +486,11 @@ impl RootModel {
         let data = if let Some(datasource) = &self.datasource {
             let mut datasource = datasource.get_mut_ref();
             let source_length = datasource.get_length();
-            let offset = self.scroll_position.starting_point.mul(source_length).to_integer()
-                .wrapping_add(self.scroll_position.shift as u64);
+            let offset = (self.scroll_position.starting_point * source_length).to_integer()
+                + self.scroll_position.shift;
             log::info!("update_viewport_content offset = {}", offset);
             datasource.set_offset(offset);
-            let lines = datasource.read_lines(self.viewport_size.height as isize);
+            let lines = datasource.read_lines(self.viewport_size.height);
             log::trace!("update_viewport_content data: {:?}", &lines[..min(3, lines.len())]);
 
             // check if EOF is reached and viewport is not full
@@ -525,13 +520,13 @@ impl RootModel {
             let search = data.lines
                 .binary_search_by(|probe| probe.start.cmp(&self.cursor));
             match search {
-                Ok(n) => Some(Dimension::new(0, n)),
+                Ok(n) => Some(Dimension::new(0.into(), n.into())),
                 Err(0) => None,
                 Err(n) => {
                     let line = data.lines.get(n - 1).unwrap();
                     let x = self.cursor - line.start;
                     if n < line_count || (n == line_count && self.cursor <= line.end) {
-                        Some(Dimension::new(x as usize, n - 1))
+                        Some(Dimension::new(x, Integer::from(n) - 1))
                     } else {
                         None
                     }
@@ -548,15 +543,15 @@ impl RootModel {
     }
 
     /// Makes `offset` visible, adjusting vertical and horizontal scroll if necessary
-    fn bring_into_view(&mut self, offset: u64) -> bool {
+    fn bring_into_view(&mut self, offset: Integer) -> bool {
         log::trace!("bring_into_view(offset={})", offset);
         // if let Some(mut datasource) = self.get_datasource_ref() {
 
         let mut datasource = self.get_datasource_ref().unwrap();
-            let calc_horizontal_scroll = |line: &Line, off: u64| {
+            let calc_horizontal_scroll = |line: &Line, off: Integer| {
                 let h = self.horizontal_scroll;
                 let w = self.viewport_size.width;        
-                let local_offset = (off - line.start) as usize;
+                let local_offset = off - line.start;
                 if local_offset < h {
                     local_offset
                 } else if local_offset >= h + w {
@@ -567,8 +562,8 @@ impl RootModel {
             };
 
             if let Some(data) = self.data.as_ref() {
-                let start_offset = data.lines.first().map(|line| line.start).unwrap_or(0);
-                let end_offset = data.lines.last().map(|line| line.end).unwrap_or(0);
+                let start_offset = data.lines.first().map(|line| line.start).unwrap_or(0.into());
+                let end_offset = data.lines.last().map(|line| line.end).unwrap_or(0.into());
                 log::trace!(target: "bring_into_view", "Data present: {} -> {}", start_offset, end_offset);
                 if start_offset <= offset && offset <= end_offset {
                     let search_result = data.lines.binary_search_by_key(&offset, |line| line.start);
@@ -586,7 +581,7 @@ impl RootModel {
                     // currently assume it is small
                     if start_offset - offset < OFFSET_THRESHOLD {
                         datasource.set_offset(start_offset);
-                        let mut i = 0;
+                        let mut i = Integer::zero();
                         let success = loop {
                             if let Some(line) = datasource.read_prev_line() {
                                 i -= 1;
@@ -613,7 +608,7 @@ impl RootModel {
                     log::trace!("bring_into_view 3rd case. (offset - end) = {}", offset - end_offset);
                     if offset - end_offset < OFFSET_THRESHOLD {
                         datasource.set_offset(end_offset + 1);
-                        let mut i = 0;
+                        let mut i = Integer::zero();
                         let success = loop {
                             if let Some(line) = datasource.read_next_line() {
                                 i += 1;
@@ -641,9 +636,9 @@ impl RootModel {
                 let line_offset = datasource.set_offset(offset);
                 let horizontal_scroll = datasource.read_next_line()
                     .map(|line| calc_horizontal_scroll(&line, offset))
-                    .unwrap_or(0);
+                    .unwrap_or(Integer::zero());
                 drop(datasource);
-                let scroll_position = ScrollPosition::new(Ratio::new(line_offset, self.file_size), 0);
+                let scroll_position = ScrollPosition::new(Ratio::new(line_offset, self.file_size), Integer::zero());
                 // TODO will be implemented using futures chain
                 self.scroll_position = scroll_position;
                 self.horizontal_scroll = horizontal_scroll;
@@ -658,37 +653,37 @@ impl RootModel {
         self.datasource.as_ref().map(|ds| ds.get_mut_ref())
     }
 
-    fn scroll_forcibly(&mut self, offset: u64) -> bool {
+    fn scroll_forcibly(&mut self, offset: Integer) -> bool {
         let mut datasource = self.get_datasource_ref().unwrap();
         let mut new_offset = datasource.set_offset(offset);
         let h = self.viewport_size.height;
-        let lines_below = datasource.read_lines(h as isize);
+        let lines_below = datasource.read_lines(h);
         if lines_below.len() < h {
             let k = h - lines_below.len();
             datasource.set_offset(new_offset);
-            datasource.read_lines(-(k as isize));
+            datasource.read_lines(-k);
             new_offset = datasource.get_offset();
         }
         let scroll_starting_point = Ratio::new(new_offset, datasource.get_length());
         drop(datasource);
-        self.set_scroll_position(ScrollPosition::new(scroll_starting_point, 0))
+        self.set_scroll_position(ScrollPosition::new(scroll_starting_point, 0.into()))
     }
 }
 
 impl Dimension {
-    fn new(width: usize, height: usize) -> Self {
+    fn new(width: Integer, height: Integer) -> Self {
         Dimension { width, height }
     }
 }
 
 impl Default for Dimension {
     fn default() -> Self {
-        Dimension::new(0, 0)
+        Dimension::new(0.into(), 0.into())
     }
 }
 
 impl ScrollPosition {
-    fn new(starting_point: Ratio<u64>, shift: i32) -> Self {
+    fn new(starting_point: Ratio<Integer>, shift: Integer) -> Self {
         ScrollPosition {
             starting_point,
             shift,
@@ -698,7 +693,7 @@ impl ScrollPosition {
 
 impl Default for ScrollPosition {
     fn default() -> Self {
-        ScrollPosition::new(Ratio::new(0, 1), 0)
+        ScrollPosition::new(Ratio::zero(), 0.into())
     }
 }
 

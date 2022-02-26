@@ -1,8 +1,10 @@
-pub fn sign(n: isize) -> (usize, i8) {
+use fluent_integer::Integer;
+
+pub fn sign(n: Integer) -> (Integer, i8) {
     if n >= 0 {
-        (n as usize, 1)
+        (n, 1)
     } else {
-        (-n as usize, -1)
+        (-n, -1)
     }
 }
 

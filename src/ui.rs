@@ -1,5 +1,4 @@
-use std::io::BufRead;
-
+use std::convert::TryInto;
 use cursive::View;
 use cursive::views::{LinearLayout, TextView, Canvas, NamedView};
 use cursive::traits::{Nameable, Resizable};
@@ -9,6 +8,8 @@ use cursive::view::Selector;
 use cursive::theme::{Style, ColorStyle, Theme};
 use cursive::theme::PaletteColor::{HighlightText, Primary};
 use cursive::utils::span::{SpannedStr, IndexedSpan, SpannedString, IndexedCow};
+use num_traits::{One, Zero};
+use fluent_integer::Integer;
 
 pub enum UIElementName {
     MainContent,
@@ -77,14 +78,14 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
     Canvas::new(model.clone())
         .with_draw(|state, printer| {
             let mut state = state.get_mut();
-            state.set_viewport_size(printer.size.x, printer.size.y);
+            state.set_viewport_size(Integer::from(printer.size.x), Integer::from(printer.size.y));
 
             if let Some(data) = state.data() {
                 let palette = Theme::default().palette;
                 let regular_style = Style::from(ColorStyle::new(palette[Primary], palette[HighlightText]));
                 let cursor_style = Style::from(ColorStyle::new(palette[HighlightText], palette[Primary]));
 
-                let horizontal_scroll = state.get_horizontal_scroll();
+                let horizontal_scroll = state.get_horizontal_scroll().as_usize();
                 let cursor = state.get_cursor_on_screen();
                 data.lines.iter()
                     .take(printer.size.y)
@@ -123,13 +124,13 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                 Event::Ctrl(Key::Down) => {
                     log::info!("Ctrl+Down pressed");
                     let mut state = state.get_mut();
-                    state.scroll(1);
+                    state.scroll(Integer::one());
                     EventResult::Consumed(None)
                 },
                 Event::Ctrl(Key::Up) => {
                     log::info!("Ctrl+Up pressed");
                     let mut state = state.get_mut();
-                    state.scroll(-1);
+                    state.scroll(Integer::from(-1));
                     EventResult::Consumed(None)
                 },
                 Event::Ctrl(Key::Left) => {
@@ -173,7 +174,7 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                 },
                 Event::Key(Key::PageDown) => {
                     let mut state = state.get_mut();
-                    let h = state.get_viewport_size().height as isize;
+                    let h = state.get_viewport_size().height;
                     if state.scroll(h) {
                         let p = state.data()
                             .and_then(|data| data.lines.first())
@@ -193,7 +194,7 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                 },
                 Event::Key(Key::PageUp) => {
                     let mut state = state.get_mut();
-                    let h = state.get_viewport_size().height as isize;
+                    let h = state.get_viewport_size().height;
                     if state.scroll(-h) {
                         let p = state.data()
                             .and_then(|data| data.lines.first())
@@ -216,7 +217,7 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                     match state.get_cursor_on_screen() {
                         Some(Dimension {height: h, width: _} ) => {
                             let p = state.data()
-                                .and_then(|data| data.lines.get(h))
+                                .and_then(|data| data.lines.get(h.as_usize()))
                                 .map(|line| line.start);
                             if let Some(p) = p {
                                 state.move_cursor_to_offset(p);
@@ -231,9 +232,9 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                 Event::Key(Key::End) => {
                     let mut state = state.get_mut();
                     match state.get_cursor_on_screen() {
-                        Some(Dimension {height: h, width: w} ) => {
+                        Some(Dimension {height: h, width: _} ) => {
                             let p = state.data()
-                                .and_then(|data| data.lines.get(h))
+                                .and_then(|data| data.lines.get(h.as_usize()))
                                 .map(|line| line.end);
                             if let Some(p) = p {
                                 state.move_cursor_to_offset(p - 1);
@@ -247,7 +248,7 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                 },
                 Event::Ctrl(Key::Home) => {
                     let mut state = state.get_mut();
-                    state.move_cursor_to_offset(0);
+                    state.move_cursor_to_offset(Integer::zero());
                     EventResult::Consumed(None)
                 },
                 Event::Ctrl(Key::End) => {
@@ -269,7 +270,11 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
         .with_name(UIElementName::MainContent)
 }
 
-fn indexed_span<T>(start: usize, end: usize, attr: T) -> IndexedSpan<T> {
+fn indexed_span<T, I1, I2>(start: I1, end: I2, attr: T) -> IndexedSpan<T>
+    where I1: TryInto<usize>, I2: TryInto<usize>
+{
+    let start = start.try_into().unwrap_or(0);
+    let end = end.try_into().unwrap_or(0);
     IndexedSpan {
         content: IndexedCow::Borrowed {
             start, end

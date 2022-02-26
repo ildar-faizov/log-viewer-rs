@@ -6,19 +6,22 @@ use std::fs::File;
 use std::cmp::min;
 use crate::utils;
 use std::cell::RefMut;
+use std::ops::Neg;
+use num_traits::One;
+use fluent_integer::Integer;
 use crate::shared::Shared;
 
-pub const BUFFER_SIZE: u64 = 8192;
+pub const BUFFER_SIZE: usize = 8192;
 
 #[derive(Debug, Default, Clone)]
 pub struct Line {
     pub content: String, // TODO use appropriate type
-    pub start: u64, // offset of the first symbol in line
-    pub end: u64 // offset of the first symbol of the next line
+    pub start: Integer, // offset of the first symbol in line
+    pub end: Integer // offset of the first symbol of the next line
 }
 
 impl Line {
-    pub fn default_at(start: u64) -> Self {
+    pub fn default_at(start: Integer) -> Self {
         let mut line = Line::default();
         line.start = start;
         line
@@ -32,20 +35,20 @@ pub struct Data {
 
 pub trait DataSource {
 
-    fn length(&self) -> Result<u64, Error>;
+    fn length(&self) -> Result<Integer, Error>;
 
     /*
      * Returns integer number of lines (Data.lines) and correct offset of
      * the returned data (Data.offset), which is not greater than the offset passed
      * to the function
      */
-    fn data(&self, offset: u64, length: u64) -> Result<Data, Error>; // TODO will become Future/Promise
+    fn data(&self, offset: Integer, length: Integer) -> Result<Data, Error>; // TODO will become Future/Promise
 
     fn receiver(&self) -> &Receiver<DataSourceUpdateEvent>;
 }
 
 pub enum DataSourceUpdateEvent {
-    LengthUpdated(u64),
+    LengthUpdated(Integer),
     DataUpdated
 }
 
@@ -65,26 +68,22 @@ impl FileSource {
         }
     }
 
-    fn seek_to_line_start(f: &mut BufReader<File>, offset: u64) -> u64 {
+    fn seek_to_line_start(f: &mut BufReader<File>, offset: Integer) -> Integer {
         log::trace!("FileSource#seek_to_line_start offset={}", offset);
         let mut offset = offset;
-        let mut buffer = [0 as u8; BUFFER_SIZE as usize];
+        let mut buffer = [0 as u8; BUFFER_SIZE];
         loop {
             log::trace!("FileSource#seek_to_line_start loop offset={}", offset);
-            let delta = if offset >= BUFFER_SIZE {
-                BUFFER_SIZE
-            } else {
-                offset
-            };
+            let delta = min(offset, BUFFER_SIZE.into());
             if delta == 0 {
                 break;
             }
-            offset = f.seek(SeekFrom::Current(-1 * (delta as i64))).unwrap();
-            let bytes_read = f.take(delta).read(&mut buffer).unwrap();
+            offset = f.seek(SeekFrom::Current(delta.neg().as_i64())).unwrap().into();
+            let bytes_read = f.take(delta.as_u64()).read(&mut buffer).unwrap();
             for i in (0..bytes_read).rev() {
                 if buffer[i] == '\n' as u8 {
-                    let result = offset + (i + 1) as u64;
-                    let pos = f.seek(SeekFrom::Current(i as i64 - bytes_read as i64 + 1)).unwrap();
+                    let result = offset + i + 1;
+                    let pos = f.seek(SeekFrom::Current((Integer::from(i) - bytes_read + Integer::one()).as_i64())).unwrap();
                     log::trace!("FileSource#seek_to_line_start return {} file_pos={}", result, pos);
                     return result
                 }
@@ -97,25 +96,25 @@ impl FileSource {
 
 impl DataSource for FileSource {
 
-    fn length(&self) -> Result<u64, Error> {
-        Ok(std::fs::metadata(self.file_name.as_path())?.len())
+    fn length(&self) -> Result<Integer, Error> {
+        Ok(std::fs::metadata(self.file_name.as_path())?.len().into())
     }
 
-    fn data(&self, offset: u64, length: u64) -> Result<Data, Error> {
+    fn data(&self, offset: Integer, length: Integer) -> Result<Data, Error> {
         log::trace!("FileSource#data offset={}, length={}", offset, length);
         let mut f = BufReader::new(File::open(&self.file_name)?);
-        f.seek(Start(offset))?;
+        f.seek(Start(offset.as_u64()))?;
         let start_offset = FileSource::seek_to_line_start(&mut f, offset);
         let length = offset - start_offset + length;
         let end_offset = start_offset + length;
         log::trace!("FileSource#data offset={}, length={}", start_offset, length);
         let mut offset = start_offset;
-        let mut buffer = [0 as u8; BUFFER_SIZE as usize];
+        let mut buffer = [0 as u8; BUFFER_SIZE];
         let mut lines = vec![];
         let mut line = Line::default_at(offset);
         loop {
             let bytes_read = if offset < end_offset {
-                (&mut f).take(end_offset - offset).read(&mut buffer).unwrap_or(0)
+                (&mut f).take((end_offset - offset).as_u64()).read(&mut buffer).unwrap_or(0)
             } else {
                 0
             };
@@ -158,31 +157,31 @@ impl DataSource for FileSource {
 pub trait LineSource {
 
     /// Returns current offset
-    fn get_offset(&self) -> u64;
+    fn get_offset(&self) -> Integer;
 
     /// Sets offset to the nearest preceding beginning of line, returning it
-    fn set_offset(&mut self, offset: u64) -> u64;
+    fn set_offset(&mut self, offset: Integer) -> Integer;
 
     /// Returns length
-    fn get_length(&self) -> u64;
+    fn get_length(&self) -> Integer;
 
     /// Reads requested number of lines in any direction
-    fn read_lines(&mut self, number_of_lines: isize) -> Vec<Line>;
+    fn read_lines(&mut self, number_of_lines: Integer) -> Vec<Line>;
 
     /// Reads next line
     fn read_next_line(&mut self) -> Option<Line> {
-        self.read_lines(1).pop()
+        self.read_lines(Integer::one()).pop()
     }
 
     /// Reads previous line
     fn read_prev_line(&mut self) -> Option<Line> {
-        self.read_lines(-1).pop()
+        self.read_lines(Integer::from(-1)).pop()
     }
 }
 
 pub struct LineSourceImpl {
     file_name: PathBuf,
-    offset: u64,
+    offset: Integer,
     file_reader: Option<Shared<BufReader<File>>>
 }
 
@@ -190,7 +189,7 @@ impl LineSourceImpl {
     pub fn new(file_name: PathBuf) -> Self {
         LineSourceImpl {
             file_name,
-            offset: 0,
+            offset: 0.into(),
             file_reader: None
         }
     }
@@ -212,27 +211,27 @@ impl LineSourceImpl {
 }
 
 impl LineSource for LineSourceImpl {
-    fn get_offset(&self) -> u64 {
+    fn get_offset(&self) -> Integer {
         self.offset
     }
 
-    fn set_offset(&mut self, offset: u64) -> u64 {
+    fn set_offset(&mut self, offset: Integer) -> Integer {
         let result = self.with_file_reader(|mut f| {
-            let offset = f.seek(SeekFrom::Start(offset)).unwrap();
-            FileSource::seek_to_line_start(&mut *f, offset)
+            let offset = f.seek(SeekFrom::Start(offset.as_u64())).unwrap();
+            FileSource::seek_to_line_start(&mut *f, offset.into())
         });
         self.offset = result;
         log::trace!("set_offset {} -> {}", offset, result);
         result
     }
 
-    fn get_length(&self) -> u64 {
-        std::fs::metadata(self.file_name.as_path()).unwrap().len()
+    fn get_length(&self) -> Integer {
+        std::fs::metadata(self.file_name.as_path()).unwrap().len().into()
     }
 
-    fn read_lines(&mut self, number_of_lines: isize) -> Vec<Line> {
+    fn read_lines(&mut self, number_of_lines: Integer) -> Vec<Line> {
         log::trace!("read_lines number_of_lines = {}, offset = {}", number_of_lines, self.offset);
-        let mut result = Vec::with_capacity(number_of_lines.abs() as usize);
+        let mut result = Vec::with_capacity(number_of_lines.abs().as_usize());
         let mut offset = self.offset;
         self.with_file_reader(|mut f| {
             if number_of_lines > 0 {
@@ -257,22 +256,22 @@ impl LineSource for LineSourceImpl {
                     }
                 }
             } else if number_of_lines < 0 {
-                let number_of_lines = (-1 * number_of_lines) as usize;
+                let number_of_lines = -1 * number_of_lines;
 
-                let mut stack = Vec::with_capacity(BUFFER_SIZE as usize);
-                let mut buf = [0 as u8; BUFFER_SIZE as usize];
+                let mut stack = Vec::with_capacity(BUFFER_SIZE);
+                let mut buf = [0 as u8; BUFFER_SIZE];
                 loop {
-                    let delta = min(offset, BUFFER_SIZE);
+                    let delta = min(offset, BUFFER_SIZE.into());
                     // log::trace!("read_lines offset = {}, delta = {}", offset, delta);
-                    let file_offset = f.seek(SeekFrom::Current(delta as i64 * -1)).unwrap();
+                    f.seek(SeekFrom::Current((-delta).as_i64())).unwrap();
                     let bytes_read = {
-                        f.by_ref().take(delta).read(&mut buf).unwrap()
+                        f.by_ref().take(delta.as_u64()).read(&mut buf).unwrap()
                     };
                     // log::trace!("read_lines file_offset={} bytes_read={}", file_offset, bytes_read);
                     for i in (0..bytes_read).rev() {
                         if buf[i] == 0x0A && !stack.is_empty() {
                             let mut current_stack = stack;
-                            stack = Vec::with_capacity(BUFFER_SIZE as usize);
+                            stack = Vec::with_capacity(BUFFER_SIZE);
                             current_stack.reverse();
                             let line_length = current_stack.len() as u64;
                             let line_offset = offset - line_length;
@@ -296,7 +295,7 @@ impl LineSource for LineSourceImpl {
                         break;
                     }
                 }
-                f.seek(SeekFrom::Start(offset)).unwrap();
+                f.seek(SeekFrom::Start(offset.as_u64())).unwrap();
 
                 result.reverse();
             }
