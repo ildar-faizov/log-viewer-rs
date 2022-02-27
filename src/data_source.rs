@@ -284,7 +284,7 @@ impl LineSource for LineSourceImpl {
                             });
                             offset = line_offset;
                             // log::trace!("read_lines line {:?}, offset = {}", result.last(), offset);
-                            if result.len() == number_of_lines {
+                            if offset == 0 || result.len() == number_of_lines {
                                 break;
                             }
                         }
