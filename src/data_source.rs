@@ -273,14 +273,14 @@ impl LineSource for LineSourceImpl {
                             let mut current_stack = stack;
                             stack = Vec::with_capacity(BUFFER_SIZE);
                             current_stack.reverse();
-                            let line_length = current_stack.len() as u64;
+                            let line_length = current_stack.len();
                             let line_offset = offset - line_length;
                             let mut raw_string = String::from_utf8(current_stack).unwrap();
                             let b = utils::trim_newline(&mut raw_string);
                             result.push(Line {
                                 content: raw_string,
                                 start: line_offset,
-                                end: line_offset + line_length - b as u64
+                                end: line_offset + line_length - b
                             });
                             offset = line_offset;
                             // log::trace!("read_lines line {:?}, offset = {}", result.last(), offset);
