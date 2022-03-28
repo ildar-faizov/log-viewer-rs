@@ -7,6 +7,7 @@ mod ui;
 mod data_source;
 mod utils;
 mod shared;
+mod selection;
 
 use cursive::{CursiveRunnable, CursiveRunner, View};
 use cursive::views::{TextView, ViewRef, Canvas};

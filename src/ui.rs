@@ -6,10 +6,11 @@ use crate::model::{RootModelRef, CursorShift, Dimension};
 use cursive::event::{Event, EventResult, Key};
 use cursive::view::Selector;
 use cursive::theme::{Style, ColorStyle, Theme};
-use cursive::theme::PaletteColor::{HighlightText, Primary};
+use cursive::theme::PaletteColor::{HighlightText, Primary, Secondary};
 use cursive::utils::span::{SpannedStr, IndexedSpan, SpannedString, IndexedCow};
 use num_traits::{One, Zero};
 use fluent_integer::Integer;
+use crate::utils;
 
 pub enum UIElementName {
     MainContent,
@@ -84,6 +85,7 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                 let palette = Theme::default().palette;
                 let regular_style = Style::from(ColorStyle::new(palette[Primary], palette[HighlightText]));
                 let cursor_style = Style::from(ColorStyle::new(palette[HighlightText], palette[Primary]));
+                let selection_style = Style::from(ColorStyle::new(palette[HighlightText], palette[Secondary]));
 
                 let horizontal_scroll = state.get_horizontal_scroll().as_usize();
                 let cursor = state.get_cursor_on_screen();
@@ -93,22 +95,32 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                     .filter(|(_, line)| line.content.len() > horizontal_scroll)
                     .map(|(i, line)| {
                         let slice = &line.content.as_str()[horizontal_scroll..];
-                        let mut spans = vec![];
+                        let selection = state.get_selection();
+                        let mut intervals: Vec<(Integer, Integer, &str)> = vec![(Integer::from(0), Integer::from(slice.len()), "main")];
                         if let Some(cursor) = cursor {
                             if cursor.height == i {
-                                let w = cursor.width;
-                                if w > 0 {
-                                    spans.push(indexed_span(0, w, regular_style));
-                                }
-                                spans.push(indexed_span(w, w + 1, cursor_style));
-                                if w + 1 < slice.len() {
-                                    spans.push(indexed_span(w + 1, slice.len(), regular_style));
-                                }
-                                log::trace!("w = {}; spans = {:?}", w, spans);
+                                intervals.push((cursor.width.into(), cursor.width + 1, "cursor"));
                             }
                         }
-                        if spans.is_empty() {
-                            spans.push(IndexedSpan::simple_borrowed(slice, regular_style));
+                        if let Some(selection) = selection {
+                            let slice_offset = line.start + horizontal_scroll;
+                            if selection.start <= line.end && selection.end >= slice_offset {
+                                intervals.push((selection.start - slice_offset, selection.end - slice_offset, "selection"));
+                            }
+                        }
+                        let disjoint_intervals = utils::disjoint_intervals(&intervals);
+                        let mut spans = vec![];
+                        for interval in disjoint_intervals {
+                            if interval.2.contains(&"main") {
+                                let style = if interval.2.contains(&"cursor") {
+                                    cursor_style
+                                } else if interval.2.contains(&"selection") {
+                                    selection_style
+                                } else {
+                                    regular_style
+                                };
+                                spans.push(indexed_span(interval.0, interval.1, style));
+                            }
                         }
                         (i, SpannedString::with_spans(slice, spans))
                     })
@@ -154,22 +166,42 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                 },
                 Event::Key(Key::Down) => {
                     let mut state = state.get_mut();
-                    state.move_cursor(CursorShift::down());
+                    state.move_cursor(CursorShift::down(), false);
                     EventResult::Consumed(None)
                 },
                 Event::Key(Key::Up) => {
                     let mut state = state.get_mut();
-                    state.move_cursor(CursorShift::up());
+                    state.move_cursor(CursorShift::up(), false);
                     EventResult::Consumed(None)
                 },
                 Event::Key(Key::Left) => {
                     let mut state = state.get_mut();
-                    state.move_cursor(CursorShift::left());
+                    state.move_cursor(CursorShift::left(), false);
                     EventResult::Consumed(None)
                 },
                 Event::Key(Key::Right) => {
                     let mut state = state.get_mut();
-                    state.move_cursor(CursorShift::right());
+                    state.move_cursor(CursorShift::right(), false);
+                    EventResult::Consumed(None)
+                },
+                Event::Shift(Key::Down) => {
+                    let mut state = state.get_mut();
+                    state.move_cursor(CursorShift::down(), true);
+                    EventResult::Consumed(None)
+                },
+                Event::Shift(Key::Up) => {
+                    let mut state = state.get_mut();
+                    state.move_cursor(CursorShift::up(), true);
+                    EventResult::Consumed(None)
+                },
+                Event::Shift(Key::Left) => {
+                    let mut state = state.get_mut();
+                    state.move_cursor(CursorShift::left(), true);
+                    EventResult::Consumed(None)
+                },
+                Event::Shift(Key::Right) => {
+                    let mut state = state.get_mut();
+                    state.move_cursor(CursorShift::right(), true);
                     EventResult::Consumed(None)
                 },
                 Event::Key(Key::PageDown) => {
@@ -180,14 +212,14 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                             .and_then(|data| data.lines.first())
                             .map(|line| line.start);
                         if let Some(p) = p {
-                            state.move_cursor_to_offset(p);
+                            state.move_cursor_to_offset(p, false);
                         }
                     } else {
                         let p = state.data()
                             .and_then(|data| data.lines.last())
                             .map(|line| line.start);
                         if let Some(p) = p {
-                            state.move_cursor_to_offset(p);
+                            state.move_cursor_to_offset(p, false);
                         }
                     }
                     EventResult::Consumed(None)
@@ -200,14 +232,14 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                             .and_then(|data| data.lines.first())
                             .map(|line| line.start);
                         if let Some(p) = p {
-                            state.move_cursor_to_offset(p);
+                            state.move_cursor_to_offset(p, false);
                         }
                     } else {
                         let p = state.data()
                             .and_then(|data| data.lines.first())
                             .map(|line| line.start);
                         if let Some(p) = p {
-                            state.move_cursor_to_offset(p);
+                            state.move_cursor_to_offset(p, false);
                         }
                     }
                     EventResult::Consumed(None)
@@ -220,7 +252,7 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                                 .and_then(|data| data.lines.get(h.as_usize()))
                                 .map(|line| line.start);
                             if let Some(p) = p {
-                                state.move_cursor_to_offset(p);
+                                state.move_cursor_to_offset(p, false);
                                 EventResult::Consumed(None)
                             } else {
                                 EventResult::Ignored
@@ -237,7 +269,7 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                                 .and_then(|data| data.lines.get(h.as_usize()))
                                 .map(|line| line.end);
                             if let Some(p) = p {
-                                state.move_cursor_to_offset(p - 1);
+                                state.move_cursor_to_offset(p - 1, false);
                                 EventResult::Consumed(None)
                             } else {
                                 EventResult::Ignored
@@ -248,7 +280,7 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                 },
                 Event::Ctrl(Key::Home) => {
                     let mut state = state.get_mut();
-                    state.move_cursor_to_offset(Integer::zero());
+                    state.move_cursor_to_offset(Integer::zero(), false);
                     EventResult::Consumed(None)
                 },
                 Event::Ctrl(Key::End) => {
@@ -258,6 +290,11 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                     } else {
                         EventResult::Ignored
                     }
+                },
+                Event::CtrlChar('a') => {
+                    let mut state = state.get_mut();
+                    state.select_all();
+                    EventResult::Consumed(None)
                 },
                 Event::Char('q') => {
                     let state = state.get_mut();

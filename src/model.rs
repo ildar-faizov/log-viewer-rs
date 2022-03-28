@@ -12,6 +12,7 @@ use std::cmp::{max, min};
 use std::option::Option::Some;
 use fluent_integer::Integer;
 use num_traits::identities::Zero;
+use crate::selection::Selection;
 use crate::utils;
 use crate::shared::Shared;
 
@@ -103,6 +104,7 @@ pub struct RootModel {
     scroll_position: ScrollPosition,
     horizontal_scroll: Integer,
     cursor: Integer,
+    selection: Option<Box<Selection>>,
     datasource: Option<Shared<Box<dyn LineSource>>>,
     error: Option<Box<dyn ToString>>,
 }
@@ -129,6 +131,7 @@ impl RootModel {
             scroll_position: ScrollPosition::default(),
             horizontal_scroll: 0.into(),
             cursor: 0.into(),
+            selection: None,
             datasource: None,
             error: None,
         }
@@ -286,7 +289,7 @@ impl RootModel {
     }
 
     // TODO depends on encoding, assume ASCII now
-    pub fn move_cursor(&mut self, delta: CursorShift) {
+    pub fn move_cursor(&mut self, delta: CursorShift, adjust_selection: bool) {
         log::trace!("move_cursor delta = {:?}", delta);
         let current_pos = self.get_cursor_in_cache();
         log::trace!("move_cursor pos = {} -> on_screen = {:?}", self.cursor, current_pos);
@@ -299,10 +302,25 @@ impl RootModel {
             todo!("Moving cursor simultaneously vertically and horizontally is not supported")
         };
 
-        self.move_cursor_to_offset(new_cursor_offset);
+        self.move_cursor_to_offset(new_cursor_offset, adjust_selection);
     }
 
-    pub fn move_cursor_to_offset(&mut self, pos: Integer) -> bool {
+    pub fn move_cursor_to_offset(&mut self, pos: Integer, adjust_selection: bool) -> bool {
+        if let Some(selection) = self.get_selection() {
+            if adjust_selection {
+                if self.cursor == selection.end {
+                    self.set_selection(Selection::create(selection.start, pos));
+                } else if self.cursor == selection.start {
+                    self.set_selection(Selection::create(pos, selection.end));
+                } else {
+                    log::warn!("Inconsistent situation cursor is neither in the beginning nor in the end of selection. Cursor {}, selection: {:?}", self.cursor, selection);
+                }
+            } else {
+                self.reset_selection();
+            }
+        } else if adjust_selection {
+            self.set_selection(Selection::create(self.cursor, pos));
+        }
         self.set_cursor(pos);
         self.bring_cursor_into_view()
     }
@@ -447,9 +465,33 @@ impl RootModel {
                 }
             });
         match offset {
-            Some(offset) => self.move_cursor_to_offset(offset),
+            Some(offset) => self.move_cursor_to_offset(offset, false),
             None => false
         }
+    }
+
+    pub fn get_selection(&self) -> Option<Selection> {
+        self.selection.as_ref().map(|b| *b.clone())
+    }
+
+    fn set_selection(&mut self, selection: Option<Box<Selection>>) {
+        self.selection = selection;
+        // TODO: emit event
+    }
+
+    pub fn select_all(&mut self) {
+        let length = self.get_datasource_ref().map(|ds| ds.get_length());
+        if let Some(length) = length {
+            self.set_selection(Some(Box::new(Selection {
+                start: Integer::zero(),
+                end: length
+            })));
+            self.move_cursor_to_offset(Integer::zero(), false); // TODO: use set_cursor and do not scroll, when cursor out of viewport is supported
+        }
+    }
+
+    fn reset_selection(&mut self) {
+        self.set_selection(None);
     }
 
     fn set_error(&mut self, err: Box<dyn ToString>) {
