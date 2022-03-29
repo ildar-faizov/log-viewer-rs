@@ -23,6 +23,7 @@ use crate::model::ModelEvent::*;
 use cursive::direction::Direction;
 use std::fs::OpenOptions;
 use std::panic;
+use cursive::event::Event;
 use log4rs::append::file::FileAppender;
 use log4rs::encode::pattern::PatternEncoder;
 use log4rs::Config;
@@ -106,6 +107,7 @@ fn run_ui(receiver: Receiver<ModelEvent>, model: RootModel) {
 	let model_ref = RootModelRef::new(model);
 
 	let mut app = cursive::default().into_runner();
+	app.clear_global_callbacks(Event::CtrlChar('c')); // Ctrl+C is for copy
 
 	app.add_fullscreen_layer(build_ui(model_ref.clone()));
 	app.set_user_data(model_ref);

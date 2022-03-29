@@ -6,7 +6,7 @@ use std::fs::File;
 use std::cmp::min;
 use crate::utils;
 use std::cell::RefMut;
-use std::ops::Neg;
+use std::ops::{Add, Neg};
 use num_traits::One;
 use fluent_integer::Integer;
 use crate::shared::Shared;
@@ -177,6 +177,8 @@ pub trait LineSource {
     fn read_prev_line(&mut self) -> Option<Line> {
         self.read_lines(Integer::from(-1)).pop()
     }
+
+    fn read_raw(&self, start: Integer, end: Integer) -> Result<String, ()>;
 }
 
 pub struct LineSourceImpl {
@@ -305,4 +307,20 @@ impl LineSource for LineSourceImpl {
         result
     }
 
+    fn read_raw(&self, start: Integer, end: Integer) -> Result<String, ()> {
+        let mut f = BufReader::new(File::open(&self.file_name).unwrap());
+        f.seek(SeekFrom::Start(start.as_u64()));
+        let mut f = f.take((end - start).as_u64());
+        let mut buf = [0 as u8; BUFFER_SIZE];
+        let mut result = String::new();
+        loop {
+            let bytes_read = f.read(&mut buf);
+            match bytes_read {
+                Ok(0) => break,
+                Ok(bytes_read) => result.push_str(&*String::from_utf8(Vec::from(&buf[0..bytes_read])).unwrap()),
+                Err(_) => break
+            }
+        }
+        Ok(result)
+    }
 }

@@ -490,6 +490,18 @@ impl RootModel {
         }
     }
 
+    pub fn get_selected_content(&self) -> Option<String> {
+        self.get_selection().and_then(|selection| {
+            self.get_datasource_ref().and_then(|datasource| {
+                let result = datasource.read_raw(selection.start, selection.end);
+                match result {
+                    Ok(s) => Some(s),
+                    Err(_) => None
+                }
+            })
+        })
+    }
+
     fn reset_selection(&mut self) {
         self.set_selection(None);
     }
@@ -544,7 +556,7 @@ impl RootModel {
                 })
             }
         } else {
-            panic!(String::from("Data source is not set"));
+            panic!("Data source is not set");
         };
         match data {
             Some(data) => {

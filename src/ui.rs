@@ -296,6 +296,14 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                     state.select_all();
                     EventResult::Consumed(None)
                 },
+                Event::CtrlChar('c') => {
+                    log::trace!("Copying selection to clipboard");
+                    let mut state = state.get_mut();
+                    if let Some(content) = state.get_selected_content() {
+                        terminal_clipboard::set_string(content).unwrap();
+                    }
+                    EventResult::Ignored
+                },
                 Event::Char('q') => {
                     let state = state.get_mut();
                     state.quit();

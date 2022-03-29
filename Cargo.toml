@@ -2,21 +2,22 @@
 name = "logv"
 version = "0.1.0"
 authors = ["Ildar Faizov <ildar.faizov@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-termion = "*"
-cursive = "*"
+log = "0.4.16"
+log4rs = "1.0.0"
+termion = "1.5.6"
+cursive = "0.17.0"
 clap = "~2.33"
-crossbeam-channel = "0.5.1"
+crossbeam-channel = "0.5.4"
 uuid = { version = "0.8", features = ["v4"] }
 num-rational = "*"
-log = "~0.4"
-log4rs = "*"
 fluent-integer = { path = "../fluent-integer"}
-num-traits = "*" # TODO transitive dependencies?
+num-traits = "0.2.14" # TODO transitive dependencies?
+terminal-clipboard = "0.3.1"
 
 #[dependencies.cursive]
 #version = "*"
