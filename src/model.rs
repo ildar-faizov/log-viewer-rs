@@ -486,7 +486,7 @@ impl RootModel {
                 start: Integer::zero(),
                 end: length
             })));
-            self.move_cursor_to_offset(Integer::zero(), false); // TODO: use set_cursor and do not scroll, when cursor out of viewport is supported
+            self.move_cursor_to_offset(Integer::zero(), true); // TODO: use set_cursor and do not scroll, when cursor out of viewport is supported
         }
     }
 
