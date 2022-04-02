@@ -1,15 +1,16 @@
+use std::borrow::BorrowMut;
 use std::convert::TryInto;
 use cursive::View;
 use cursive::views::{LinearLayout, TextView, Canvas, NamedView};
 use cursive::traits::{Nameable, Resizable};
-use crate::model::{RootModelRef, CursorShift, Dimension};
-use cursive::event::{Event, EventResult, Key};
+use crate::model::RootModelRef;
+use cursive::event::EventResult;
 use cursive::view::Selector;
 use cursive::theme::{Style, ColorStyle, Theme};
 use cursive::theme::PaletteColor::{HighlightText, Primary, Secondary};
 use cursive::utils::span::{SpannedStr, IndexedSpan, SpannedString, IndexedCow};
-use num_traits::{One, Zero};
 use fluent_integer::Integer;
+use crate::actions::action_registry::action_registry;
 use crate::utils;
 
 pub enum UIElementName {
@@ -76,6 +77,7 @@ pub fn build_ui(model: RootModelRef) -> Box<dyn View> {
 }
 
 fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
+    let actions = action_registry();
     Canvas::new(model.clone())
         .with_draw(|state, printer| {
             let mut state = state.get_mut();
@@ -131,185 +133,15 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                 printer.clear();
             }
         })
-        .with_on_event(|state, event| {
-            match event {
-                Event::Ctrl(Key::Down) => {
-                    log::info!("Ctrl+Down pressed");
-                    let mut state = state.get_mut();
-                    state.scroll(Integer::one());
-                    EventResult::Consumed(None)
+        .with_on_event(move |state, event| {
+            match actions.get(&event) {
+                Some(action) => {
+                    log::info!("Event {:?} occurred, action {} will be invoked", event, action.description());
+                    let result = action.perform_action(state.get_mut().borrow_mut(), &event);
+                    log::info!("Event {:?} handled, action {} finished", event, action.description());
+                    result
                 },
-                Event::Ctrl(Key::Up) => {
-                    log::info!("Ctrl+Up pressed");
-                    let mut state = state.get_mut();
-                    state.scroll(Integer::from(-1));
-                    EventResult::Consumed(None)
-                },
-                Event::Ctrl(Key::Left) => {
-                    log::info!("Ctrl+Left pressed");
-                    let mut state = state.get_mut();
-                    let horizontal_scroll = state.get_horizontal_scroll();
-                    if horizontal_scroll > 0 {
-                        state.set_horizontal_scroll(horizontal_scroll - 1);
-                    }
-                    EventResult::Consumed(None)
-                },
-                Event::Ctrl(Key::Right) => {
-                    log::info!("Ctrl+Right pressed");
-                    let mut state = state.get_mut();
-                    let horizontal_scroll = state.get_horizontal_scroll();
-                    if state.set_horizontal_scroll(horizontal_scroll + 1) {
-                        EventResult::Consumed(None)
-                    } else {
-                        EventResult::Ignored
-                    }
-                },
-                Event::Key(Key::Down) => {
-                    let mut state = state.get_mut();
-                    state.move_cursor(CursorShift::down(), false);
-                    EventResult::Consumed(None)
-                },
-                Event::Key(Key::Up) => {
-                    let mut state = state.get_mut();
-                    state.move_cursor(CursorShift::up(), false);
-                    EventResult::Consumed(None)
-                },
-                Event::Key(Key::Left) => {
-                    let mut state = state.get_mut();
-                    state.move_cursor(CursorShift::left(), false);
-                    EventResult::Consumed(None)
-                },
-                Event::Key(Key::Right) => {
-                    let mut state = state.get_mut();
-                    state.move_cursor(CursorShift::right(), false);
-                    EventResult::Consumed(None)
-                },
-                Event::Shift(Key::Down) => {
-                    let mut state = state.get_mut();
-                    state.move_cursor(CursorShift::down(), true);
-                    EventResult::Consumed(None)
-                },
-                Event::Shift(Key::Up) => {
-                    let mut state = state.get_mut();
-                    state.move_cursor(CursorShift::up(), true);
-                    EventResult::Consumed(None)
-                },
-                Event::Shift(Key::Left) => {
-                    let mut state = state.get_mut();
-                    state.move_cursor(CursorShift::left(), true);
-                    EventResult::Consumed(None)
-                },
-                Event::Shift(Key::Right) => {
-                    let mut state = state.get_mut();
-                    state.move_cursor(CursorShift::right(), true);
-                    EventResult::Consumed(None)
-                },
-                Event::Key(Key::PageDown) => {
-                    let mut state = state.get_mut();
-                    let h = state.get_viewport_size().height;
-                    if state.scroll(h) {
-                        let p = state.data()
-                            .and_then(|data| data.lines.first())
-                            .map(|line| line.start);
-                        if let Some(p) = p {
-                            state.move_cursor_to_offset(p, false);
-                        }
-                    } else {
-                        let p = state.data()
-                            .and_then(|data| data.lines.last())
-                            .map(|line| line.start);
-                        if let Some(p) = p {
-                            state.move_cursor_to_offset(p, false);
-                        }
-                    }
-                    EventResult::Consumed(None)
-                },
-                Event::Key(Key::PageUp) => {
-                    let mut state = state.get_mut();
-                    let h = state.get_viewport_size().height;
-                    if state.scroll(-h) {
-                        let p = state.data()
-                            .and_then(|data| data.lines.first())
-                            .map(|line| line.start);
-                        if let Some(p) = p {
-                            state.move_cursor_to_offset(p, false);
-                        }
-                    } else {
-                        let p = state.data()
-                            .and_then(|data| data.lines.first())
-                            .map(|line| line.start);
-                        if let Some(p) = p {
-                            state.move_cursor_to_offset(p, false);
-                        }
-                    }
-                    EventResult::Consumed(None)
-                },
-                Event::Key(Key::Home) => {
-                    let mut state = state.get_mut();
-                    match state.get_cursor_on_screen() {
-                        Some(Dimension {height: h, width: _} ) => {
-                            let p = state.data()
-                                .and_then(|data| data.lines.get(h.as_usize()))
-                                .map(|line| line.start);
-                            if let Some(p) = p {
-                                state.move_cursor_to_offset(p, false);
-                                EventResult::Consumed(None)
-                            } else {
-                                EventResult::Ignored
-                            }
-                        },
-                        _ => EventResult::Ignored
-                    }
-                },
-                Event::Key(Key::End) => {
-                    let mut state = state.get_mut();
-                    match state.get_cursor_on_screen() {
-                        Some(Dimension {height: h, width: _} ) => {
-                            let p = state.data()
-                                .and_then(|data| data.lines.get(h.as_usize()))
-                                .map(|line| line.end);
-                            if let Some(p) = p {
-                                state.move_cursor_to_offset(p - 1, false);
-                                EventResult::Consumed(None)
-                            } else {
-                                EventResult::Ignored
-                            }
-                        },
-                        _ => EventResult::Ignored
-                    }
-                },
-                Event::Ctrl(Key::Home) => {
-                    let mut state = state.get_mut();
-                    state.move_cursor_to_offset(Integer::zero(), false);
-                    EventResult::Consumed(None)
-                },
-                Event::Ctrl(Key::End) => {
-                    let mut state = state.get_mut();
-                    if state.move_cursor_to_end() {
-                        EventResult::Consumed(None)
-                    } else {
-                        EventResult::Ignored
-                    }
-                },
-                Event::CtrlChar('a') => {
-                    let mut state = state.get_mut();
-                    state.select_all();
-                    EventResult::Consumed(None)
-                },
-                Event::CtrlChar('c') => {
-                    log::trace!("Copying selection to clipboard");
-                    let mut state = state.get_mut();
-                    if let Some(content) = state.get_selected_content() {
-                        terminal_clipboard::set_string(content).unwrap();
-                    }
-                    EventResult::Ignored
-                },
-                Event::Char('q') => {
-                    let state = state.get_mut();
-                    state.quit();
-                    EventResult::Consumed(None)
-                },
-                _ => EventResult::Ignored
+                None => EventResult::Ignored
             }
         })
         .with_name(UIElementName::MainContent)
