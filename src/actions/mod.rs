@@ -21,3 +21,5 @@ mod file_start;
 mod file_end;
 mod select_all;
 mod copy;
+mod select_word_forward;
+mod select_word_backward;

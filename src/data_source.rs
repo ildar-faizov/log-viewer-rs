@@ -179,6 +179,12 @@ pub trait LineSource {
     }
 
     fn read_raw(&self, start: Integer, end: Integer) -> Result<String, ()>;
+
+    /// Reads designated number of words starting from the given offset.
+    /// If the offset is in the middle of the word, this word is included in the result independently
+    /// of the direction.
+    /// Result contains tuple with words and offset.
+    fn read_words(&self, offset: Integer, number_of_words: Integer) -> Result<(Vec<String>, Integer), ()>;
 }
 
 pub struct LineSourceImpl {
@@ -322,5 +328,85 @@ impl LineSource for LineSourceImpl {
             }
         }
         Ok(result)
+    }
+
+    fn read_words(&self, offset: Integer, number_of_words: Integer) -> Result<(Vec<String>, Integer), ()> {
+        let mut f = BufReader::new(File::open(&self.file_name).unwrap());
+        f.seek(SeekFrom::Start(offset.as_u64()));
+        let mut buf = [0_u8; 1];
+        let mut number_of_words = number_of_words;
+        let mut current_offset = offset;
+        let mut collector = Collector::new();
+        if number_of_words > 0 {
+            while collector.len() < number_of_words {
+                if let Ok(1) = f.read(&mut buf) {
+                    let ch = buf[0];
+                    if ch.is_ascii_alphanumeric() { // TODO UTF-8
+                        collector.push(ch);
+                    } else {
+                        collector.flush();
+                    }
+                    current_offset += 1;
+                } else {
+                    collector.flush();
+                    break;
+                }
+            }
+        } else if number_of_words < 0 {
+            while collector.len() < -number_of_words {
+                match f.seek_relative(-1) {
+                    Ok(_) => {
+                        match f.read(&mut buf) {
+                            Ok(_) => {
+                                f.seek_relative(-1).unwrap();
+                                let ch = buf[0];
+                                if ch.is_ascii_alphanumeric() { // TODO UTF-8
+                                    collector.push(ch);
+                                } else {
+                                    collector.flush();
+                                }
+                                current_offset -= 1;
+                            },
+                            Err(_err) => panic!()
+                        }
+                    },
+                    Err(_err) => {
+                        collector.flush();
+                        break
+                    }
+                };
+            }
+        };
+        Ok((collector.result, current_offset))
+    }
+}
+
+struct Collector {
+    result: Vec<String>,
+    stack: Vec<u8>
+}
+
+impl Collector {
+    fn new() -> Self {
+        Collector {
+            result: Vec::new(),
+            stack: Vec::new()
+        }
+    }
+
+    fn flush(&mut self) {
+        if !self.stack.is_empty() {
+            let stack_copy = self.stack.clone();
+            self.stack = Vec::new();
+            self.result.push(String::from_utf8(stack_copy).unwrap());
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.result.len()
+    }
+
+    fn push(&mut self, ch: u8) {
+        self.stack.push(ch);
     }
 }

@@ -30,15 +30,15 @@ impl fmt::Display for Dimension {
     }
 }
 
-#[derive(Clone, Copy, Eq, PartialEq, Debug)]
-pub struct CursorShift {
-    x: Integer,
-    y: Integer,
+#[derive(Debug)]
+pub enum CursorShift {
+    XY { x: Integer, y: Integer },
+    Word ( Integer )
 }
 
 impl CursorShift {
     pub fn new(x: Integer, y: Integer) -> Self {
-        CursorShift{x, y}
+        CursorShift::XY{x, y}
     }
 
     pub fn down_by_n(n: Integer) -> Self {
@@ -71,6 +71,14 @@ impl CursorShift {
 
     pub fn right() -> Self {
         Self::right_by_n(1.into())
+    }
+
+    pub fn word_forward() -> Self {
+        CursorShift::Word(1.into())
+    }
+
+    pub fn word_backward() -> Self {
+        CursorShift::Word(Integer::from(-1))
     }
 }
 
@@ -294,12 +302,25 @@ impl RootModel {
         let current_pos = self.get_cursor_in_cache();
         log::trace!("move_cursor pos = {} -> on_screen = {:?}", self.cursor, current_pos);
 
-        let new_cursor_offset = if delta.x == 0 {
-            self.move_cursor_vertically(delta.y, current_pos)
-        } else if delta.y == 0 {
-            self.move_cursor_horizontally(delta.x, current_pos)
-        } else {
-            todo!("Moving cursor simultaneously vertically and horizontally is not supported")
+        let new_cursor_offset = match delta {
+            CursorShift::XY {x, y} => {
+                if x == 0 {
+                    self.move_cursor_vertically(y, current_pos)
+                } else if y == 0 {
+                    self.move_cursor_horizontally(x, current_pos)
+                } else {
+                    todo!("Moving cursor simultaneously vertically and horizontally is not supported")
+                }
+            },
+            CursorShift::Word(n) => {
+                let result = self.get_datasource_ref()
+                    .map(|ds| ds.read_words(self.cursor, n));
+                if let Some(Ok((_, offset))) = result {
+                    offset
+                } else {
+                    self.cursor
+                }
+            }
         };
 
         self.move_cursor_to_offset(new_cursor_offset, adjust_selection);
