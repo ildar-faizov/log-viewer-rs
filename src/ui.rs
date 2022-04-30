@@ -1,4 +1,5 @@
 use std::borrow::BorrowMut;
+use std::cmp::{max, min};
 use std::convert::TryInto;
 use cursive::View;
 use cursive::views::{LinearLayout, TextView, Canvas, NamedView};
@@ -7,11 +8,14 @@ use crate::model::RootModelRef;
 use cursive::event::EventResult;
 use cursive::view::Selector;
 use cursive::theme::{Style, ColorStyle, Theme};
-use cursive::theme::PaletteColor::{HighlightText, Primary, Secondary};
+use cursive::theme::PaletteColor::{Background, HighlightText, Primary};
 use cursive::utils::span::{SpannedStr, IndexedSpan, SpannedString, IndexedCow};
 use fluent_integer::Integer;
 use crate::actions::action_registry::action_registry;
+use crate::highlight::highlighter_registry::cursive_highlighters;
+use crate::highlight::style_with_priority::StyleWithPriority;
 use crate::utils;
+use crate::utils::measure;
 
 pub enum UIElementName {
     MainContent,
@@ -78,17 +82,18 @@ pub fn build_ui(model: RootModelRef) -> Box<dyn View> {
 
 fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
     let actions = action_registry();
+
+    let palette = Theme::default().palette;
+    let highlighters = cursive_highlighters(&palette);
+    let regular_style = StyleWithPriority::new(Style::from(ColorStyle::new(palette[Primary], palette[HighlightText])), 0, 0);
+    let cursor_style = StyleWithPriority::new(Style::from(ColorStyle::new(palette[HighlightText], palette[Primary])), 1, 1);
+    let selection_style = StyleWithPriority::new(Style::from(ColorStyle::new(palette[HighlightText], palette[Background])), 1, 0xff);
     Canvas::new(model.clone())
-        .with_draw(|state, printer| {
+        .with_draw(move |state, printer| measure("draw",  || {
             let mut state = state.get_mut();
             state.set_viewport_size(Integer::from(printer.size.x), Integer::from(printer.size.y));
 
             if let Some(data) = state.data() {
-                let palette = Theme::default().palette;
-                let regular_style = Style::from(ColorStyle::new(palette[Primary], palette[HighlightText]));
-                let cursor_style = Style::from(ColorStyle::new(palette[HighlightText], palette[Primary]));
-                let selection_style = Style::from(ColorStyle::new(palette[HighlightText], palette[Secondary]));
-
                 let horizontal_scroll = state.get_horizontal_scroll().as_usize();
                 let cursor = state.get_cursor_on_screen();
                 data.lines.iter()
@@ -98,31 +103,32 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                     .map(|(i, line)| {
                         let slice = &line.content.as_str()[horizontal_scroll..];
                         let selection = state.get_selection();
-                        let mut intervals: Vec<(Integer, Integer, &str)> = vec![(Integer::from(0), Integer::from(slice.len()), "main")];
+                        let mut intervals = SpanProducer::new(min(printer.size.x, slice.len()));
+                        intervals.add_interval(0, slice.len(), regular_style);
                         if let Some(cursor) = cursor {
                             if cursor.height == i {
-                                intervals.push((cursor.width.into(), cursor.width + 1, "cursor"));
+                                intervals.add_interval(cursor.width, cursor.width + 1, cursor_style);
                             }
                         }
                         if let Some(selection) = selection {
                             let slice_offset = line.start + horizontal_scroll;
                             if selection.start <= line.end && selection.end >= slice_offset {
-                                intervals.push((selection.start - slice_offset, selection.end - slice_offset, "selection"));
+                                intervals.add_interval(selection.start - slice_offset, selection.end - slice_offset, selection_style);
                             }
                         }
-                        let disjoint_intervals = utils::disjoint_intervals(&intervals);
+
+                        highlighters.iter()
+                            .flat_map(|h| h.process(line.content.as_str()))
+                            .map(|highlight| (Integer::from(highlight.get_start()) - horizontal_scroll, Integer::from(highlight.get_end()) - horizontal_scroll, highlight.get_payload()))
+                            .for_each(|(s, e, style)| intervals.add_interval(s, e, style));
+
+                        let disjoint_intervals = intervals.disjoint_intervals();
                         let mut spans = vec![];
                         for interval in disjoint_intervals {
-                            if interval.2.contains(&"main") {
-                                let style = if interval.2.contains(&"cursor") {
-                                    cursor_style
-                                } else if interval.2.contains(&"selection") {
-                                    selection_style
-                                } else {
-                                    regular_style
-                                };
-                                spans.push(indexed_span(interval.0, interval.1, style));
-                            }
+                            let style = interval.2.iter()
+                                .fold(regular_style, |s1, s2| s1 + *s2)
+                                .get_style();
+                            spans.push(indexed_span(interval.0, interval.1, style));
                         }
                         (i, SpannedString::with_spans(slice, spans))
                     })
@@ -132,7 +138,7 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
             } else {
                 printer.clear();
             }
-        })
+        }))
         .with_on_event(move |state, event| {
             match actions.get(&event) {
                 Some(action) => {
@@ -158,5 +164,32 @@ fn indexed_span<T, I1, I2>(start: I1, end: I2, attr: T) -> IndexedSpan<T>
         },
         attr,
         width: end - start
+    }
+}
+
+struct SpanProducer {
+    intervals: Vec<(Integer, Integer, StyleWithPriority)>,
+    width: usize
+}
+
+impl SpanProducer {
+    fn new(width: usize) -> Self {
+        SpanProducer {
+            intervals: vec![],
+            width
+        }
+    }
+
+    fn add_interval<A, B>(&mut self, s: A, e: B, style: StyleWithPriority)
+        where A: Into<Integer>, B: Into<Integer> {
+        let s = max(s.into(), 0_u8.into());
+        let e = min(e.into(), self.width.into());
+        if s < e {
+            self.intervals.push((s, e, style));
+        }
+    }
+
+    fn disjoint_intervals(&self) -> Vec<(Integer, Integer, Vec<StyleWithPriority>)> {
+        utils::disjoint_intervals(&self.intervals)
     }
 }

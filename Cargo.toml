@@ -18,6 +18,8 @@ num-rational = "*"
 fluent-integer = { path = "../fluent-integer"}
 num-traits = "0.2.14" # TODO transitive dependencies?
 terminal-clipboard = "0.3.1"
+regex = "1.5"
+stopwatch = "0.0.7"
 
 #[dependencies.cursive]
 #version = "*"

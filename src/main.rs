@@ -1,6 +1,7 @@
 extern crate cursive;
 extern crate clap;
 extern crate log4rs;
+extern crate stopwatch;
 
 mod model;
 mod ui;
@@ -9,6 +10,7 @@ mod utils;
 mod shared;
 mod selection;
 mod actions;
+mod highlight;
 
 use cursive::{CursiveRunnable, CursiveRunner, View};
 use cursive::views::{TextView, ViewRef, Canvas};

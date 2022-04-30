@@ -1,3 +1,4 @@
+use stopwatch::Stopwatch;
 use fluent_integer::Integer;
 
 pub fn sign(n: Integer) -> (Integer, i8) {
@@ -47,5 +48,13 @@ where T: Copy {
         }
         s = Some(bound);
     }
+    result
+}
+
+pub fn measure<R, F>(descr: &str, f: F) -> R where
+        F: FnOnce() -> R {
+    let sw = Stopwatch::start_new();
+    let result = f();
+    log::trace!("{} {:?}", descr, sw.elapsed());
     result
 }
