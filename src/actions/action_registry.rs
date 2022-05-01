@@ -15,8 +15,8 @@ use crate::actions::pgdown::PgDownAction;
 use crate::actions::pgup::PgUpAction;
 use crate::actions::quit::QuitAction;
 use crate::actions::scroll_down::ScrollDownAction;
-use crate::actions::scroll_left::ScrollLeftAction;
-use crate::actions::scroll_right::ScrollRightAction;
+use crate::actions::word_backward::WordBackwardAction;
+use crate::actions::word_forward::WordForwardAction;
 use crate::actions::scroll_up::ScrollUpAction;
 use crate::actions::select_all::SelectAllAction;
 use crate::actions::select_word_forward::SelectWordForwardAction;
@@ -40,8 +40,8 @@ fn plain_action_registry() -> Vec<Rc<dyn Action + 'static>> {
     vec![
         Rc::new(ScrollDownAction::new()),
         Rc::new(ScrollUpAction::new()),
-        Rc::new(ScrollLeftAction::new()),
-        Rc::new(ScrollRightAction::new()),
+        Rc::new(WordBackwardAction::new()),
+        Rc::new(WordForwardAction::new()),
 
         Rc::new(CursorDownAction::new()),
         Rc::new(CursorUpAction::new()),

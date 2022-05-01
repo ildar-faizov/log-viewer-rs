@@ -1,19 +1,21 @@
 use cursive::event::{EventResult, Key};
+use fluent_integer::Integer;
 use crate::actions::action::Action;
 use crate::{Event, RootModel};
+use crate::model::CursorShift;
 
-pub struct ScrollLeftAction {}
+pub struct WordBackwardAction {}
 
-impl ScrollLeftAction {
+impl WordBackwardAction {
     pub fn new() -> Self {
-        ScrollLeftAction {}
+        WordBackwardAction {}
     }
 }
 
-impl Action for ScrollLeftAction {
+impl Action for WordBackwardAction {
 
     fn description(&self) -> &str {
-        "Scroll one symbol left"
+        "Move cursor to the beginning of the word"
     }
 
     fn hotkeys(&self) -> Vec<Event> {
@@ -21,10 +23,7 @@ impl Action for ScrollLeftAction {
     }
 
     fn perform_action(&self, model: &mut RootModel, _event: &Event) -> EventResult {
-        let horizontal_scroll = model.get_horizontal_scroll();
-        if horizontal_scroll > 0 {
-            model.set_horizontal_scroll(horizontal_scroll - 1);
-        }
+        model.move_cursor(CursorShift::word_backward(), false);
         EventResult::Consumed(None)
     }
 }
