@@ -8,7 +8,7 @@ pub struct DateHighlighter<T> {
 impl <T> DateHighlighter<T> {
     pub fn new(t: T) -> Self {
         let patterns = vec![
-            r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2} \d{2}:\d{2}:\d{2}"
+            r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}"
         ];
         DateHighlighter {
             pattern_based_highlighter: PatternBasedHighlighter::new(patterns, t)
