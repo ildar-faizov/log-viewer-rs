@@ -14,10 +14,10 @@ pub fn trim_newline(s: &mut String) -> usize {
     if s.ends_with('\n') {
         s.pop();
         bytes_removed += 1;
-        if s.ends_with('\r') {
-            s.pop();
-            bytes_removed += 1;
-        }
+    }
+    if s.ends_with('\r') {
+        s.pop();
+        bytes_removed += 1;
     }
     bytes_removed
 }

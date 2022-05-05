@@ -11,6 +11,7 @@ mod shared;
 mod selection;
 mod actions;
 mod highlight;
+mod test_extensions;
 
 use cursive::{CursiveRunnable, CursiveRunner, View};
 use cursive::views::{TextView, ViewRef, Canvas};
@@ -60,7 +61,7 @@ fn init_logging() {
 		.appender(Appender::builder().build("logfile", Box::new(logfile)))
 		.build(Root::builder()
 			.appender("logfile")
-			.build(LevelFilter::Trace)) // TODO change to Info
+			.build(LevelFilter::Debug)) // TODO change to Info
 		.unwrap();
 
 	log4rs::init_config(config).unwrap();

@@ -2,13 +2,14 @@ use crossbeam_channel::Sender;
 use std::path::{Path, PathBuf};
 use std::env::current_dir;
 use ModelEvent::*;
-use crate::data_source::{Data, LineSource, LineSourceImpl, Line};
+use crate::data_source::{Data, LineSource, LineSourceImpl, Line, FileBackend};
 use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
 use std::borrow::Borrow;
 use num_rational::Ratio;
 use std::fmt;
 use std::cmp::{max, min};
+use std::fs::File;
 use std::option::Option::Some;
 use fluent_integer::Integer;
 use num_traits::identities::Zero;
@@ -215,9 +216,8 @@ impl RootModel {
                     if sign == 1 {
                         if let Some(ds) = &self.datasource {
                             let mut ds = ds.get_mut_ref();
-                            ds.set_offset(first_line.start);
                             let h = self.viewport_size.height;
-                            let lines = ds.read_lines(n + h);
+                            let lines = ds.read_lines(first_line.start,n + h).lines;
                             let k = lines.len();
                             if k > h {
                                 lines.get((k - h).as_usize()).unwrap().start - first_line.start
@@ -232,9 +232,8 @@ impl RootModel {
                         if let Some(ds) = &self.datasource {
                             let mut ds = ds.get_mut_ref();
                             log::trace!("scroll({}). set_offset = {}", num_of_lines, first_line.start);
-                            ds.set_offset(first_line.start);
-                            ds.read_lines(num_of_lines);
-                            let offset = ds.get_offset();
+                            // read n lines backward from one symbol before beginning of first_line
+                            let offset= ds.read_lines(first_line.start - 1, num_of_lines).start.unwrap();
                             offset - first_line.start
                         } else {
                             log::warn!("Scroll {} lined failed: no datasource", num_of_lines);
@@ -314,7 +313,7 @@ impl RootModel {
             },
             CursorShift::Word(n) => {
                 let result = self.get_datasource_ref()
-                    .map(|ds| ds.read_words(self.cursor, n));
+                    .map(|mut ds| ds.read_words(self.cursor, n));
                 if let Some(Ok((_, offset))) = result {
                     offset
                 } else {
@@ -364,12 +363,8 @@ impl RootModel {
                 let mut datasource = self.datasource.as_ref().unwrap().get_mut_ref();
                 if y >= n {
                     let y = y - n;
-                    datasource.set_offset(if n > 0 {
-                        data.lines.last().unwrap().end + 1
-                    } else {
-                        0.into()
-                    });
-                    let new_lines = datasource.read_lines(y + 1);
+                    let offset = data.end.map_or(0.into(), |x| x + 1);
+                    let new_lines = datasource.read_lines(offset, y + 1).lines;
                     if y < new_lines.len() {
                         let line = new_lines.get(y.as_usize()).unwrap();
                         calc_offset_in_line(line)
@@ -380,8 +375,7 @@ impl RootModel {
                             .unwrap_or(0.into())
                     }
                 } else { // y < 0
-                    datasource.set_offset(data.lines.first().unwrap().start);
-                    let new_lines = datasource.read_lines(y);
+                    let new_lines = datasource.read_lines(data.start.unwrap() - 1, y).lines;
                     if !new_lines.is_empty() {
                         calc_offset_in_line(new_lines.first().unwrap())
                     } else {
@@ -411,8 +405,7 @@ impl RootModel {
                     if line_no < data.lines.len() {
                         line = data.lines.get(line_no.as_usize()).unwrap().clone();
                     } else {
-                        datasource.set_offset(line.end + 1);
-                        if let Some(next_line) = datasource.read_next_line() {
+                        if let Some(next_line) = datasource.read_next_line(line.end + 1) {
                             line = next_line;
                         } else {
                             break line.end
@@ -430,8 +423,7 @@ impl RootModel {
                     if line_no >= 0 {
                         line = data.lines.get(line_no.as_usize()).unwrap().clone();
                     } else {
-                        datasource.set_offset(line.start);
-                        if let Some(prev_line) = datasource.read_prev_line() {
+                        if let Some(prev_line) = datasource.read_prev_line(line.start - 1) {
                             line = prev_line;
                         } else {
                             break line.start
@@ -467,24 +459,8 @@ impl RootModel {
     }
 
     pub fn move_cursor_to_end(&mut self) -> bool {
-        let offset = self
-            .get_datasource_ref()
-            .and_then(|mut ds| {
-                let len = ds.get_length();
-                if len > 0 {
-                    ds.set_offset(len - 1);
-                    ds.read_next_line()
-                } else {
-                    None
-                }
-            })
-            .map(|line| {
-                if line.end > 0 {
-                    line.end - 1
-                } else {
-                    line.start
-                }
-            });
+        let offset = self.get_datasource_ref()
+            .map(|ds| ds.get_length());
         match offset {
             Some(offset) => self.move_cursor_to_offset(offset, false),
             None => false
@@ -534,7 +510,8 @@ impl RootModel {
 
     fn load_file(&mut self) {
         if let Some(path) = self.resolve_file_name() {
-            self.datasource = Some(Shared::new(Box::new(LineSourceImpl::new(path))));
+            let line_source = LineSourceImpl::<File, FileBackend>::from_file_name(path);
+            self.datasource = Some(Shared::new(Box::new(line_source)));
             self.update_viewport_content();
         }
     }
@@ -558,33 +535,25 @@ impl RootModel {
         if self.viewport_size.height == 0 {
             return true;
         }
-        let data = if let Some(datasource) = &self.datasource {
+        if let Some(datasource) = &self.datasource {
             let mut datasource = datasource.get_mut_ref();
             let source_length = datasource.get_length();
             let offset = (self.scroll_position.starting_point * source_length).to_integer()
                 + self.scroll_position.shift;
             log::info!("update_viewport_content offset = {}", offset);
-            datasource.set_offset(offset);
-            let lines = datasource.read_lines(self.viewport_size.height);
-            log::trace!("update_viewport_content data: {:?}", &lines[..min(3, lines.len())]);
+            let data = datasource.read_lines(offset, self.viewport_size.height);
+            log::trace!("update_viewport_content data: {:?}", &data.lines[..min(3, data.lines.len())]);
 
+            drop(datasource);
             // check if EOF is reached and viewport is not full
-            if lines.len() < self.viewport_size.height && offset > 0 {
-                None
+            if data.lines.len() < self.viewport_size.height && offset > 0 {
+                false
             } else {
-                Some(Data {
-                    lines,
-                })
+                self.set_data(data);
+                true
             }
         } else {
             panic!("Data source is not set");
-        };
-        match data {
-            Some(data) => {
-                self.set_data(data);
-                true
-            },
-            _ => false
         }
     }
 
@@ -623,105 +592,102 @@ impl RootModel {
         // if let Some(mut datasource) = self.get_datasource_ref() {
 
         let mut datasource = self.get_datasource_ref().unwrap();
-            let calc_horizontal_scroll = |line: &Line, off: Integer| {
-                let h = self.horizontal_scroll;
-                let w = self.viewport_size.width;        
-                let local_offset = off - line.start;
-                if local_offset < h {
-                    local_offset
-                } else if local_offset >= h + w {
-                    local_offset - w + 1
-                } else {
-                    h
-                }
-            };
+        let calc_horizontal_scroll = |line: &Line, off: Integer| {
+            let h = self.horizontal_scroll;
+            let w = self.viewport_size.width;
+            let local_offset = off - line.start;
+            if local_offset < h {
+                local_offset
+            } else if local_offset >= h + w {
+                local_offset - w + 1
+            } else {
+                h
+            }
+        };
 
-            if let Some(data) = self.data.as_ref() {
-                let start_offset = data.lines.first().map(|line| line.start).unwrap_or(0.into());
-                let end_offset = data.lines.last().map(|line| line.end).unwrap_or(0.into());
-                log::trace!(target: "bring_into_view", "Data present: {} -> {}", start_offset, end_offset);
-                if start_offset <= offset && offset <= end_offset {
-                    let search_result = data.lines.binary_search_by_key(&offset, |line| line.start);
-                    let line_no = match search_result {
-                        Ok(n) => n,
-                        Err(0) => 0, // never happens
-                        Err(n) => n - 1 // n >= 1
+        if let Some(data) = self.data.as_ref() {
+            let start_offset = data.lines.first().map(|line| line.start).unwrap_or(0.into());
+            let end_offset = data.lines.last().map(|line| line.end).unwrap_or(0.into());
+            log::trace!(target: "bring_into_view", "Data present: {} -> {}", start_offset, end_offset);
+            if start_offset <= offset && offset <= end_offset {
+                let search_result = data.lines.binary_search_by_key(&offset, |line| line.start);
+                let line_no = match search_result {
+                    Ok(n) => n,
+                    Err(0) => 0, // never happens
+                    Err(n) => n - 1 // n >= 1
+                };
+                let horizontal_scroll = calc_horizontal_scroll(data.lines.get(line_no).as_ref().unwrap(), offset);
+                drop(datasource);
+                log::trace!("bring_into_view simple case. HScroll = {}", horizontal_scroll);
+                self.set_horizontal_scroll(horizontal_scroll)
+            } else if offset < start_offset {
+                // TODO check 2 cases: when difference is fairly small and when it is huge
+                // currently assume it is small
+                if start_offset - offset < OFFSET_THRESHOLD {
+                    let mut i = 0_u8.into();
+                    let mut current_offset = start_offset;
+                    let success = loop {
+                        if let Some(line) = datasource.read_prev_line(current_offset - 1) {
+                            current_offset = line.start;
+                            i -= 1;
+                            if current_offset <= offset {
+                                break true
+                            }
+                        } else {
+                            break false
+                        }
                     };
-                    let horizontal_scroll = calc_horizontal_scroll(data.lines.get(line_no).as_ref().unwrap(), offset);
+                    if success {
+                        drop(datasource);
+                        self.scroll(i)
+                    } else {
+                        false
+                    }
+                } else {
                     drop(datasource);
-                    log::trace!("bring_into_view simple case. HScroll = {}", horizontal_scroll);
-                    self.set_horizontal_scroll(horizontal_scroll)
-                } else if offset < start_offset {
-                    // TODO check 2 cases: when difference is fairly small and when it is huge
-                    // currently assume it is small
-                    if start_offset - offset < OFFSET_THRESHOLD {
-                        datasource.set_offset(start_offset);
-                        let mut i = Integer::zero();
-                        let success = loop {
-                            if let Some(line) = datasource.read_prev_line() {
-                                i -= 1;
-                                if line.start <= offset {
-                                    break true
-                                }
-                            } else {
-                                break false
-                            }
-                        };
-                        if success {
-                            drop(datasource);
-                            self.scroll(i)
-                        } else {
-                            false
-                        }
-                    } else {
-                        drop(datasource);
-                        self.scroll_forcibly(offset) && self.bring_into_view(offset)
-                    }
-                } else { // offset > end_offset
-                    // TODO check 2 cases: when difference is fairly small and when it is huge
-                    // currently assume it is small
-                    log::trace!("bring_into_view 3rd case. (offset - end) = {}", offset - end_offset);
-                    if offset - end_offset < OFFSET_THRESHOLD {
-                        datasource.set_offset(end_offset + 1);
-                        let mut i = Integer::zero();
-                        let success = loop {
-                            if let Some(line) = datasource.read_next_line() {
-                                i += 1;
-                                if line.end >= offset {
-                                    break true
-                                }
-                            } else {
-                                break false
-                            }
-                        };
-                        if success {
-                            drop(datasource);
-                            log::trace!("bring_into_view 3rd case. scroll {} lines", i);
-                            self.scroll(i)
-                        } else {
-                            false
-                        }
-                    } else {
-                        drop(datasource);
-                        self.scroll_forcibly(offset) && self.bring_into_view(offset)
-                    }
+                    self.scroll_forcibly(offset) && self.bring_into_view(offset)
                 }
             } else {
-                log::trace!("bring_into_view. Raw case.");
-                let line_offset = datasource.set_offset(offset);
-                let horizontal_scroll = datasource.read_next_line()
-                    .map(|line| calc_horizontal_scroll(&line, offset))
-                    .unwrap_or(Integer::zero());
-                drop(datasource);
-                let scroll_position = ScrollPosition::new(Ratio::new(line_offset, self.file_size), Integer::zero());
-                // TODO will be implemented using futures chain
-                self.scroll_position = scroll_position;
-                self.horizontal_scroll = horizontal_scroll;
-                self.update_viewport_content()
+                // offset > end_offset
+                // TODO check 2 cases: when difference is fairly small and when it is huge
+                // currently assume it is small
+                log::trace!("bring_into_view 3rd case. (offset - end) = {}", offset - end_offset);
+                if offset - end_offset < OFFSET_THRESHOLD {
+                    let mut i = 0_u8.into();
+                    let success = loop {
+                        if let Some(line) = datasource.read_next_line(end_offset + 1) {
+                            i += 1;
+                            if line.end >= offset {
+                                break true
+                            }
+                        } else {
+                            break false
+                        }
+                    };
+                    if success {
+                        drop(datasource);
+                        log::trace!("bring_into_view 3rd case. scroll {} lines", i);
+                        self.scroll(i)
+                    } else {
+                        false
+                    }
+                } else {
+                    drop(datasource);
+                    self.scroll_forcibly(offset) && self.bring_into_view(offset)
+                }
             }
-        // } else {
-        //     false
-        // }
+        } else {
+            log::trace!("bring_into_view. Raw case.");
+            let (line_offset, horizontal_scroll) = datasource.read_next_line(offset)
+                .map(|line| (line.start, calc_horizontal_scroll(&line, offset)))
+                .unwrap_or((Integer::zero(), Integer::zero()));
+            drop(datasource);
+            let scroll_position = ScrollPosition::new(Ratio::new(line_offset, self.file_size), Integer::zero());
+            // TODO will be implemented using futures chain
+            self.scroll_position = scroll_position;
+            self.horizontal_scroll = horizontal_scroll;
+            self.update_viewport_content()
+        }
     }
 
     fn get_datasource_ref(&self) -> Option<RefMut<Box<dyn LineSource>>> {
@@ -730,14 +696,15 @@ impl RootModel {
 
     fn scroll_forcibly(&mut self, offset: Integer) -> bool {
         let mut datasource = self.get_datasource_ref().unwrap();
-        let mut new_offset = datasource.set_offset(offset);
         let h = self.viewport_size.height;
-        let lines_below = datasource.read_lines(h);
-        if lines_below.len() < h {
-            let k = h - lines_below.len();
-            datasource.set_offset(new_offset);
-            datasource.read_lines(-k);
-            new_offset = datasource.get_offset();
+        let lines_below = datasource.read_lines(offset, h);
+        let mut new_offset = lines_below.start.unwrap_or(offset);
+        if lines_below.lines.len() < h {
+            let k = h - lines_below.lines.len();
+            let prev_lines = datasource.read_lines(new_offset, -k);
+            if let Some(offset) = prev_lines.start {
+                new_offset = offset;
+            }
         }
         let scroll_starting_point = Ratio::new(new_offset, datasource.get_length());
         drop(datasource);
