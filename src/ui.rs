@@ -104,43 +104,40 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                     .enumerate()
                     .filter(|(_, (_, graphemes))| graphemes.len() > horizontal_scroll)
                     .map(|(i, (line, graphemes))| {
-                        let visible_graphemes = graphemes.into_iter().skip(horizontal_scroll).collect::<Vec<(usize, &str)>>();
+                        let visible_graphemes = graphemes.into_iter()
+                            .skip(horizontal_scroll)
+                            .take(printer.size.x)
+                            .collect::<Vec<(usize, &str)>>();
                         let slice = visible_graphemes.iter().map(|(_, s)| *s).collect::<Vec<&str>>();
                         let display_str = slice.concat();
                         log::trace!("{}: {:?}.len() = {}", i, slice, slice.len());
                         let selection = state.get_selection();
-                        let mut intervals = SpanProducer::new();
 
-                        intervals.add_interval(0_u8, display_str.len(), regular_style);
+                        // visible_graphemes is guaranteed to be non-empty as graphemes.len() > horizontal_scroll >= 0
+                        let first_grapheme_pos = visible_graphemes.first().unwrap().0;
+
+                        let mut intervals = SpanProducer::new(first_grapheme_pos);
+                        intervals.add_interval_without_shift(0_u8, display_str.len(), regular_style);
+
                         if let Some(cursor) = cursor {
                             if cursor.height == i {
                                 if let Some(grapheme) = visible_graphemes.get(cursor.width.as_usize()) {
                                     let len = grapheme.1.len();
                                     log::trace!("{}: Cursor drawn in grapheme {:?} with len {}", i, grapheme, len);
-                                    intervals.add_interval(grapheme.0, grapheme.0 + grapheme.1.bytes().len(), cursor_style);
+                                    intervals.add_interval(grapheme.0, grapheme.0 + grapheme.1.len(), cursor_style);
                                 }
                             }
                         }
 
-                        if let Some((first_grapheme_pos, _)) = visible_graphemes.iter().next() {
-                            let first_grapheme_pos = *first_grapheme_pos;
-
-                            if let Some(selection) = selection {
-                                let slice_offset = line.start + first_grapheme_pos;
-                                if selection.start <= line.end && selection.end >= slice_offset {
-                                    intervals.add_interval(selection.start - slice_offset, selection.end - slice_offset, selection_style);
-                                }
+                        if let Some(selection) = selection {
+                            if selection.start <= line.end && selection.end >= (line.start + first_grapheme_pos) {
+                                intervals.add_interval(selection.start - line.start, selection.end - line.start, selection_style);
                             }
-
-                            highlighters.iter()
-                                .flat_map(|highlighter| highlighter.process(line.content.as_str()))
-                                .map(|highlight|
-                                    (Integer::from(highlight.get_start()) - first_grapheme_pos,
-                                     Integer::from(highlight.get_end()) - first_grapheme_pos,
-                                     highlight.get_payload())
-                                )
-                                .for_each(|(s, e, style)| intervals.add_interval(s, e, style));
                         }
+
+                        highlighters.iter()
+                            .flat_map(|highlighter| highlighter.process(line.content.as_str()))
+                            .for_each(|h| intervals.add_interval(h.get_start(), h.get_end(), h.get_payload()));
 
                         let disjoint_intervals = intervals.disjoint_intervals();
                         let mut spans = vec![];
@@ -149,7 +146,8 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                                 .fold(regular_style, |s1, s2| s1 + *s2)
                                 .get_style();
                             let width = visible_graphemes.iter()
-                                .filter(|(q, _)| *q >= interval.0 && *q < interval.1)
+                                .map(|(q, _)| *q - first_grapheme_pos)
+                                .filter(|q| *q >= interval.0 && *q < interval.1)
                                 .count();
                             spans.push(indexed_span(interval.0, interval.1, width, style));
                         }
@@ -193,16 +191,23 @@ fn indexed_span<T, I1, I2>(start: I1, end: I2, width: usize, attr: T) -> Indexed
 
 struct SpanProducer {
     intervals: Vec<(Integer, Integer, StyleWithPriority)>,
+    shift: usize,
 }
 
 impl SpanProducer {
-    fn new() -> Self {
+    fn new(shift: usize) -> Self {
         SpanProducer {
-            intervals: vec![]
+            intervals: vec![],
+            shift
         }
     }
 
     fn add_interval<A, B>(&mut self, s: A, e: B, style: StyleWithPriority)
+        where A: Into<Integer>, B: Into<Integer> {
+        self.add_interval_without_shift(s.into() - self.shift, e.into() - self.shift, style)
+    }
+
+    fn add_interval_without_shift<A, B>(&mut self, s: A, e: B, style: StyleWithPriority)
         where A: Into<Integer>, B: Into<Integer> {
         let s = max(s.into(), 0_u8.into());
         let e = e.into();

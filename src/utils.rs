@@ -178,7 +178,16 @@ pub mod utf8 {
     pub trait GraphemeIndexLookup {
         fn offset_to_grapheme_index(&self, offset: usize) -> Result<usize, ()>;
 
-        fn grapheme_index_to_offset(&self, index: usize) -> usize;
+        /// Converts grapheme `index` into real offset.
+        ///
+        /// # Example
+        ///
+        /// ```
+        /// assert_eq!(3, "€€".grapheme_index_to_offset(1))
+        /// ```
+        ///
+        /// In case index is greater than number of graphemes, returns number of graphemes as Err
+        fn grapheme_index_to_offset(&self, index: usize) -> Result<usize, usize>;
     }
 
     impl GraphemeIndexLookup for str {
@@ -186,12 +195,15 @@ pub mod utf8 {
             self.grapheme_indices(true)
                 .enumerate()
                 .find(|(i, (q, s))| *q <= offset && offset < *q + s.len())
-                .map(|(i, _)| Ok(i))
-                .unwrap_or(Err(()))
+                .map(|(i, _)| i)
+                .ok_or(())
         }
 
-        fn grapheme_index_to_offset(&self, index: usize) -> usize {
-            todo!()
+        fn grapheme_index_to_offset(&self, index: usize) -> Result<usize, usize> {
+            self.grapheme_indices(true)
+                .nth(index)
+                .map(|(q, _)| q)
+                .ok_or(self.grapheme_indices(true).count())
         }
     }
 }

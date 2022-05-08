@@ -35,17 +35,15 @@ impl fmt::Display for Dimension {
 
 #[derive(Debug)]
 pub enum CursorShift {
-    XY { x: Integer, y: Integer },
+    X ( Integer ),
+    Y ( Integer ),
     Word ( Integer )
 }
 
 impl CursorShift {
-    pub fn new(x: Integer, y: Integer) -> Self {
-        CursorShift::XY{x, y}
-    }
 
     pub fn down_by_n(n: Integer) -> Self {
-        Self::new(0.into(), n)
+        Self::Y(n)
     }
 
     pub fn down() -> Self {
@@ -53,7 +51,7 @@ impl CursorShift {
     }
 
     pub fn up_by_n(n: Integer) -> Self {
-        Self::new(0.into(), -1 * n)
+        Self::Y(-1 * n)
     }
 
     pub fn up() -> Self {
@@ -61,7 +59,7 @@ impl CursorShift {
     }
 
     pub fn left_by_n(n: Integer) -> Self {
-        Self::new(-1 * n, 0.into())
+        Self::X(-1 * n)
     }
 
     pub fn left() -> Self {
@@ -69,7 +67,7 @@ impl CursorShift {
     }
 
     pub fn right_by_n(n: Integer) -> Self {
-        Self::new(n, 0.into())
+        Self::X(n)
     }
 
     pub fn right() -> Self {
@@ -77,11 +75,11 @@ impl CursorShift {
     }
 
     pub fn word_forward() -> Self {
-        CursorShift::Word(1.into())
+        Self::Word(1.into())
     }
 
     pub fn word_backward() -> Self {
-        CursorShift::Word(Integer::from(-1))
+        Self::Word(Integer::from(-1))
     }
 }
 
@@ -297,22 +295,14 @@ impl RootModel {
         }
     }
 
-    // TODO depends on encoding, assume ASCII now
     pub fn move_cursor(&mut self, delta: CursorShift, adjust_selection: bool) {
         log::trace!("move_cursor delta = {:?}", delta);
         let current_pos = self.get_cursor_in_cache().unwrap(); // TODO
         log::trace!("move_cursor pos = {} -> on_screen = {:?}", self.cursor, current_pos);
 
         let new_cursor_offset = match delta {
-            CursorShift::XY {x, y} => {
-                if x == 0 {
-                    self.move_cursor_vertically(y, current_pos)
-                } else if y == 0 {
-                    self.move_cursor_horizontally(x, current_pos)
-                } else {
-                    todo!("Moving cursor simultaneously vertically and horizontally is not supported")
-                }
-            },
+            CursorShift::X(x) => self.move_cursor_horizontally(x, current_pos),
+            CursorShift::Y(y) => self.move_cursor_vertically(y, current_pos),
             CursorShift::Word(n) => {
                 let result = self.get_datasource_ref()
                     .map(|mut ds| ds.read_words(self.cursor, n));
@@ -350,8 +340,12 @@ impl RootModel {
     fn move_cursor_vertically(&mut self, dy: Integer, pos: Dimension) -> Integer {
         log::trace!("move_cursor_vertically current_pos = {:?}, deltaY = {}", pos, dy);
         let calc_offset_in_line = |line: &Line| {
-            let line_offset = min(Integer::from(max(line.content.len(), 1) - 1), pos.width);
-            line.start + line_offset
+            let graphemes: Vec<(usize, &str)> = line.content.grapheme_indices(true).collect();
+            let g = graphemes.get(pos.width.as_usize())
+                .or(graphemes.last())
+                .map(|(q, _)| *q)
+                .unwrap_or(0);
+            line.start + g
         };
 
         let y = pos.height + dy;
