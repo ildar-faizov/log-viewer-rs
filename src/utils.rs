@@ -58,3 +58,140 @@ pub fn measure<R, F>(descr: &str, f: F) -> R where
     log::trace!("{} {:?}", descr, sw.elapsed());
     result
 }
+
+pub mod utf8 {
+    use std::io::{BufReader, ErrorKind, Read, Seek};
+    use unicode_segmentation::UnicodeSegmentation;
+
+    pub enum UnicodeByteType {
+        Single,
+        Continuation,
+        FirstOf2,
+        FirstOf3,
+        FirstOf4
+    }
+
+    pub fn utf_byte_type(b: u8) -> Result<UnicodeByteType, ()> {
+        if b >> 7 == 0 {
+            Ok(UnicodeByteType::Single)
+        } else if b >> 6 == 0b10 {
+            Ok(UnicodeByteType::Continuation)
+        } else if b >> 5 == 0b110 {
+            Ok(UnicodeByteType::FirstOf2)
+        } else if b >> 4 == 0b1110 {
+            Ok(UnicodeByteType::FirstOf3)
+        } else if b >> 3 == 0b11110 {
+            Ok(UnicodeByteType::FirstOf4)
+        } else {
+            Err(())
+        }
+    }
+
+    pub struct UtfChar {
+        ch: char,
+        offset: u64,
+    }
+
+    impl UtfChar {
+        fn from_u8(b: u8, offset: u64) -> Self {
+            UtfChar {
+                ch: char::from(b),
+                offset,
+            }
+        }
+
+        fn from_little_endian(bytes: [u8; 4], offset: u64) -> std::io::Result<Self> {
+            let s = std::str::from_utf8(&bytes)
+                .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e))?;
+            match s.chars().next() {
+                Some(ch) => Ok(UtfChar {
+                    ch, offset
+                }),
+                None => panic!("Invalid UTF-8 sequence at offset {}: {:?}", offset, bytes) // TODO proper Err
+            }
+        }
+
+        pub fn get_char(&self) -> char {
+            self.ch
+        }
+
+        pub fn get_offset(&self) -> u64 {
+            self.offset
+        }
+
+        pub fn get_end(&self) -> u64 {
+            self.offset + (self.ch.len_utf8() as u64)
+        }
+    }
+
+    // TODO: big endian support
+    pub fn read_utf_char<R>(reader: &mut BufReader<R>) -> std::io::Result<Option<UtfChar>>
+        where R: Read + Seek
+    {
+        let offset = reader.stream_position()?;
+        read_utf_char_internal(reader, offset)
+    }
+
+    // TODO: big endian support
+    fn read_utf_char_internal<R>(reader: &mut BufReader<R>, offset: u64) -> std::io::Result<Option<UtfChar>>
+    where R: Read + Seek
+    {
+        let mut buf = [0_u8; 1];
+        let bytes_read = reader.read(&mut buf)?;
+        if bytes_read == 1 {
+            let b = buf[0];
+            match utf_byte_type(b) {
+                Ok(UnicodeByteType::Single) => Ok(Some(UtfChar::from_u8(b, offset))),
+                Ok(UnicodeByteType::FirstOf2) => match reader.read(&mut buf)? {
+                    0 => panic!("Invalid UTF-8 sequence at {}", offset), // TODO: Err()
+                    1 => Ok(Some(UtfChar::from_little_endian([b, buf[0], 0, 0], offset)?)),
+                    _ => panic!("Impossible") // TODO err
+                },
+                Ok(UnicodeByteType::FirstOf3) => {
+                    let mut buf2 = [0_u8; 2];
+                    match reader.read(&mut buf2)? {
+                        2 => Ok(Some(UtfChar::from_little_endian([b, buf2[0], buf2[1], 0], offset)?)),
+                        _ => panic!("Invalid UTF-8 sequence at {}", offset), // TODO: Err()
+                    }
+                },
+                Ok(UnicodeByteType::FirstOf4) => {
+                    let mut buf2 = [0_u8; 3];
+                    match reader.read(&mut buf2)? {
+                        3 => Ok(Some(UtfChar::from_little_endian([b, buf2[0], buf2[1], buf2[2]], offset)?)),
+                        _ => panic!("Invalid UTF-8 sequence at {}", offset), // TODO: Err()
+                    }
+                },
+                Ok(UnicodeByteType::Continuation) => {
+                    if offset == 0 {
+                        panic!("") // todo proper Err
+                    }
+                    reader.seek_relative(-2)?;
+                    read_utf_char_internal(reader, offset - 1)
+                },
+                Err(_) => panic!("Failed to recognize byte type at offset {}, value: {}", offset, b) // TODO proper Err
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub trait GraphemeIndexLookup {
+        fn offset_to_grapheme_index(&self, offset: usize) -> Result<usize, ()>;
+
+        fn grapheme_index_to_offset(&self, index: usize) -> usize;
+    }
+
+    impl GraphemeIndexLookup for str {
+        fn offset_to_grapheme_index(&self, offset: usize) -> Result<usize, ()> {
+            self.grapheme_indices(true)
+                .enumerate()
+                .find(|(i, (q, s))| *q <= offset && offset < *q + s.len())
+                .map(|(i, _)| Ok(i))
+                .unwrap_or(Err(()))
+        }
+
+        fn grapheme_index_to_offset(&self, index: usize) -> usize {
+            todo!()
+        }
+    }
+}

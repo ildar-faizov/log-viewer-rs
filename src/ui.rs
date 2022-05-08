@@ -16,6 +16,8 @@ use crate::highlight::highlighter_registry::cursive_highlighters;
 use crate::highlight::style_with_priority::StyleWithPriority;
 use crate::utils;
 use crate::utils::measure;
+use unicode_segmentation::UnicodeSegmentation;
+use crate::utils::utf8::GraphemeIndexLookup;
 
 pub enum UIElementName {
     MainContent,
@@ -98,29 +100,47 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                 let cursor = state.get_cursor_on_screen();
                 data.lines.iter()
                     .take(printer.size.y)
+                    .map(|line| (line, line.content.grapheme_indices(true).collect::<Vec<(usize, &str)>>()))
                     .enumerate()
-                    .filter(|(_, line)| line.content.len() > horizontal_scroll)
-                    .map(|(i, line)| {
-                        let slice = &line.content.as_str()[horizontal_scroll..];
+                    .filter(|(_, (_, graphemes))| graphemes.len() > horizontal_scroll)
+                    .map(|(i, (line, graphemes))| {
+                        let visible_graphemes = graphemes.into_iter().skip(horizontal_scroll).collect::<Vec<(usize, &str)>>();
+                        let slice = visible_graphemes.iter().map(|(_, s)| *s).collect::<Vec<&str>>();
+                        let display_str = slice.concat();
+                        log::trace!("{}: {:?}.len() = {}", i, slice, slice.len());
                         let selection = state.get_selection();
-                        let mut intervals = SpanProducer::new(min(printer.size.x, slice.len()));
-                        intervals.add_interval(0, slice.len(), regular_style);
+                        let mut intervals = SpanProducer::new();
+
+                        intervals.add_interval(0_u8, display_str.len(), regular_style);
                         if let Some(cursor) = cursor {
                             if cursor.height == i {
-                                intervals.add_interval(cursor.width, cursor.width + 1, cursor_style);
-                            }
-                        }
-                        if let Some(selection) = selection {
-                            let slice_offset = line.start + horizontal_scroll;
-                            if selection.start <= line.end && selection.end >= slice_offset {
-                                intervals.add_interval(selection.start - slice_offset, selection.end - slice_offset, selection_style);
+                                if let Some(grapheme) = visible_graphemes.get(cursor.width.as_usize()) {
+                                    let len = grapheme.1.len();
+                                    log::trace!("{}: Cursor drawn in grapheme {:?} with len {}", i, grapheme, len);
+                                    intervals.add_interval(grapheme.0, grapheme.0 + grapheme.1.bytes().len(), cursor_style);
+                                }
                             }
                         }
 
-                        highlighters.iter()
-                            .flat_map(|h| h.process(line.content.as_str()))
-                            .map(|highlight| (Integer::from(highlight.get_start()) - horizontal_scroll, Integer::from(highlight.get_end()) - horizontal_scroll, highlight.get_payload()))
-                            .for_each(|(s, e, style)| intervals.add_interval(s, e, style));
+                        if let Some((first_grapheme_pos, _)) = visible_graphemes.iter().next() {
+                            let first_grapheme_pos = *first_grapheme_pos;
+
+                            if let Some(selection) = selection {
+                                let slice_offset = line.start + first_grapheme_pos;
+                                if selection.start <= line.end && selection.end >= slice_offset {
+                                    intervals.add_interval(selection.start - slice_offset, selection.end - slice_offset, selection_style);
+                                }
+                            }
+
+                            highlighters.iter()
+                                .flat_map(|highlighter| highlighter.process(line.content.as_str()))
+                                .map(|highlight|
+                                    (Integer::from(highlight.get_start()) - first_grapheme_pos,
+                                     Integer::from(highlight.get_end()) - first_grapheme_pos,
+                                     highlight.get_payload())
+                                )
+                                .for_each(|(s, e, style)| intervals.add_interval(s, e, style));
+                        }
 
                         let disjoint_intervals = intervals.disjoint_intervals();
                         let mut spans = vec![];
@@ -128,9 +148,13 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                             let style = interval.2.iter()
                                 .fold(regular_style, |s1, s2| s1 + *s2)
                                 .get_style();
-                            spans.push(indexed_span(interval.0, interval.1, style));
+                            let width = visible_graphemes.iter()
+                                .filter(|(q, _)| *q >= interval.0 && *q < interval.1)
+                                .count();
+                            spans.push(indexed_span(interval.0, interval.1, width, style));
                         }
-                        (i, SpannedString::with_spans(slice, spans))
+                        log::trace!("{}: {}, spans = {:?}", i, display_str, spans);
+                        (i, SpannedString::with_spans(display_str, spans))
                     })
                     .for_each(|(i, ss)| {
                         printer.print_styled((0, i), SpannedStr::from(&ss));
@@ -153,7 +177,7 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
         .with_name(UIElementName::MainContent)
 }
 
-fn indexed_span<T, I1, I2>(start: I1, end: I2, attr: T) -> IndexedSpan<T>
+fn indexed_span<T, I1, I2>(start: I1, end: I2, width: usize, attr: T) -> IndexedSpan<T>
     where I1: TryInto<usize>, I2: TryInto<usize>
 {
     let start = start.try_into().unwrap_or(0);
@@ -163,27 +187,25 @@ fn indexed_span<T, I1, I2>(start: I1, end: I2, attr: T) -> IndexedSpan<T>
             start, end
         },
         attr,
-        width: end - start
+        width
     }
 }
 
 struct SpanProducer {
     intervals: Vec<(Integer, Integer, StyleWithPriority)>,
-    width: usize
 }
 
 impl SpanProducer {
-    fn new(width: usize) -> Self {
+    fn new() -> Self {
         SpanProducer {
-            intervals: vec![],
-            width
+            intervals: vec![]
         }
     }
 
     fn add_interval<A, B>(&mut self, s: A, e: B, style: StyleWithPriority)
         where A: Into<Integer>, B: Into<Integer> {
         let s = max(s.into(), 0_u8.into());
-        let e = min(e.into(), self.width.into());
+        let e = e.into();
         if s < e {
             self.intervals.push((s, e, style));
         }

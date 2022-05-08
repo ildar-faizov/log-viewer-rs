@@ -21,6 +21,7 @@ terminal-clipboard = "0.3.1"
 regex = "1.5"
 stopwatch = "0.0.7"
 spectral = "0.6.0"
+unicode-segmentation = "1.9.0"
 
 #[dependencies.cursive]
 #version = "*"

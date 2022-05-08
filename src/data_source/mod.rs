@@ -6,6 +6,7 @@ use std::cell::RefMut;
 use fluent_integer::Integer;
 use crate::shared::Shared;
 use crate::utils;
+use crate::utils::utf8::UtfChar;
 
 pub const BUFFER_SIZE: usize = 8192;
 
@@ -70,15 +71,11 @@ pub fn read_delimited<R, F>(
         Ordering::Less => Direction::Backward
     };
 
-    let next_char = |reader: &mut BufReader<R>| -> std::io::Result<Option<char>> {
-        let mut buf = [0_u8; 1];
-        match reader.read(&mut buf)? {
-            0 => Ok(None),
-            _ => Ok(Some(char::from(buf[0]))),
-        }
+    let next_char = |reader: &mut BufReader<R>| -> std::io::Result<Option<UtfChar>> {
+        utils::utf8::read_utf_char(reader)
     };
 
-    let peek_prev_char = |reader: &mut BufReader<R>| -> std::io::Result<Option<char>> {
+    let peek_prev_char = |reader: &mut BufReader<R>| -> std::io::Result<Option<UtfChar>> {
         if reader.stream_position()? == 0 {
             return Ok(None);
         }
@@ -86,18 +83,20 @@ pub fn read_delimited<R, F>(
         next_char(reader)
     };
 
-    let prev_char = |reader: &mut BufReader<R>| -> std::io::Result<Option<char>> {
+    let prev_char = |reader: &mut BufReader<R>| -> std::io::Result<Option<UtfChar>> {
         let result = peek_prev_char(reader)?;
-        if result.is_some() {
-            reader.seek_relative(-1)?;
+        if let Some(ch) = result.as_ref() {
+            let len = ch.get_char().len_utf8() as i64;
+            reader.seek_relative(-len)?;
         }
         Ok(result)
     };
 
-    let peek_next_char = |reader: &mut BufReader<R>| -> std::io::Result<Option<char>> {
+    let peek_next_char = |reader: &mut BufReader<R>| -> std::io::Result<Option<UtfChar>> {
         let result = next_char(reader)?;
-        if result.is_some() {
-            reader.seek_relative(-1)?;
+        if let Some(ch) = result.as_ref() {
+            let len = ch.get_char().len_utf8() as i64;
+            reader.seek_relative(-len)?;
         }
         Ok(result)
     };
@@ -115,7 +114,7 @@ pub fn read_delimited<R, F>(
         Direction::Forward => {
             // move to the beginning of current segment
             while let Some(ch) = peek_prev_char(f)? {
-                if is_delimiter(&ch) {
+                if is_delimiter(&ch.get_char()) {
                     break;
                 } else {
                     prev_char(f)?;
@@ -126,19 +125,18 @@ pub fn read_delimited<R, F>(
             let mut start = None;
             loop {
                 if let Some(ch) = next_char(f)? {
-                    let char_offset = f.stream_position()? - 1;
-                    if !is_delimiter(&ch) {
-                        stack.push(ch);
-                        start = start.or(Some(char_offset));
+                    if !is_delimiter(&ch.get_char()) {
+                        stack.push(ch.get_char());
+                        start = start.or(Some(ch.get_offset()));
                     } else {
                         if !stack.is_empty() || allow_empty_segments {
                             let (content, bytes_trimmed) = flush(&mut stack);
-                            data.push(Line::new(content, start.unwrap_or(char_offset), char_offset - bytes_trimmed));
+                            data.push(Line::new(content, start.unwrap_or(ch.get_offset()), ch.get_offset() - bytes_trimmed));
                             if data.len() == n.abs() {
                                 break;
                             }
                         }
-                        start = Some(char_offset + 1);
+                        start = Some(ch.get_end());
                     }
                 } else {
                     // EOF
@@ -153,7 +151,7 @@ pub fn read_delimited<R, F>(
         Direction::Backward => {
             // move to the end of current segment
             while let Some(ch) = peek_next_char(f)? {
-                if is_delimiter(&ch) {
+                if is_delimiter(&ch.get_char()) {
                     break;
                 } else {
                     next_char(f)?;
@@ -164,20 +162,19 @@ pub fn read_delimited<R, F>(
             let mut end = None;
             loop {
                 if let Some(ch) = prev_char(f)? {
-                    let char_offset = f.stream_position()?;
-                    if !is_delimiter(&ch) {
-                        stack.push(ch);
-                        end = end.or(Some(char_offset + 1));
+                    if !is_delimiter(&ch.get_char()) {
+                        stack.push(ch.get_char());
+                        end = end.or(Some(ch.get_end()));
                     } else {
                         if !stack.is_empty() || allow_empty_segments {
                             stack.reverse();
                             let (content, bytes_trimmed) = flush(&mut stack);
-                            data.push(Line::new(content, char_offset + 1, end.unwrap_or(char_offset + 1) - bytes_trimmed));
+                            data.push(Line::new(content, ch.get_offset() + 1, end.unwrap_or(ch.get_end()) - bytes_trimmed));
                             if data.len() == n.abs() {
                                 break;
                             }
                         }
-                        end = Some(char_offset);
+                        end = Some(ch.get_offset());
                     }
                 } else {
                     // BOF

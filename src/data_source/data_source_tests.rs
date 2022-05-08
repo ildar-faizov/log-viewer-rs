@@ -305,6 +305,25 @@ mod test_read_delimited {
         assert_that!(reader.stream_position()).is_ok_containing(0);
     }
 
+    #[test]
+    fn read_1_symbol_line_forward_utf() {
+        let (data, _) = test("\u{20AC}\n", 0, 1, SegmentType::Line); // s='€'
+        assert_that!(data).is_ok();
+        assert_that!(data.unwrap().lines).has_only_element().is_equal_to(Line::new("€", 0, 3));
+    }
+
+    #[test]
+    fn read_line_forward_utf() {
+        let (data, mut reader) =
+            test("AAA\r\n\u{201C}Quoted text\u{201D}", 0, 2, SegmentType::Line);
+
+        assert_that!(data).is_ok();
+        let lines = data.unwrap().lines;
+        assert_that!(lines).has_length(2);
+        assert_that!(lines).item_at(0).is_equal_to(Line::new("AAA", 0, 3));
+        assert_that!(lines).item_at(1).is_equal_to(Line::new("\u{201C}Quoted text\u{201D}", 5, 22));
+    }
+
     // read words forward
 
     const WORDS: &str = "Word1 word2  word3    Word4\tword_5";

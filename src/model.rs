@@ -16,6 +16,8 @@ use num_traits::identities::Zero;
 use crate::selection::Selection;
 use crate::utils;
 use crate::shared::Shared;
+use unicode_segmentation::UnicodeSegmentation;
+use crate::utils::utf8::GraphemeIndexLookup;
 
 const OFFSET_THRESHOLD: u64 = 8192;
 
@@ -298,7 +300,7 @@ impl RootModel {
     // TODO depends on encoding, assume ASCII now
     pub fn move_cursor(&mut self, delta: CursorShift, adjust_selection: bool) {
         log::trace!("move_cursor delta = {:?}", delta);
-        let current_pos = self.get_cursor_in_cache();
+        let current_pos = self.get_cursor_in_cache().unwrap(); // TODO
         log::trace!("move_cursor pos = {} -> on_screen = {:?}", self.cursor, current_pos);
 
         let new_cursor_offset = match delta {
@@ -345,99 +347,89 @@ impl RootModel {
         self.bring_cursor_into_view()
     }
 
-    fn move_cursor_vertically(&mut self, dy: Integer, current_pos: Option<Dimension>) -> Integer {
-        log::trace!("move_cursor_vertically current_pos = {:?}, deltaY = {}", current_pos, dy);
-        if let Some(pos) = current_pos {
-            let calc_offset_in_line = |line: &Line| {
-                let line_offset = min(Integer::from(max(line.content.len(), 1) - 1), pos.width);
-                line.start + line_offset
-            };
+    fn move_cursor_vertically(&mut self, dy: Integer, pos: Dimension) -> Integer {
+        log::trace!("move_cursor_vertically current_pos = {:?}, deltaY = {}", pos, dy);
+        let calc_offset_in_line = |line: &Line| {
+            let line_offset = min(Integer::from(max(line.content.len(), 1) - 1), pos.width);
+            line.start + line_offset
+        };
 
-            let y = pos.height + dy;
-            let data = self.data.as_ref().unwrap();
-            let n = data.lines.len();
-            if y >= 0 && y < n {
-                let line = data.lines.get(y.as_usize()).unwrap();
-                calc_offset_in_line(line)
-            } else {
-                let mut datasource = self.datasource.as_ref().unwrap().get_mut_ref();
-                if y >= n {
-                    let y = y - n;
-                    let offset = data.end.map_or(0.into(), |x| x + 1);
-                    let new_lines = datasource.read_lines(offset, y + 1).lines;
-                    if y < new_lines.len() {
-                        let line = new_lines.get(y.as_usize()).unwrap();
-                        calc_offset_in_line(line)
-                    } else {
-                        new_lines.last()
-                            .or_else(|| data.lines.last())
-                            .map(calc_offset_in_line)
-                            .unwrap_or(0.into())
-                    }
-                } else { // y < 0
-                    let new_lines = datasource.read_lines(data.start.unwrap() - 1, y).lines;
-                    if !new_lines.is_empty() {
-                        calc_offset_in_line(new_lines.first().unwrap())
-                    } else {
-                        calc_offset_in_line(data.lines.first().unwrap())
-                    }
+        let y = pos.height + dy;
+        let data = self.data.as_ref().unwrap();
+        let n = data.lines.len();
+        if y >= 0 && y < n {
+            let line = data.lines.get(y.as_usize()).unwrap();
+            calc_offset_in_line(line)
+        } else {
+            let mut datasource = self.datasource.as_ref().unwrap().get_mut_ref();
+            if y >= n {
+                let y = y - n;
+                let offset = data.end.map_or(0.into(), |x| x + 1);
+                let new_lines = datasource.read_lines(offset, y + 1).lines;
+                if y < new_lines.len() {
+                    let line = new_lines.get(y.as_usize()).unwrap();
+                    calc_offset_in_line(line)
+                } else {
+                    new_lines.last()
+                        .or_else(|| data.lines.last())
+                        .map(calc_offset_in_line)
+                        .unwrap_or(0.into())
+                }
+            } else { // y < 0
+                let new_lines = datasource.read_lines(data.start.unwrap() - 1, y).lines;
+                if !new_lines.is_empty() {
+                    calc_offset_in_line(new_lines.first().unwrap())
+                } else {
+                    calc_offset_in_line(data.lines.first().unwrap())
                 }
             }
-        } else {
-            todo!("Not implemented yet, should not be called often")
         }
     }
 
-    fn move_cursor_horizontally(&mut self, dx: Integer, current_pos: Option<Dimension>) -> Integer {
-        if let Some(pos) = current_pos {
-            let mut x = pos.width + dx;
-            let mut line_no = pos.height;
-            let data = self.data.as_ref().unwrap();
-            let mut datasource = self.datasource.as_ref().unwrap().get_mut_ref();
-            let mut line = data.lines.get(pos.height.as_usize()).unwrap().clone();
-            if x >= 0 {
-                loop {
-                    if x < line.content.len() {
-                        break line.start + x
-                    }
-                    x -= line.content.len();
-                    line_no += 1;
-                    if line_no < data.lines.len() {
-                        line = data.lines.get(line_no.as_usize()).unwrap().clone();
+    /// Calculates new cursor offset and assigns it to model. `dx` denotes number of *graphemes*
+    /// to move over. `pos` denotes cursor position in cache.
+    fn move_cursor_horizontally(&mut self, mut dx: Integer, pos: Dimension) -> Integer {
+        let direction = if dx >= 0 {
+            cursor_helper::Direction::Forward
+        } else {
+            cursor_helper::Direction::Backward
+        };
+
+        let mut line_iterator = cursor_helper::LineIterator::new(
+            self.data.as_ref().unwrap(),
+            self.datasource.as_ref().unwrap().get_mut_ref(),
+            direction,
+            pos.height
+        );
+
+        let mut position_in_line = pos.width; // negative numbers are counted from end of line
+        let mut best_possible_offset = self.cursor;
+        loop {
+            if let Some(line) = line_iterator.next() {
+                let graphemes = line.content.as_str().grapheme_indices(true)
+                    .map(|(q, _)| q)
+                    .collect::<Vec<usize>>();
+                if position_in_line < 0 {
+                    position_in_line += graphemes.len() + 1;
+                }
+                let expected_index = position_in_line + dx;
+                if expected_index >= 0 {
+                    if let Some(grapheme) = graphemes.get(expected_index.as_usize()) {
+                        break line.start + *grapheme;
                     } else {
-                        if let Some(next_line) = datasource.read_next_line(line.end + 1) {
-                            line = next_line;
-                        } else {
-                            break line.end
-                        }
+                        let d = graphemes.len() - position_in_line; // # of symbols remaining to end of line
+                        position_in_line = 0.into();
+                        dx -= d;
+                        best_possible_offset = line.end;
                     }
+                } else {
+                    dx += position_in_line;
+                    position_in_line = Integer::from(-1);
+                    best_possible_offset = line.start;
                 }
             } else {
-                let mut x = -x;
-                let mut line_no = line_no;
-                loop {
-                    if x == 0 {
-                        break line.end
-                    }
-                    line_no -= 1;
-                    if line_no >= 0 {
-                        line = data.lines.get(line_no.as_usize()).unwrap().clone();
-                    } else {
-                        if let Some(prev_line) = datasource.read_prev_line(line.start - 1) {
-                            line = prev_line;
-                        } else {
-                            break line.start
-                        }
-                    }
-                    if x < line.content.len() {
-                        break line.end - x
-                    } else {
-                        x -= line.content.len();
-                    }
-                }
+                break best_possible_offset;
             }
-        } else {
-            todo!("Not implemented yet, should not be called often")
         }
     }
 
@@ -447,10 +439,26 @@ impl RootModel {
 
     /// Calculates cursor position in terms of screen coordinates. Returns `None` if cursor is
     /// outside the cache. The method does not guarantee that the result is inside viewport.
+    ///
+    /// Result's `height` is number of line.
+    ///
+    /// Result's `width` is given in terms of *graphemes*.
     pub fn get_cursor_on_screen(&self) -> Option<Dimension> {
-        self.get_cursor_in_cache()
-            .filter(|p| p.width >= self.horizontal_scroll)
-            .map(|p| Dimension::new(p.width - self.horizontal_scroll, p.height))
+        let horizontal_scroll = self.horizontal_scroll.as_usize();
+        let result = self.get_cursor_in_cache().zip(self.data.as_ref())
+            .and_then(|(p, data)|
+                data.lines.get(p.height.as_usize())
+                    .map(|line: &Line| line.content.as_str())
+                    .and_then(|s| s.grapheme_indices(true).skip(horizontal_scroll).next())
+                    .map(|(first_visible_grapheme, _)| first_visible_grapheme)
+                    .filter(|first_visible_grapheme| p.width >= *first_visible_grapheme)
+                    .map(|first_visible_grapheme| Dimension {
+                        width: p.width - first_visible_grapheme,
+                        height: p.height
+                    })
+            );
+        log::trace!("get_cursor_on_screen(horizontal_scroll = {}) -> {:?}", horizontal_scroll, result);
+        result
     }
 
     pub fn quit(&self) {
@@ -558,8 +566,12 @@ impl RootModel {
     }
 
     /// Returns cursor position in terms of current line cache
+    ///
+    /// Result's `height` is a line number.
+    ///
+    /// Result's `width` is a *grapheme* index
     fn get_cursor_in_cache(&self) -> Option<Dimension> {
-        if let Some(data) = &self.data {
+        let result = if let Some(data) = &self.data {
             let line_count = data.lines.len();
             let search = data.lines
                 .binary_search_by(|probe| probe.start.cmp(&self.cursor));
@@ -568,9 +580,14 @@ impl RootModel {
                 Err(0) => None,
                 Err(n) => {
                     let line = data.lines.get(n - 1).unwrap();
-                    let x = self.cursor - line.start;
                     if n < line_count || (n == line_count && self.cursor <= line.end) {
-                        Some(Dimension::new(x, Integer::from(n) - 1))
+                        let raw_offset = self.cursor - line.start;
+                        let grapheme_index = line.content.as_str().offset_to_grapheme_index(raw_offset.as_usize());
+                        if let Ok(grapheme_index) = grapheme_index {
+                            Some(Dimension::new(grapheme_index.into(), Integer::from(n) - 1))
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     }
@@ -578,7 +595,9 @@ impl RootModel {
             }
         } else {
             None
-        }
+        };
+        log::trace!("get_cursor_in_cache for offset {} returned {:?}", self.cursor, result);
+        result
     }
 
     /// Makes viewport fit the cursor, adjusting vertical and horizontal scroll if necessary
@@ -747,5 +766,123 @@ impl RootModelRef {
     pub fn get_mut(&self) -> RefMut<'_, RootModel> {
         let s: &RefCell<RootModel> = self.0.borrow();
         s.borrow_mut()
+    }
+}
+
+mod cursor_helper {
+    use std::borrow::Cow;
+    use std::cell::RefMut;
+    use fluent_integer::Integer;
+    use crate::data_source::{Data, Line, LineSource};
+
+    pub enum Direction {
+        Forward,
+        Backward
+    }
+
+    pub struct LineIterator<'a> {
+        cache: &'a Data,
+        datasource: RefMut<'a, Box<dyn LineSource>>,
+        direction: Direction,
+        current_line: Option<Cow<'a, Line>>,
+        line_number: Integer,
+        started: bool,
+        exhausted: bool,
+    }
+
+    impl <'a> LineIterator<'a> {
+        pub fn new(
+            cache: &'a Data,
+            datasource: RefMut<'a, Box<dyn LineSource>>,
+            direction: Direction,
+            line_number: Integer
+        ) -> Self {
+            LineIterator {
+                cache,
+                datasource,
+                direction,
+                current_line: None,
+                line_number,
+                started: false,
+                exhausted: false
+            }
+        }
+
+        fn read_non_cached_line_backward(&mut self) -> Option<Cow<'a, Line>> {
+            let datasource = &mut *self.datasource;
+            self.current_line.as_ref()
+                .map(|current_line| current_line.start - 1)
+                .and_then(|s| datasource.read_prev_line(s))
+                .map(Cow::Owned)
+        }
+
+        fn read_non_cached_line_forward(&mut self) -> Option<Cow<'a, Line>> {
+            let datasource = &mut *self.datasource;
+            self.current_line.as_ref()
+                .map(|current_line| current_line.end + 1)
+                .and_then(|s| datasource.read_next_line(s))
+                .map(Cow::Owned)
+        }
+    }
+
+    impl <'a> Iterator for LineIterator<'a> {
+        type Item = Cow<'a, Line>;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            if self.exhausted {
+                return None;
+            }
+
+            if !self.started {
+                self.started = true;
+                let next_line = self.cache.lines.get(self.line_number.as_usize());
+                return match next_line {
+                    Some(line_ref) => {
+                        self.current_line = Some(Cow::Borrowed(line_ref));
+                        Some(Cow::Borrowed(line_ref))
+                    },
+                    None => {
+                        self.exhausted = true;
+                        None
+                    }
+                }
+            }
+
+            let next_line = match self.direction {
+                Direction::Forward => {
+                    let next_line_number: Integer = self.line_number + 1;
+                    if self.line_number >= 0 {
+                        if let Some(line) = self.cache.lines.get(next_line_number.as_usize()) {
+                            Some(Cow::Borrowed(line))
+                        } else {
+                            self.read_non_cached_line_forward()
+                        }
+                    } else {
+                        panic!("Impossible situation");
+                    }
+                },
+                Direction::Backward => {
+                    let next_line_number: Integer = self.line_number - 1;
+                    if next_line_number >= 0 {
+                        if let Some(line) = self.cache.lines.get(next_line_number.as_usize()) {
+                            Some(Cow::Borrowed(line))
+                        } else {
+                            self.read_non_cached_line_backward()
+                        }
+                    } else {
+                        self.read_non_cached_line_backward()
+                    }
+                }
+            };
+            if next_line.is_none() {
+                self.exhausted = true;
+            }
+            self.current_line = next_line;
+            self.line_number += match self.direction {
+                Direction::Forward => 1,
+                Direction::Backward => -1,
+            };
+            self.current_line.clone()
+        }
     }
 }
