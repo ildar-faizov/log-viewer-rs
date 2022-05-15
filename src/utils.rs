@@ -176,7 +176,12 @@ pub mod utf8 {
     }
 
     pub trait GraphemeIndexLookup {
-        fn offset_to_grapheme_index(&self, offset: usize) -> Result<usize, ()>;
+        /// Converts `offset` to index of corresponding *grapheme*.
+        ///
+        /// Return `Ok(i)` where `i` is the index of matching grapheme, or `Err(n)` where `n` is
+        /// the total number of graphemes if `offset` is outside of graphemes (usually greater than
+        /// number of graphemes)
+        fn offset_to_grapheme_index(&self, offset: usize) -> Result<usize, usize>;
 
         /// Converts grapheme `index` into real offset.
         ///
@@ -191,12 +196,21 @@ pub mod utf8 {
     }
 
     impl GraphemeIndexLookup for str {
-        fn offset_to_grapheme_index(&self, offset: usize) -> Result<usize, ()> {
-            self.grapheme_indices(true)
-                .enumerate()
-                .find(|(i, (q, s))| *q <= offset && offset < *q + s.len())
-                .map(|(i, _)| i)
-                .ok_or(())
+        fn offset_to_grapheme_index(&self, offset: usize) -> Result<usize, usize> {
+            let graphemes = self.grapheme_indices(true)
+                .collect::<Vec<(usize, &str)>>();
+            let n = graphemes.len();
+            match graphemes.binary_search_by(|(q, _)| q.cmp(&offset)) {
+                Ok(i) => Ok(i),
+                Err(0) => Err(0),
+                Err(i) => {
+                    if i < n {
+                        Ok(i)
+                    } else {
+                        Err(n)
+                    }
+                }
+            }
         }
 
         fn grapheme_index_to_offset(&self, index: usize) -> Result<usize, usize> {

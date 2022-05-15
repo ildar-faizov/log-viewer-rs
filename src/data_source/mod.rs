@@ -7,6 +7,8 @@ use fluent_integer::Integer;
 use crate::shared::Shared;
 use crate::utils;
 use crate::utils::utf8::UtfChar;
+use unicode_segmentation::UnicodeSegmentation;
+use crate::data_source::char_navigation::{next_char, peek_next_char, peek_prev_char, prev_char};
 
 pub const BUFFER_SIZE: usize = 8192;
 
@@ -37,7 +39,7 @@ pub struct Data {
 }
 
 #[derive(PartialEq, Eq)]
-enum Direction {
+pub enum Direction {
     Forward, Backward
 }
 
@@ -69,36 +71,6 @@ pub fn read_delimited<R, F>(
         }),
         Ordering::Greater => Direction::Forward,
         Ordering::Less => Direction::Backward
-    };
-
-    let next_char = |reader: &mut BufReader<R>| -> std::io::Result<Option<UtfChar>> {
-        utils::utf8::read_utf_char(reader)
-    };
-
-    let peek_prev_char = |reader: &mut BufReader<R>| -> std::io::Result<Option<UtfChar>> {
-        if reader.stream_position()? == 0 {
-            return Ok(None);
-        }
-        reader.seek_relative(-1)?;
-        next_char(reader)
-    };
-
-    let prev_char = |reader: &mut BufReader<R>| -> std::io::Result<Option<UtfChar>> {
-        let result = peek_prev_char(reader)?;
-        if let Some(ch) = result.as_ref() {
-            let len = ch.get_char().len_utf8() as i64;
-            reader.seek_relative(-len)?;
-        }
-        Ok(result)
-    };
-
-    let peek_next_char = |reader: &mut BufReader<R>| -> std::io::Result<Option<UtfChar>> {
-        let result = next_char(reader)?;
-        if let Some(ch) = result.as_ref() {
-            let len = ch.get_char().len_utf8() as i64;
-            reader.seek_relative(-len)?;
-        }
-        Ok(result)
     };
 
     let mut data = vec![];
@@ -254,12 +226,9 @@ pub trait LineSource {
 
     fn read_raw(&self, start: Integer, end: Integer) -> Result<String, ()>;
 
-    /// Reads designated number of words starting from the given offset.
-    ///
-    /// If the offset is in the middle of the word, this word is included in the result independently
-    /// of the direction.
-    /// Result contains tuple with words and offset.
-    fn read_words(&mut self, offset: Integer, number_of_words: Integer) -> Result<(Vec<String>, Integer), ()>;
+    /// Skips token starting from offset +/- 1 (depending on `direction`). A token is a
+    /// group of either non-delimiters or delimiters.
+    fn skip_token(&mut self, offset: Integer, direction: Direction) -> Result<Integer, ()>;
 }
 
 pub trait LineSourceBackend<R: Read> {
@@ -375,15 +344,98 @@ impl<R, B> LineSource for LineSourceImpl<R, B> where R: Read + Seek, B: LineSour
         Ok(result)
     }
 
-    fn read_words(&mut self, offset: Integer, number_of_words: Integer) -> Result<(Vec<String>, Integer), ()> {
-        self.with_reader(|mut f| {
-            let is_delimiter = char::is_ascii_whitespace;
-            let result = read_delimited(&mut f, offset, number_of_words, false, is_delimiter);
-            result
-                .map(|data| data.lines.into_iter().map(|line| line.content).collect())
-                .map(|words| (words, f.stream_position().unwrap().into()))
-                .map_err(|_| ())
-        })
+    fn skip_token(&mut self, offset: Integer, direction: Direction) -> Result<Integer, ()> {
+        let mut f = self.reader();
+
+        let actual_offset: Integer = f.stream_position().map_err(|_| ())?.into();
+        f.seek_relative((offset - actual_offset).as_i64()).map_err(|_| ())?;
+
+        let take_char0 = match direction {
+            Direction::Forward => next_char,
+            Direction:: Backward => prev_char,
+        };
+        let take_char = |reader: &mut BufReader<R>| -> Result<Option<UtfChar>, ()> {
+            take_char0(reader).map_err(|_| ())
+        };
+
+        if direction == Direction::Backward {
+            next_char(&mut f).map_err(|_| ())?;
+        }
+
+        let is_delimiter = |ch: &char| !ch.is_alphanumeric() && *ch != '_'; // TODO: better UTF-8 delimiter detection
+
+        enum State {
+            InToken,
+            InWhitespace,
+            DetermineIfTokenBoundary
+        }
+
+        if let Some(pattern) = take_char(&mut f)? {
+            let mut state = if !is_delimiter(&pattern.get_char()) {
+                State::DetermineIfTokenBoundary
+            } else {
+                State::InWhitespace
+            };
+            let mut prev_char_offset = pattern.get_offset();
+            while let Some(ch) = take_char(&mut f)? {
+                match state {
+                    State::DetermineIfTokenBoundary => {
+                        if !is_delimiter(&ch.get_char()) {
+                            state = State::InToken;
+                        } else {
+                            state = State::InWhitespace;
+                        }
+                    },
+                    State::InWhitespace => if !is_delimiter(&ch.get_char()) {
+                        prev_char_offset = ch.get_offset();
+                        break;
+                    },
+                    State::InToken => if is_delimiter(&ch.get_char()) {
+                        break;
+                    }
+                };
+                prev_char_offset = ch.get_offset();
+            }
+            Ok(prev_char_offset.into())
+        } else {
+            Ok(offset)
+        }
+    }
+}
+
+mod char_navigation {
+    use std::io::{BufReader, Read, Seek};
+    use crate::utils;
+    use crate::utils::utf8::UtfChar;
+
+    pub fn next_char<R: Read + Seek>(reader: &mut BufReader<R>) -> std::io::Result<Option<UtfChar>> {
+        utils::utf8::read_utf_char(reader)
+    }
+
+    pub fn peek_prev_char<R: Read + Seek>(reader: &mut BufReader<R>) -> std::io::Result<Option<UtfChar>> {
+        if reader.stream_position()? == 0 {
+            return Ok(None);
+        }
+        reader.seek_relative(-1)?;
+        next_char(reader)
+    }
+
+    pub fn prev_char<R: Read + Seek>(reader: &mut BufReader<R>) -> std::io::Result<Option<UtfChar>> {
+        let result = peek_prev_char(reader)?;
+        if let Some(ch) = result.as_ref() {
+            let len = ch.get_char().len_utf8() as i64;
+            reader.seek_relative(-len)?;
+        }
+        Ok(result)
+    }
+
+    pub fn peek_next_char<R: Read + Seek>(reader: &mut BufReader<R>) -> std::io::Result<Option<UtfChar>> {
+        let result = next_char(reader)?;
+        if let Some(ch) = result.as_ref() {
+            let len = ch.get_char().len_utf8() as i64;
+            reader.seek_relative(-len)?;
+        }
+        Ok(result)
     }
 }
 

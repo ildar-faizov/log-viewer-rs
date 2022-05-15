@@ -23,7 +23,7 @@ impl Action for WordForwardAction {
     }
 
     fn perform_action(&self, model: &mut RootModel, _event: &Event) -> EventResult {
-        model.move_cursor(CursorShift::word_forward(), false);
+        model.move_cursor(CursorShift::token_forward(), false);
         EventResult::Consumed(None)
     }
 }

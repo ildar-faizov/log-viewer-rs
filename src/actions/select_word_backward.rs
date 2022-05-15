@@ -25,7 +25,7 @@ impl Action for SelectWordBackwardAction {
     }
 
     fn perform_action(&self, model: &mut RootModel, _event: &Event) -> EventResult {
-        model.move_cursor(CursorShift::Word(Integer::from(-1)), true);
+        model.move_cursor(CursorShift::token_backward(), true);
         EventResult::Consumed(None)
     }
 }

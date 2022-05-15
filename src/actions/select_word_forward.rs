@@ -24,7 +24,7 @@ impl Action for SelectWordForwardAction {
     }
 
     fn perform_action(&self, model: &mut RootModel, event: &Event) -> EventResult {
-        model.move_cursor(CursorShift::Word(1.into()), true);
+        model.move_cursor(CursorShift::token_forward(), true);
         EventResult::Consumed(None)
     }
 }

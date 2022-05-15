@@ -1,8 +1,9 @@
+use std::alloc::handle_alloc_error;
 use crossbeam_channel::Sender;
 use std::path::{Path, PathBuf};
 use std::env::current_dir;
 use ModelEvent::*;
-use crate::data_source::{Data, LineSource, LineSourceImpl, Line, FileBackend};
+use crate::data_source::{Data, LineSource, LineSourceImpl, Line, FileBackend, Direction};
 use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
 use std::borrow::Borrow;
@@ -37,7 +38,8 @@ impl fmt::Display for Dimension {
 pub enum CursorShift {
     X ( Integer ),
     Y ( Integer ),
-    Word ( Integer )
+    TokenForward,
+    TokenBackward
 }
 
 impl CursorShift {
@@ -74,12 +76,12 @@ impl CursorShift {
         Self::right_by_n(1.into())
     }
 
-    pub fn word_forward() -> Self {
-        Self::Word(1.into())
+    pub fn token_forward() -> Self {
+        Self::TokenForward
     }
 
-    pub fn word_backward() -> Self {
-        Self::Word(Integer::from(-1))
+    pub fn token_backward() -> Self {
+        Self::TokenBackward
     }
 }
 
@@ -296,25 +298,28 @@ impl RootModel {
     }
 
     pub fn move_cursor(&mut self, delta: CursorShift, adjust_selection: bool) {
-        log::trace!("move_cursor delta = {:?}", delta);
-        let current_pos = self.get_cursor_in_cache().unwrap(); // TODO
-        log::trace!("move_cursor pos = {} -> on_screen = {:?}", self.cursor, current_pos);
+        log::trace!("move_cursor: delta = {:?}", delta);
+        let current_pos = self.get_cursor_in_cache(); // TODO
+        log::trace!("move_cursor: pos = {} -> on_screen = {:?}", self.cursor, current_pos);
 
-        let new_cursor_offset = match delta {
-            CursorShift::X(x) => self.move_cursor_horizontally(x, current_pos),
-            CursorShift::Y(y) => self.move_cursor_vertically(y, current_pos),
-            CursorShift::Word(n) => {
-                let result = self.get_datasource_ref()
-                    .map(|mut ds| ds.read_words(self.cursor, n));
-                if let Some(Ok((_, offset))) = result {
-                    offset
-                } else {
-                    self.cursor
-                }
-            }
-        };
+        if let Some(current_pos) = current_pos {
+            let new_cursor_offset = match delta {
+                CursorShift::X(x) => self.move_cursor_horizontally(x, current_pos),
+                CursorShift::Y(y) => self.move_cursor_vertically(y, current_pos),
+                CursorShift::TokenForward => self.get_datasource_ref()
+                    .map(|mut ds| ds.skip_token(self.cursor, Direction::Forward))
+                    .unwrap()
+                    .unwrap_or(self.cursor),
+                CursorShift::TokenBackward => self.get_datasource_ref()
+                    .map(|mut ds| ds.skip_token(self.cursor, Direction::Backward))
+                    .unwrap()
+                    .unwrap_or(self.cursor),
+            };
 
-        self.move_cursor_to_offset(new_cursor_offset, adjust_selection);
+            self.move_cursor_to_offset(new_cursor_offset, adjust_selection);
+        } else {
+            log::error!("move_cursor: Failed to evaluate cursor position in cache");
+        }
     }
 
     pub fn move_cursor_to_offset(&mut self, pos: Integer, adjust_selection: bool) -> bool {
@@ -570,18 +575,19 @@ impl RootModel {
             let search = data.lines
                 .binary_search_by(|probe| probe.start.cmp(&self.cursor));
             match search {
-                Ok(n) => Some(Dimension::new(0.into(), n.into())),
+                Ok(n) => Some(Dimension::new(0, n)),
                 Err(0) => None,
                 Err(n) => {
                     let line = data.lines.get(n - 1).unwrap();
                     if n < line_count || (n == line_count && self.cursor <= line.end) {
                         let raw_offset = self.cursor - line.start;
                         let grapheme_index = line.content.as_str().offset_to_grapheme_index(raw_offset.as_usize());
-                        if let Ok(grapheme_index) = grapheme_index {
-                            Some(Dimension::new(grapheme_index.into(), Integer::from(n) - 1))
-                        } else {
-                            None
-                        }
+                        let p = match grapheme_index {
+                            Ok(g) => g,
+                            Err(0) => 0,
+                            Err(g) => g - 1,
+                        };
+                        Some(Dimension::new(p, n - 1))
                     } else {
                         None
                     }
@@ -726,14 +732,17 @@ impl RootModel {
 }
 
 impl Dimension {
-    fn new(width: Integer, height: Integer) -> Self {
-        Dimension { width, height }
+    fn new<I: Into<Integer>>(width: I, height: I) -> Self {
+        Dimension {
+            width: width.into(),
+            height: height.into()
+        }
     }
 }
 
 impl Default for Dimension {
     fn default() -> Self {
-        Dimension::new(0.into(), 0.into())
+        Dimension::new(0, 0)
     }
 }
 

@@ -390,6 +390,68 @@ mod test_read_delimited {
         assert_that!(reader.stream_position()).is_ok_containing(28);
     }
 
+    #[test]
+    fn read_1_word_backward_from_end() {
+        let (data, mut reader) =
+            test(WORDS, 5, -1, SegmentType::Word);
+        assert_that!(data).is_ok()
+            .map(|d| &d.lines)
+            .has_only_element()
+            .is_equal_to(Line::new("Word1", 0, 5));
+
+        assert_that!(reader.stream_position()).is_ok_containing(0);
+    }
+
+    #[test]
+    fn read_1_word_backward_from_middle() {
+        let (data, mut reader) =
+            test(WORDS, 2, -1, SegmentType::Word);
+        assert_that!(data).is_ok()
+            .map(|d| &d.lines)
+            .has_only_element()
+            .is_equal_to(Line::new("Word1", 0, 5));
+
+        assert_that!(reader.stream_position()).is_ok_containing(0);
+    }
+
+    #[test]
+    fn read_4_words_backward_from_middle() {
+        let (data, mut reader) =
+            test(WORDS, 24, -4, SegmentType::Word);
+        let mut assert_that_lines = assert_that!(data).is_ok().map(|d| &d.lines);
+        assert_that_lines.has_length(4);
+        assert_that_lines.item_at(0).is_equal_to(Line::new("Word1", 0, 5));
+        assert_that_lines.item_at(1).is_equal_to(Line::new("word2", 6, 11));
+        assert_that_lines.item_at(2).is_equal_to(Line::new("word3", 13, 18));
+        assert_that_lines.item_at(3).is_equal_to(Line::new("Word4", 22, 27));
+
+        assert_that!(reader.stream_position()).is_ok_containing(0);
+    }
+
+    #[test]
+    fn read_words_backward_from_space() {
+        let (data, mut reader) =
+            test(WORDS, 12, -2, SegmentType::Word);
+        let mut assert_that_lines = assert_that!(data).is_ok().map(|d| &d.lines);
+        assert_that_lines.has_length(2);
+        assert_that_lines.item_at(0).is_equal_to(Line::new("Word1", 0, 5));
+        assert_that_lines.item_at(1).is_equal_to(Line::new("word2", 6, 11));
+
+        assert_that!(reader.stream_position()).is_ok_containing(0);
+    }
+
+    #[test]
+    fn read_words_backward_until_bof() {
+        let (data, mut reader) =
+            test(WORDS, 12, -3, SegmentType::Word);
+        let mut assert_that_lines = assert_that!(data).is_ok().map(|d| &d.lines);
+        assert_that_lines.has_length(2);
+        assert_that_lines.item_at(0).is_equal_to(Line::new("Word1", 0, 5));
+        assert_that_lines.item_at(1).is_equal_to(Line::new("word2", 6, 11));
+
+        assert_that!(reader.stream_position()).is_ok_containing(0);
+    }
+
     // utility
 
     enum SegmentType {
@@ -400,7 +462,7 @@ mod test_read_delimited {
         let mut reader = BufReader::new(Cursor::new(s));
         let (allow_empty_segments, delimiter): (bool, fn(&char) -> bool) = match segment_type {
             SegmentType::Line => (true, |c: &char| *c == '\n'),
-            SegmentType::Word => (false, char::is_ascii_whitespace),
+            SegmentType::Word => (false, |c: &char| !c.is_alphanumeric() && *c != '_'),
         };
         let data = read_delimited(
             &mut reader,
@@ -502,6 +564,43 @@ mod test_read_lines {
     }
 }
 
-mod test_read_words {
-    // TODO
+mod test_skip_token {
+    use std::io::Cursor;
+    use spectral::prelude::*;
+    use fluent_integer::Integer;
+    use crate::data_source::{Direction, Line, LineSource, LineSourceImpl, StrBackend};
+    use crate::test_extensions::UniqueElementAssertions;
+
+    #[test]
+    fn read_1_token_forward() {
+        let src = "(a) b\n";
+        let offset = test_skip_token(src, 2, Direction::Forward);
+        assert_that!(offset).is_ok_containing(&4.into());
+    }
+
+    #[test]
+    fn read_1_token_forward_across_line() {
+        let src = "A\nBB\nCCC";
+        let offset = test_skip_token(src, 0, Direction::Forward);
+        assert_that!(offset).is_ok_containing(&2.into());
+    }
+
+    #[test]
+    fn read_1_token_forward_across_line_should_skip_linebreaks() {
+        let src = "(a)\nb\n";
+        let offset = test_skip_token(src, 2, Direction::Forward);
+        assert_that!(offset).is_ok_containing(&4.into());
+    }
+
+    #[test]
+    fn read_1_token_backward_across_line() {
+        let src = "(a)\nb\n";
+        let offset = test_skip_token(src, 4, Direction::Backward);
+        assert_that!(offset).is_ok_containing(&1.into());
+    }
+
+    fn test_skip_token(s: &str, offset: u64, direction: Direction) -> Result<Integer, ()> {
+        let mut line_source = LineSourceImpl::<Cursor<&'static [u8]>, StrBackend<'static>>::from_str(s);
+        line_source.skip_token(offset.into(), direction)
+    }
 }
