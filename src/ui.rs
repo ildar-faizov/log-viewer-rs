@@ -116,7 +116,7 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
                         // visible_graphemes is guaranteed to be non-empty as graphemes.len() > horizontal_scroll >= 0
                         let first_grapheme_pos = visible_graphemes.first().unwrap().0;
 
-                        let mut intervals = SpanProducer::new(first_grapheme_pos);
+                        let mut intervals = SpanProducer::new(first_grapheme_pos, display_str.len());
                         intervals.add_interval_without_shift(0_u8, display_str.len(), regular_style);
 
                         if let Some(cursor) = cursor {
@@ -192,13 +192,15 @@ fn indexed_span<T, I1, I2>(start: I1, end: I2, width: usize, attr: T) -> Indexed
 struct SpanProducer {
     intervals: Vec<(Integer, Integer, StyleWithPriority)>,
     shift: usize,
+    limit: usize,
 }
 
 impl SpanProducer {
-    fn new(shift: usize) -> Self {
+    fn new(shift: usize, limit: usize) -> Self {
         SpanProducer {
             intervals: vec![],
-            shift
+            shift,
+            limit,
         }
     }
 
@@ -210,7 +212,7 @@ impl SpanProducer {
     fn add_interval_without_shift<A, B>(&mut self, s: A, e: B, style: StyleWithPriority)
         where A: Into<Integer>, B: Into<Integer> {
         let s = max(s.into(), 0_u8.into());
-        let e = e.into();
+        let e = min(e.into(), self.limit.into());
         if s < e {
             self.intervals.push((s, e, style));
         }
