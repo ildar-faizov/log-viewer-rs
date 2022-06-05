@@ -1,4 +1,7 @@
+use std::borrow::Cow;
+use cursive::utils::span::IndexedCow;
 use stopwatch::Stopwatch;
+use unicode_segmentation::UnicodeSegmentation;
 use fluent_integer::Integer;
 
 pub fn sign(n: Integer) -> (Integer, i8) {
@@ -218,6 +221,62 @@ pub mod utf8 {
                 .nth(index)
                 .map(|(q, _)| q)
                 .ok_or(self.grapheme_indices(true).count())
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct GraphemeRender {
+    pub original_offset: usize,
+    pub render_offset: usize,
+    pub render: IndexedCow,
+    pub is_first_in_original: bool,
+}
+
+impl GraphemeRender {
+
+    pub fn from_string(string: &String) -> Vec<GraphemeRender> {
+        let mut result = vec![];
+        let mut render_offset = 0_usize;
+        for (original_offset, original_grapheme) in string.grapheme_indices(true) {
+            let render = GraphemeRender::render(original_grapheme);
+            match render {
+                Cow::Borrowed(_) => {
+                    let render_len = render.len();
+                    result.push(GraphemeRender {
+                        original_offset,
+                        render_offset,
+                        render: IndexedCow::Borrowed {
+                            start: original_offset,
+                            end: original_offset + render_len
+                        },
+                        is_first_in_original: true,
+                    });
+                    render_offset += render_len;
+                },
+                Cow::Owned(_) => {
+                    for (i, g) in render.to_string().graphemes(true).enumerate() {
+                        result.push(GraphemeRender {
+                            original_offset,
+                            render_offset,
+                            render: IndexedCow::Owned(g.to_string()),
+                            is_first_in_original: i == 0,
+                        });
+                        render_offset += g.len();
+                    }
+                }
+            }
+        }
+        result
+    }
+
+    fn render(grapheme: &str) -> Cow<str> {
+        if grapheme.eq("\t") {
+            Cow::Owned(String::from("    "))
+        } else if grapheme.eq("\u{FEFF}") {
+            Cow::Owned(String::with_capacity(0))
+        } else {
+            Cow::Borrowed(grapheme)
         }
     }
 }

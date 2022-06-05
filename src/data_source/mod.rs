@@ -38,7 +38,7 @@ pub struct Data {
     pub end: Option<Integer>
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Copy, Clone)]
 pub enum Direction {
     Forward, Backward
 }

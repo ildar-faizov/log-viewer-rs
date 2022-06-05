@@ -18,6 +18,7 @@ use crate::selection::Selection;
 use crate::utils;
 use crate::shared::Shared;
 use unicode_segmentation::UnicodeSegmentation;
+use crate::utils::GraphemeRender;
 use crate::utils::utf8::GraphemeIndexLookup;
 
 const OFFSET_THRESHOLD: u64 = 8192;
@@ -106,11 +107,78 @@ impl fmt::Display for ScrollPosition {
     }
 }
 
+#[derive(Debug, Default, Clone, Eq, PartialEq)]
+pub struct LineRender {
+    pub content: String,
+    pub start: Integer, // offset of the first symbol in line
+    pub end: Integer, // offset of the first symbol of the next line
+    pub render: Vec<GraphemeRender>
+}
+
+impl LineRender {
+    fn new(line: Line) -> Self {
+        let render = GraphemeRender::from_string(&line.content);
+        LineRender {
+            content: line.content,
+            start: line.start,
+            end: line.end,
+            render,
+        }
+    }
+
+    pub fn find_grapheme_by_offset(&self, offset: Integer) -> Option<(usize, &GraphemeRender)> {
+        let r = self.render.binary_search_by_key(&offset, |g| g.original_offset.into());
+        let pos = match r {
+            Ok(mut c) => {
+                loop {
+                    let mut should_continue = false;
+                    if c > 0 {
+                        if let Some(prev) = self.render.get(c - 1) {
+                            if prev.original_offset == offset {
+                                should_continue = true;
+                            }
+                        }
+                    }
+                    if should_continue {
+                        c -= 1;
+                    } else {
+                        break;
+                    }
+                }
+                c
+            },
+            Err(0) => 0,
+            Err(c) => c - 1,
+        };
+        self.render.get(pos).map(|g| (pos, g))
+    }
+
+    pub fn find_grapheme_index_by_offset(&self, offset: Integer) -> Option<usize> {
+        self.find_grapheme_by_offset(offset).map(|(pos, _)| pos)
+    }
+}
+
+pub struct DataRender {
+    pub lines: Vec<LineRender>,
+    pub start: Option<Integer>,
+    pub end: Option<Integer>,
+}
+
+impl DataRender {
+    pub fn new(raw_data: Data) -> Self {
+        DataRender {
+            lines: raw_data.lines.into_iter().map(|line| LineRender::new(line)).collect(),
+            start: raw_data.start,
+            end: raw_data.end,
+        }
+    }
+}
+
 pub struct RootModel {
     model_sender: Sender<ModelEvent>,
     file_name: Option<String>,
     file_size: Integer,
-    data: Option<Data>,
+    data: Option<DataRender>,
     viewport_size: Dimension,
     scroll_position: ScrollPosition,
     horizontal_scroll: Integer,
@@ -165,12 +233,12 @@ impl RootModel {
         }
     }
 
-    pub fn data(&self) -> Option<&Data> {
+    pub fn data(&self) -> Option<&DataRender> {
         self.data.as_ref()
     }
 
     fn set_data(&mut self, data: Data) {
-        self.data = Some(data);
+        self.data = Some(DataRender::new(data));
         self.emit_event(DataUpdated);
     }
 
@@ -344,11 +412,11 @@ impl RootModel {
 
     fn move_cursor_vertically(&mut self, dy: Integer, pos: Dimension) -> Integer {
         log::trace!("move_cursor_vertically current_pos = {:?}, deltaY = {}", pos, dy);
-        let calc_offset_in_line = |line: &Line| {
-            let graphemes: Vec<(usize, &str)> = line.content.grapheme_indices(true).collect();
+        let calc_offset_in_line = |line: &LineRender| {
+            let graphemes: Vec<&GraphemeRender> = line.render.iter().collect();
             let g = graphemes.get(pos.width.as_usize())
                 .or(graphemes.last())
-                .map(|(q, _)| *q)
+                .map(|ch| ch.render_offset)
                 .unwrap_or(0);
             line.start + g
         };
@@ -364,20 +432,22 @@ impl RootModel {
             if y >= n {
                 let y = y - n;
                 let offset = data.end.map_or(0.into(), |x| x + 1);
-                let new_lines = datasource.read_lines(offset, y + 1).lines;
+                let mut new_lines = datasource.read_lines(offset, y + 1).lines;
                 if y < new_lines.len() {
-                    let line = new_lines.get(y.as_usize()).unwrap();
-                    calc_offset_in_line(line)
+                    let line = LineRender::new(new_lines.remove(y.as_usize()));
+                    calc_offset_in_line(&line)
                 } else {
-                    new_lines.last()
+                    new_lines.pop()
+                        .map(|x| LineRender::new(x))
+                        .as_ref()
                         .or_else(|| data.lines.last())
                         .map(calc_offset_in_line)
                         .unwrap_or(0.into())
                 }
             } else { // y < 0
-                let new_lines = datasource.read_lines(data.start.unwrap() - 1, y).lines;
+                let mut new_lines = datasource.read_lines(data.start.unwrap() - 1, y).lines;
                 if !new_lines.is_empty() {
-                    calc_offset_in_line(new_lines.first().unwrap())
+                    calc_offset_in_line(&LineRender::new(new_lines.remove(0)))
                 } else {
                     calc_offset_in_line(data.lines.first().unwrap())
                 }
@@ -389,9 +459,9 @@ impl RootModel {
     /// to move over. `pos` denotes cursor position in cache.
     fn move_cursor_horizontally(&mut self, mut dx: Integer, pos: Dimension) -> Integer {
         let direction = if dx >= 0 {
-            cursor_helper::Direction::Forward
+            Direction::Forward
         } else {
-            cursor_helper::Direction::Backward
+            Direction::Backward
         };
 
         let mut line_iterator = cursor_helper::LineIterator::new(
@@ -405,18 +475,28 @@ impl RootModel {
         let mut best_possible_offset = self.cursor;
         loop {
             if let Some(line) = line_iterator.next() {
-                let graphemes = line.content.as_str().grapheme_indices(true)
-                    .map(|(q, _)| q)
-                    .collect::<Vec<usize>>();
+                let get_graphemes = || line.render.iter();
+                let line_len = get_graphemes().count();
                 if position_in_line < 0 {
-                    position_in_line += graphemes.len() + 1;
+                    position_in_line += line_len + 1;
                 }
                 let expected_index = position_in_line + dx;
                 if expected_index >= 0 {
-                    if let Some(grapheme) = graphemes.get(expected_index.as_usize()) {
-                        break line.start + *grapheme;
+                    let get_grapheme = match direction {
+                        Direction::Forward => get_graphemes()
+                            .skip(expected_index.as_usize())
+                            .skip_while(|ch| !ch.is_first_in_original)
+                            .next(),
+                        Direction::Backward => get_graphemes()
+                            .take(expected_index.as_usize() + 1)
+                            .rev()
+                            .skip_while(|ch| !ch.is_first_in_original)
+                            .next()
+                    };
+                    if let Some(grapheme) = get_grapheme {
+                        break line.start + grapheme.original_offset;
                     } else {
-                        let d = graphemes.len() - position_in_line; // # of symbols remaining to end of line
+                        let d = line_len - position_in_line; // # of symbols remaining to end of line
                         position_in_line = 0.into();
                         dx -= d;
                         best_possible_offset = line.end;
@@ -447,12 +527,10 @@ impl RootModel {
         let result = self.get_cursor_in_cache().zip(self.data.as_ref())
             .and_then(|(p, data)|
                 data.lines.get(p.height.as_usize())
-                    .map(|line: &Line| line.content.as_str())
-                    .and_then(|s| s.grapheme_indices(true).skip(horizontal_scroll).next())
-                    .map(|(first_visible_grapheme, _)| first_visible_grapheme)
-                    .filter(|first_visible_grapheme| p.width >= *first_visible_grapheme)
+                    .and_then(|s| s.render.get(horizontal_scroll))
+                    .filter(|first_visible_grapheme| p.width >= first_visible_grapheme.render_offset)
                     .map(|first_visible_grapheme| Dimension {
-                        width: p.width - first_visible_grapheme,
+                        width: p.width - first_visible_grapheme.render_offset,
                         height: p.height
                     })
             );
@@ -568,7 +646,7 @@ impl RootModel {
     ///
     /// Result's `height` is a line number.
     ///
-    /// Result's `width` is a *grapheme* index
+    /// Result's `width` is a *rendered grapheme* index
     fn get_cursor_in_cache(&self) -> Option<Dimension> {
         let result = if let Some(data) = &self.data {
             let line_count = data.lines.len();
@@ -581,13 +659,8 @@ impl RootModel {
                     let line = data.lines.get(n - 1).unwrap();
                     if n < line_count || (n == line_count && self.cursor <= line.end) {
                         let raw_offset = self.cursor - line.start;
-                        let grapheme_index = line.content.as_str().offset_to_grapheme_index(raw_offset.as_usize());
-                        let p = match grapheme_index {
-                            Ok(g) => g,
-                            Err(0) => 0,
-                            Err(g) => g - 1,
-                        };
-                        Some(Dimension::new(p, n - 1))
+                        let grapheme_index = line.find_grapheme_index_by_offset(raw_offset);
+                        Some(Dimension::new(grapheme_index.unwrap_or(0), n - 1))
                     } else {
                         None
                     }
@@ -611,17 +684,22 @@ impl RootModel {
         // if let Some(mut datasource) = self.get_datasource_ref() {
 
         let mut datasource = self.get_datasource_ref().unwrap();
-        let calc_horizontal_scroll = |line: &Line, off: Integer| {
+        let calc_horizontal_scroll = |line: &LineRender, off: Integer| {
             let h = self.horizontal_scroll;
             let w = self.viewport_size.width;
             let local_offset = off - line.start;
-            if local_offset < h {
-                local_offset
-            } else if local_offset >= h + w {
-                local_offset - w + 1
-            } else {
-                h
-            }
+            line.find_grapheme_index_by_offset(local_offset)
+                .map(Integer::from)
+                .map(|index| {
+                    if index < h {
+                        index
+                    } else if index >= h + w {
+                        index - w + 1
+                    } else {
+                        h
+                    }
+                })
+                .unwrap_or(h)
         };
 
         if let Some(data) = self.data.as_ref() {
@@ -698,7 +776,7 @@ impl RootModel {
         } else {
             log::trace!("bring_into_view. Raw case.");
             let (line_offset, horizontal_scroll) = datasource.read_next_line(offset)
-                .map(|line| (line.start, calc_horizontal_scroll(&line, offset)))
+                .map(|line| (line.start, calc_horizontal_scroll(&LineRender::new(line), offset)))
                 .unwrap_or((Integer::zero(), Integer::zero()));
             drop(datasource);
             let scroll_position = ScrollPosition::new(Ratio::new(line_offset, self.file_size), Integer::zero());
@@ -776,18 +854,14 @@ mod cursor_helper {
     use std::borrow::Cow;
     use std::cell::RefMut;
     use fluent_integer::Integer;
-    use crate::data_source::{Data, Line, LineSource};
-
-    pub enum Direction {
-        Forward,
-        Backward
-    }
+    use crate::data_source::{Data, Line, LineSource, Direction};
+    use crate::model::{DataRender, LineRender};
 
     pub struct LineIterator<'a> {
-        cache: &'a Data,
+        cache: &'a DataRender,
         datasource: RefMut<'a, Box<dyn LineSource>>,
         direction: Direction,
-        current_line: Option<Cow<'a, Line>>,
+        current_line: Option<Cow<'a, LineRender>>,
         line_number: Integer,
         started: bool,
         exhausted: bool,
@@ -795,7 +869,7 @@ mod cursor_helper {
 
     impl <'a> LineIterator<'a> {
         pub fn new(
-            cache: &'a Data,
+            cache: &'a DataRender,
             datasource: RefMut<'a, Box<dyn LineSource>>,
             direction: Direction,
             line_number: Integer
@@ -811,25 +885,27 @@ mod cursor_helper {
             }
         }
 
-        fn read_non_cached_line_backward(&mut self) -> Option<Cow<'a, Line>> {
+        fn read_non_cached_line_backward(&mut self) -> Option<Cow<'a, LineRender>> {
             let datasource = &mut *self.datasource;
             self.current_line.as_ref()
                 .map(|current_line| current_line.start - 1)
                 .and_then(|s| datasource.read_prev_line(s))
+                .map(LineRender::new)
                 .map(Cow::Owned)
         }
 
-        fn read_non_cached_line_forward(&mut self) -> Option<Cow<'a, Line>> {
+        fn read_non_cached_line_forward(&mut self) -> Option<Cow<'a, LineRender>> {
             let datasource = &mut *self.datasource;
             self.current_line.as_ref()
                 .map(|current_line| current_line.end + 1)
                 .and_then(|s| datasource.read_next_line(s))
+                .map(LineRender::new)
                 .map(Cow::Owned)
         }
     }
 
     impl <'a> Iterator for LineIterator<'a> {
-        type Item = Cow<'a, Line>;
+        type Item = Cow<'a, LineRender>;
 
         fn next(&mut self) -> Option<Self::Item> {
             if self.exhausted {
