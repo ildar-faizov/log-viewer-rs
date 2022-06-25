@@ -1,6 +1,7 @@
 use std::borrow::BorrowMut;
 use std::cmp::{max, min};
 use std::convert::TryInto;
+use std::rc::Rc;
 use cursive::View;
 use cursive::views::{LinearLayout, TextView, Canvas, NamedView};
 use cursive::traits::{Nameable, Resizable};
@@ -14,6 +15,8 @@ use crate::actions::action_registry::action_registry;
 use crate::highlight::highlighter_registry::cursive_highlighters;
 use crate::highlight::style_with_priority::StyleWithPriority;
 use crate::{RootModel, Shared, utils};
+use crate::highlight::highlight::Highlighter;
+use crate::model::rendered::LineRender;
 use crate::utils::measure;
 
 pub enum UIElementName {
@@ -94,83 +97,20 @@ fn build_canvas(model: Shared<RootModel>) -> NamedView<Canvas<Shared<RootModel>>
             state.set_viewport_size(Integer::from(printer.size.x), Integer::from(printer.size.y));
 
             if let Some(data) = state.data() {
-                let horizontal_scroll = state.get_horizontal_scroll().as_usize();
-                let cursor = state.get_cursor();
+                let line_drawer = LineDrawer::new()
+                    .with_state(&state)
+                    .with_highlighters(&highlighters)
+                    .with_width(printer.size.x)
+                    .with_regular_style(regular_style)
+                    .with_cursor_style(cursor_style)
+                    .with_selection_style(selection_style);
                 data.lines.iter()
                     .take(printer.size.y)
                     .enumerate()
-                    .map(|(i, line)| {
-                        let get_visible_graphemes = || line.render.iter()
-                            .skip(horizontal_scroll)
-                            .take(printer.size.x);
-
-                        let display_str = get_visible_graphemes()
-                            .map(|g| g.render.resolve(line.content.as_str()))
-                            .fold(String::with_capacity(printer.size.x), |mut acc, item| {
-                                acc += item;
-                                acc
-                            });
-                        let selection = state.get_selection();
-
-                        if let Some(first_grapheme) = get_visible_graphemes().next() {
-                            let first_offset = first_grapheme.render_offset;
-                            let display_len = get_visible_graphemes().count();
-
-                            let mut intervals = SpanProducer::new(horizontal_scroll, display_len);
-                            intervals.add_interval_without_shift(0_u8, display_len, regular_style);
-
-                            if cursor >= line.start && cursor <= line.end {
-                                if let Some((pos, g)) = line.find_grapheme_by_offset(cursor - line.start) {
-                                    if g.is_first_in_original {
-                                        intervals.add_interval(pos, pos + 1, cursor_style);
-                                    }
-                                }
-                            }
-
-                            if let Some(selection) = selection {
-                                if selection.start <= line.end && selection.end >= (line.start + first_grapheme.original_offset) {
-                                    let selection_start = line.find_grapheme_index_by_offset(selection.start - line.start);
-                                    let selection_end = line.find_grapheme_by_offset(selection.end - line.start);
-                                    if let Some((s, (mut e, g))) = selection_start.zip(selection_end) {
-                                        if g.original_offset < selection.end - line.start {
-                                            e += 1;
-                                        }
-                                        intervals.add_interval(s, e, selection_style);
-                                    }
-                                }
-                            }
-
-                            highlighters.iter()
-                                .flat_map(|highlighter| highlighter.process(line.content.as_str()))
-                                .for_each(|h| {
-                                    let s = line.find_grapheme_index_by_offset(h.get_start().into());
-                                    let e = line.find_grapheme_index_by_offset(h.get_end().into());
-                                    if let Some((s, e)) = s.zip(e) {
-                                        intervals.add_interval(s, e, h.get_payload());
-                                    }
-                                });
-
-                            let disjoint_intervals = intervals.disjoint_intervals();
-                            let mut spans = vec![];
-                            for interval in disjoint_intervals {
-                                let style = interval.2.iter()
-                                    .fold(regular_style, |s1, s2| s1 + *s2)
-                                    .get_style();
-                                let s = get_visible_graphemes().nth(interval.0.as_usize()).map(|g| g.render_offset - first_offset).unwrap();
-                                let e = get_visible_graphemes().nth(interval.1.as_usize() - 1)
-                                    .map(|g| g.render_offset + g.render.resolve(line.content.as_str()).len() - first_offset)
-                                    .unwrap();
-                                spans.push(indexed_span(s, e, (interval.1 - interval.0).as_usize(), style));
-                            }
-                            log::trace!("{}: {}, spans = {:?}", i, display_str, spans);
-                            (i, SpannedString::with_spans(display_str, spans))
-                        } else {
-                            (i, SpannedString::new())
-                        }
-                    })
-                    .for_each(|(i, ss)| {
-                        printer.print_styled((0, i), SpannedStr::from(&ss));
-                    });
+                    .map(|(i, line)| line_drawer.draw(i, line))
+                    .for_each(|(i, ss)|
+                        printer.print_styled((0, i), SpannedStr::from(&ss))
+                    );
             } else {
                 printer.clear();
             }
@@ -200,6 +140,132 @@ fn indexed_span<T, I1, I2>(start: I1, end: I2, width: usize, attr: T) -> Indexed
         },
         attr,
         width
+    }
+}
+
+#[derive(Default)]
+struct LineDrawer<'a> {
+    state: Option<&'a RootModel>,
+    highlighters: Option<&'a Vec<Rc<dyn Highlighter<StyleWithPriority> + 'static>>>,
+    width: Option<usize>,
+    regular_style: Option<StyleWithPriority>,
+    cursor_style: Option<StyleWithPriority>,
+    selection_style: Option<StyleWithPriority>,
+}
+
+impl<'a> LineDrawer<'a> {
+    fn new<'b>() -> LineDrawer<'b> {
+        LineDrawer::default()
+    }
+
+    fn with_state(mut self, state: &'a RootModel) -> Self {
+        self.state.replace(state);
+        self
+    }
+
+    fn with_highlighters(mut self, highlighters: &'a Vec<Rc<dyn Highlighter<StyleWithPriority> + 'static>>) -> Self {
+        self.highlighters.replace(highlighters);
+        self
+    }
+
+    fn with_width(mut self, width: usize) -> Self {
+        self.width.replace(width);
+        self
+    }
+
+    fn with_regular_style(mut self, regular_style: StyleWithPriority) -> Self {
+        self.regular_style.replace(regular_style);
+        self
+    }
+
+    fn with_cursor_style(mut self, cursor_style: StyleWithPriority) -> Self {
+        self.cursor_style.replace(cursor_style);
+        self
+    }
+
+    fn with_selection_style(mut self, selection_style: StyleWithPriority) -> Self {
+        self.selection_style.replace(selection_style);
+        self
+    }
+
+    fn draw(&self, i: usize, line: &LineRender) -> (usize, SpannedString<Style>) {
+        let state = self.state.unwrap();
+        let highlighters = self.highlighters.unwrap();
+        let width = self.width.unwrap();
+        let regular_style = self.regular_style.unwrap();
+        let cursor_style = self.cursor_style.unwrap();
+        let selection_style = self.selection_style.unwrap();
+
+        let horizontal_scroll = state.get_horizontal_scroll().as_usize();
+        let cursor = state.get_cursor();
+
+        let get_visible_graphemes = || line.render.iter()
+            .skip(horizontal_scroll)
+            .take(width);
+
+        let display_str = get_visible_graphemes()
+            .map(|g| g.render.resolve(line.content.as_str()))
+            .fold(String::with_capacity(width), |mut acc, item| {
+                acc += item;
+                acc
+            });
+        let selection = state.get_selection();
+
+        if let Some(first_grapheme) = get_visible_graphemes().next() {
+            let first_offset = first_grapheme.render_offset;
+            let display_len = get_visible_graphemes().count();
+
+            let mut intervals = SpanProducer::new(horizontal_scroll, display_len);
+            intervals.add_interval_without_shift(0_u8, display_len, regular_style);
+
+            if cursor >= line.start && cursor <= line.end {
+                if let Some((pos, g)) = line.find_grapheme_by_offset(cursor - line.start) {
+                    if g.is_first_in_original {
+                        intervals.add_interval(pos, pos + 1, cursor_style);
+                    }
+                }
+            }
+
+            if let Some(selection) = selection {
+                if selection.start <= line.end && selection.end >= (line.start + first_grapheme.original_offset) {
+                    let selection_start = line.find_grapheme_index_by_offset(selection.start - line.start);
+                    let selection_end = line.find_grapheme_by_offset(selection.end - line.start);
+                    if let Some((s, (mut e, g))) = selection_start.zip(selection_end) {
+                        if g.original_offset < selection.end - line.start {
+                            e += 1;
+                        }
+                        intervals.add_interval(s, e, selection_style);
+                    }
+                }
+            }
+
+            highlighters.iter()
+                .flat_map(|highlighter| highlighter.process(line.content.as_str()))
+                .for_each(|h| {
+                    let s = line.find_grapheme_index_by_offset(h.get_start().into());
+                    let e = line.find_grapheme_index_by_offset(h.get_end().into());
+                    if let Some((s, e)) = s.zip(e) {
+                        intervals.add_interval(s, e, h.get_payload());
+                    }
+                });
+
+            let disjoint_intervals = intervals.disjoint_intervals();
+            let mut spans = vec![];
+            for interval in disjoint_intervals {
+                let style = interval.2.iter()
+                    .fold(regular_style, |s1, s2| s1 + *s2)
+                    .get_style();
+                let s = get_visible_graphemes().nth(interval.0.as_usize()).map(|g| g.render_offset - first_offset).unwrap();
+                let e = get_visible_graphemes().nth(interval.1.as_usize() - 1)
+                    .map(|g| g.render_offset + g.render.resolve(line.content.as_str()).len() - first_offset)
+                    .unwrap();
+                spans.push(indexed_span(s, e, (interval.1 - interval.0).as_usize(), style));
+            }
+            log::trace!("{}: {}, spans = {:?}", i, display_str, spans);
+            (i, SpannedString::with_spans(display_str, spans))
+        } else {
+            (i, SpannedString::new())
+        }
     }
 }
 

@@ -314,7 +314,7 @@ mod test_read_delimited {
 
     #[test]
     fn read_line_forward_utf() {
-        let (data, mut reader) =
+        let (data, _) =
             test("AAA\r\n\u{201C}Quoted text\u{201D}", 0, 2, SegmentType::Line);
 
         assert_that!(data).is_ok();
@@ -478,12 +478,9 @@ mod test_read_lines {
     extern crate spectral;
 
     use std::io::Cursor;
-    use num_traits::Zero;
-    use fluent_integer::Integer;
-    use crate::data_source::{Data, Line, LineSource, StrBackend};
+    use crate::data_source::{Line, LineSource, StrBackend};
     use crate::data_source::LineSourceImpl;
     use spectral::prelude::*;
-    use crate::test_extensions;
     use crate::test_extensions::*;
 
     const LINES_UNIX: &'static str = "AAA\nBBB\nCCC\nDDD";
@@ -568,8 +565,7 @@ mod test_skip_token {
     use std::io::Cursor;
     use spectral::prelude::*;
     use fluent_integer::Integer;
-    use crate::data_source::{Direction, Line, LineSource, LineSourceImpl, StrBackend};
-    use crate::test_extensions::UniqueElementAssertions;
+    use crate::data_source::{Direction, LineSource, LineSourceImpl, StrBackend};
 
     #[test]
     fn read_1_token_forward() {
