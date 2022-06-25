@@ -20,7 +20,7 @@ use clap::{Arg, App, ArgMatches};
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use crate::ui::{build_ui, UIElementName};
-use crate::model::model::{ModelEvent, RootModelRef, RootModel};
+use crate::model::model::{ModelEvent, RootModel};
 use crate::model::model::ModelEvent::*;
 use cursive::direction::Direction;
 use std::fs::OpenOptions;
@@ -31,6 +31,7 @@ use log4rs::encode::pattern::PatternEncoder;
 use log4rs::Config;
 use log4rs::config::{Appender, Root};
 use log::LevelFilter;
+use crate::shared::Shared;
 
 fn main() {
 	init_logging();
@@ -106,7 +107,7 @@ fn create_model(args: ArgMatches, sender: Sender<ModelEvent>) -> RootModel {
 
 fn run_ui(receiver: Receiver<ModelEvent>, model: RootModel) {
 	// let mut model_ref = Rc::new(RefCell::new(model));
-	let model_ref = RootModelRef::new(model);
+	let model_ref = Shared::new(model);
 
 	let mut app = cursive::default().into_runner();
 	app.clear_global_callbacks(Event::CtrlChar('c')); // Ctrl+C is for copy
@@ -140,7 +141,7 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, event: ModelEve
 			Ok(true)
 		},
 		DataUpdated => {
-			let mut v: ViewRef<Canvas<RootModelRef>> = app.find_name(&UIElementName::MainContent.to_string()).unwrap();
+			let mut v: ViewRef<Canvas<Shared<RootModel>>> = app.find_name(&UIElementName::MainContent.to_string()).unwrap();
 			v.take_focus(Direction::none());
 			Ok(true)
 		}
@@ -148,7 +149,7 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, event: ModelEve
 			// let mut v: ViewRef<TextView> = app.find_name(&UIElementName::MainContent.to_string()).unwrap();
 			// v.set_content(format!("Error: {}", err));
 
-			let mut v: ViewRef<Canvas<RootModelRef>> = app.find_name(&UIElementName::MainContent.to_string()).unwrap();
+			let mut v: ViewRef<Canvas<Shared<RootModel>>> = app.find_name(&UIElementName::MainContent.to_string()).unwrap();
 			v.take_focus(Direction::none());
 
 			Ok(true)

@@ -3,9 +3,7 @@ use std::path::{Path, PathBuf};
 use std::env::current_dir;
 use ModelEvent::*;
 use crate::data_source::{Data, Direction, FileBackend, LineSource, LineSourceImpl};
-use std::cell::{RefCell, RefMut};
-use std::rc::Rc;
-use std::borrow::Borrow;
+use std::cell::RefMut;
 use num_rational::Ratio;
 use std::cmp::min;
 use std::fs::File;
@@ -37,9 +35,6 @@ pub struct RootModel {
     datasource: Option<Shared<Box<dyn LineSource>>>,
     error: Option<Box<dyn ToString>>,
 }
-
-#[derive(Clone)]
-pub struct RootModelRef(Rc<RefCell<RootModel>>);
 
 pub enum ModelEvent {
     FileName(String),
@@ -656,16 +651,5 @@ impl RootModel {
         let scroll_starting_point = Ratio::new(new_offset, datasource.get_length());
         drop(datasource);
         self.set_scroll_position(ScrollPosition::new(scroll_starting_point, 0.into()))
-    }
-}
-
-impl RootModelRef {
-    pub fn new(model: RootModel) -> Self {
-        RootModelRef(Rc::new(RefCell::new(model)))
-    }
-
-    pub fn get_mut(&self) -> RefMut<'_, RootModel> {
-        let s: &RefCell<RootModel> = self.0.borrow();
-        s.borrow_mut()
     }
 }

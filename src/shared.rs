@@ -18,3 +18,11 @@ impl <T> Shared<T> {
         s.borrow_mut()
     }
 }
+
+impl<T> Clone for Shared<T> {
+    fn clone(&self) -> Self {
+        Shared {
+            v: self.v.clone()
+        }
+    }
+}

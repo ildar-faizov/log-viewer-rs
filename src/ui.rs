@@ -4,7 +4,6 @@ use std::convert::TryInto;
 use cursive::View;
 use cursive::views::{LinearLayout, TextView, Canvas, NamedView};
 use cursive::traits::{Nameable, Resizable};
-use crate::model::model::RootModelRef;
 use cursive::event::EventResult;
 use cursive::view::Selector;
 use cursive::theme::{Style, ColorStyle, Theme};
@@ -14,7 +13,7 @@ use fluent_integer::Integer;
 use crate::actions::action_registry::action_registry;
 use crate::highlight::highlighter_registry::cursive_highlighters;
 use crate::highlight::style_with_priority::StyleWithPriority;
-use crate::utils;
+use crate::{RootModel, Shared, utils};
 use crate::utils::measure;
 
 pub enum UIElementName {
@@ -37,7 +36,7 @@ impl From<UIElementName> for String {
     }
 }
 
-pub fn build_ui(model: RootModelRef) -> Box<dyn View> {
+pub fn build_ui(model: Shared<RootModel>) -> Box<dyn View> {
     // let mut menu = Menubar::new();
     // menu.add_subtree("File",
     //                  MenuTree::new()
@@ -81,7 +80,7 @@ pub fn build_ui(model: RootModelRef) -> Box<dyn View> {
     Box::new(layout)
 }
 
-fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
+fn build_canvas(model: Shared<RootModel>) -> NamedView<Canvas<Shared<RootModel>>> {
     let actions = action_registry();
 
     let palette = Theme::default().palette;
@@ -91,7 +90,7 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
     let selection_style = StyleWithPriority::new(Style::from(ColorStyle::new(palette[HighlightText], palette[Background])), 1, 0xff);
     Canvas::new(model.clone())
         .with_draw(move |state, printer| measure("draw",  || {
-            let mut state = state.get_mut();
+            let mut state = state.get_mut_ref();
             state.set_viewport_size(Integer::from(printer.size.x), Integer::from(printer.size.y));
 
             if let Some(data) = state.data() {
@@ -180,7 +179,7 @@ fn build_canvas(model: RootModelRef) -> NamedView<Canvas<RootModelRef>> {
             match actions.get(&event) {
                 Some(action) => {
                     log::info!("Event {:?} occurred, action {} will be invoked", event, action.description());
-                    let result = action.perform_action(state.get_mut().borrow_mut(), &event);
+                    let result = action.perform_action(state.get_mut_ref().borrow_mut(), &event);
                     log::info!("Event {:?} handled, action {} finished", event, action.description());
                     result
                 },
