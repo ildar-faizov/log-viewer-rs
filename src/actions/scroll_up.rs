@@ -1,7 +1,7 @@
-use cursive::event::{EventResult, Key};
+use cursive::event::{Event, EventResult, Key};
 use fluent_integer::Integer;
 use crate::actions::action::Action;
-use crate::{Event, RootModel};
+use crate::model::model::RootModel;
 
 pub struct ScrollUpAction {
 

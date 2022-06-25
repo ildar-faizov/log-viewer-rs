@@ -1,10 +1,10 @@
-use std::borrow::{BorrowMut, Cow};
+use std::borrow::BorrowMut;
 use std::cmp::{max, min};
 use std::convert::TryInto;
 use cursive::View;
 use cursive::views::{LinearLayout, TextView, Canvas, NamedView};
 use cursive::traits::{Nameable, Resizable};
-use crate::model::RootModelRef;
+use crate::model::model::RootModelRef;
 use cursive::event::EventResult;
 use cursive::view::Selector;
 use cursive::theme::{Style, ColorStyle, Theme};
@@ -15,9 +15,7 @@ use crate::actions::action_registry::action_registry;
 use crate::highlight::highlighter_registry::cursive_highlighters;
 use crate::highlight::style_with_priority::StyleWithPriority;
 use crate::utils;
-use crate::utils::{GraphemeRender, measure};
-use unicode_segmentation::{GraphemeIndices, UnicodeSegmentation};
-use crate::utils::utf8::GraphemeIndexLookup;
+use crate::utils::measure;
 
 pub enum UIElementName {
     MainContent,

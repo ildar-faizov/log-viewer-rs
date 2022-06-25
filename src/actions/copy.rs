@@ -1,7 +1,7 @@
-use cursive::event::EventResult;
+use cursive::event::{Event, EventResult};
 use crate::actions::action::Action;
-use crate::{Event, RootModel};
 use crate::Event::CtrlChar;
+use crate::model::model::RootModel;
 
 pub struct CopyAction {}
 

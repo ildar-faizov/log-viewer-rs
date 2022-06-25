@@ -1,6 +1,6 @@
-use cursive::event::{EventResult, Key};
+use cursive::event::{Event, EventResult, Key};
 use crate::actions::action::Action;
-use crate::{Event, RootModel};
+use crate::model::model::RootModel;
 
 pub struct PgUpAction {}
 

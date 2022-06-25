@@ -7,7 +7,6 @@ use fluent_integer::Integer;
 use crate::shared::Shared;
 use crate::utils;
 use crate::utils::utf8::UtfChar;
-use unicode_segmentation::UnicodeSegmentation;
 use crate::data_source::char_navigation::{next_char, peek_next_char, peek_prev_char, prev_char};
 
 pub const BUFFER_SIZE: usize = 8192;

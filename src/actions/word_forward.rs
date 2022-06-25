@@ -1,8 +1,7 @@
-use cursive::event::{EventResult, Key};
-use fluent_integer::Integer;
+use cursive::event::{Event, EventResult, Key};
 use crate::actions::action::Action;
-use crate::{Event, RootModel};
-use crate::model::CursorShift;
+use crate::model::model::RootModel;
+use crate::model::cursor_shift::CursorShift;
 
 pub struct WordForwardAction {}
 

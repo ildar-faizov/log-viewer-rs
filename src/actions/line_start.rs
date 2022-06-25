@@ -1,8 +1,8 @@
-use cursive::event::EventResult;
+use cursive::event::{Event, EventResult};
 use cursive::event::Key::Home;
 use crate::actions::action::Action;
-use crate::{Event, RootModel};
-use crate::model::Dimension;
+use crate::model::dimension::Dimension;
+use crate::model::model::RootModel;
 
 pub struct LineStartAction {}
 

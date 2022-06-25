@@ -18,12 +18,10 @@ use cursive::views::{TextView, ViewRef, Canvas};
 
 use clap::{Arg, App, ArgMatches};
 
-use model::RootModel;
-
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use crate::ui::{build_ui, UIElementName};
-use crate::model::{ModelEvent, RootModelRef};
-use crate::model::ModelEvent::*;
+use crate::model::model::{ModelEvent, RootModelRef, RootModel};
+use crate::model::model::ModelEvent::*;
 use cursive::direction::Direction;
 use std::fs::OpenOptions;
 use std::panic;

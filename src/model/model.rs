@@ -1,15 +1,13 @@
-use std::alloc::handle_alloc_error;
 use crossbeam_channel::Sender;
 use std::path::{Path, PathBuf};
 use std::env::current_dir;
 use ModelEvent::*;
-use crate::data_source::{Data, LineSource, LineSourceImpl, Line, FileBackend, Direction};
+use crate::data_source::{Data, Direction, FileBackend, LineSource, LineSourceImpl};
 use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
 use std::borrow::Borrow;
 use num_rational::Ratio;
-use std::fmt;
-use std::cmp::{max, min};
+use std::cmp::min;
 use std::fs::File;
 use std::option::Option::Some;
 use fluent_integer::Integer;
@@ -17,162 +15,14 @@ use num_traits::identities::Zero;
 use crate::selection::Selection;
 use crate::utils;
 use crate::shared::Shared;
-use unicode_segmentation::UnicodeSegmentation;
+use crate::model::cursor_helper;
+use crate::model::cursor_shift::CursorShift;
+use crate::model::dimension::Dimension;
+use crate::model::rendered::{DataRender, LineRender};
+use crate::model::scroll_position::ScrollPosition;
 use crate::utils::GraphemeRender;
-use crate::utils::utf8::GraphemeIndexLookup;
 
 const OFFSET_THRESHOLD: u64 = 8192;
-
-#[derive(Clone, Copy, Eq, PartialEq, Debug)]
-pub struct Dimension {
-    pub width: Integer,
-    pub height: Integer,
-}
-
-impl fmt::Display for Dimension {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Dimension(w={}, h={})", self.width, self.height)
-    }
-}
-
-#[derive(Debug)]
-pub enum CursorShift {
-    X ( Integer ),
-    Y ( Integer ),
-    TokenForward,
-    TokenBackward
-}
-
-impl CursorShift {
-
-    pub fn down_by_n(n: Integer) -> Self {
-        Self::Y(n)
-    }
-
-    pub fn down() -> Self {
-        Self::down_by_n(1.into())
-    }
-
-    pub fn up_by_n(n: Integer) -> Self {
-        Self::Y(-1 * n)
-    }
-
-    pub fn up() -> Self {
-        Self::up_by_n(1.into())
-    }
-
-    pub fn left_by_n(n: Integer) -> Self {
-        Self::X(-1 * n)
-    }
-
-    pub fn left() -> Self {
-        Self::left_by_n(1.into())
-    }
-
-    pub fn right_by_n(n: Integer) -> Self {
-        Self::X(n)
-    }
-
-    pub fn right() -> Self {
-        Self::right_by_n(1.into())
-    }
-
-    pub fn token_forward() -> Self {
-        Self::TokenForward
-    }
-
-    pub fn token_backward() -> Self {
-        Self::TokenBackward
-    }
-}
-
-/* Describes scroll position.
- * starting_point denotes initial scroll position. It is 0 at the beginning. A user
- * may scroll to the end (then it is 1) or choose some point in between. Belongs to [0, 1].
- * shift denotes number of lines to count from starting_point.
- *
- * E.g. when user scrolls 3 lines down from the beginning of the file, starting_point=0 and shift=3.
- * E.g. when user scrolls to the bottom, starting_point=1 and shift=0.
- */
-#[derive(Clone, Copy, Eq, PartialEq, Debug)]
-struct ScrollPosition {
-    starting_point: Ratio<Integer>,
-    // [0, 1] - initial point in scroll area
-    shift: Integer,
-}
-
-impl fmt::Display for ScrollPosition {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ScrollPosition(starting_point={}/{}, shift={})", self.starting_point.numer(), self.starting_point.denom(), self.shift)
-    }
-}
-
-#[derive(Debug, Default, Clone, Eq, PartialEq)]
-pub struct LineRender {
-    pub content: String,
-    pub start: Integer, // offset of the first symbol in line
-    pub end: Integer, // offset of the first symbol of the next line
-    pub render: Vec<GraphemeRender>
-}
-
-impl LineRender {
-    fn new(line: Line) -> Self {
-        let render = GraphemeRender::from_string(&line.content);
-        LineRender {
-            content: line.content,
-            start: line.start,
-            end: line.end,
-            render,
-        }
-    }
-
-    pub fn find_grapheme_by_offset(&self, offset: Integer) -> Option<(usize, &GraphemeRender)> {
-        let r = self.render.binary_search_by_key(&offset, |g| g.original_offset.into());
-        let pos = match r {
-            Ok(mut c) => {
-                loop {
-                    let mut should_continue = false;
-                    if c > 0 {
-                        if let Some(prev) = self.render.get(c - 1) {
-                            if prev.original_offset == offset {
-                                should_continue = true;
-                            }
-                        }
-                    }
-                    if should_continue {
-                        c -= 1;
-                    } else {
-                        break;
-                    }
-                }
-                c
-            },
-            Err(0) => 0,
-            Err(c) => c - 1,
-        };
-        self.render.get(pos).map(|g| (pos, g))
-    }
-
-    pub fn find_grapheme_index_by_offset(&self, offset: Integer) -> Option<usize> {
-        self.find_grapheme_by_offset(offset).map(|(pos, _)| pos)
-    }
-}
-
-pub struct DataRender {
-    pub lines: Vec<LineRender>,
-    pub start: Option<Integer>,
-    pub end: Option<Integer>,
-}
-
-impl DataRender {
-    pub fn new(raw_data: Data) -> Self {
-        DataRender {
-            lines: raw_data.lines.into_iter().map(|line| LineRender::new(line)).collect(),
-            start: raw_data.start,
-            end: raw_data.end,
-        }
-    }
-}
 
 pub struct RootModel {
     model_sender: Sender<ModelEvent>,
@@ -809,36 +659,6 @@ impl RootModel {
     }
 }
 
-impl Dimension {
-    fn new<I: Into<Integer>>(width: I, height: I) -> Self {
-        Dimension {
-            width: width.into(),
-            height: height.into()
-        }
-    }
-}
-
-impl Default for Dimension {
-    fn default() -> Self {
-        Dimension::new(0, 0)
-    }
-}
-
-impl ScrollPosition {
-    fn new(starting_point: Ratio<Integer>, shift: Integer) -> Self {
-        ScrollPosition {
-            starting_point,
-            shift,
-        }
-    }
-}
-
-impl Default for ScrollPosition {
-    fn default() -> Self {
-        ScrollPosition::new(Ratio::zero(), 0.into())
-    }
-}
-
 impl RootModelRef {
     pub fn new(model: RootModel) -> Self {
         RootModelRef(Rc::new(RefCell::new(model)))
@@ -847,121 +667,5 @@ impl RootModelRef {
     pub fn get_mut(&self) -> RefMut<'_, RootModel> {
         let s: &RefCell<RootModel> = self.0.borrow();
         s.borrow_mut()
-    }
-}
-
-mod cursor_helper {
-    use std::borrow::Cow;
-    use std::cell::RefMut;
-    use fluent_integer::Integer;
-    use crate::data_source::{Data, Line, LineSource, Direction};
-    use crate::model::{DataRender, LineRender};
-
-    pub struct LineIterator<'a> {
-        cache: &'a DataRender,
-        datasource: RefMut<'a, Box<dyn LineSource>>,
-        direction: Direction,
-        current_line: Option<Cow<'a, LineRender>>,
-        line_number: Integer,
-        started: bool,
-        exhausted: bool,
-    }
-
-    impl <'a> LineIterator<'a> {
-        pub fn new(
-            cache: &'a DataRender,
-            datasource: RefMut<'a, Box<dyn LineSource>>,
-            direction: Direction,
-            line_number: Integer
-        ) -> Self {
-            LineIterator {
-                cache,
-                datasource,
-                direction,
-                current_line: None,
-                line_number,
-                started: false,
-                exhausted: false
-            }
-        }
-
-        fn read_non_cached_line_backward(&mut self) -> Option<Cow<'a, LineRender>> {
-            let datasource = &mut *self.datasource;
-            self.current_line.as_ref()
-                .map(|current_line| current_line.start - 1)
-                .and_then(|s| datasource.read_prev_line(s))
-                .map(LineRender::new)
-                .map(Cow::Owned)
-        }
-
-        fn read_non_cached_line_forward(&mut self) -> Option<Cow<'a, LineRender>> {
-            let datasource = &mut *self.datasource;
-            self.current_line.as_ref()
-                .map(|current_line| current_line.end + 1)
-                .and_then(|s| datasource.read_next_line(s))
-                .map(LineRender::new)
-                .map(Cow::Owned)
-        }
-    }
-
-    impl <'a> Iterator for LineIterator<'a> {
-        type Item = Cow<'a, LineRender>;
-
-        fn next(&mut self) -> Option<Self::Item> {
-            if self.exhausted {
-                return None;
-            }
-
-            if !self.started {
-                self.started = true;
-                let next_line = self.cache.lines.get(self.line_number.as_usize());
-                return match next_line {
-                    Some(line_ref) => {
-                        self.current_line = Some(Cow::Borrowed(line_ref));
-                        Some(Cow::Borrowed(line_ref))
-                    },
-                    None => {
-                        self.exhausted = true;
-                        None
-                    }
-                }
-            }
-
-            let next_line = match self.direction {
-                Direction::Forward => {
-                    let next_line_number: Integer = self.line_number + 1;
-                    if self.line_number >= 0 {
-                        if let Some(line) = self.cache.lines.get(next_line_number.as_usize()) {
-                            Some(Cow::Borrowed(line))
-                        } else {
-                            self.read_non_cached_line_forward()
-                        }
-                    } else {
-                        panic!("Impossible situation");
-                    }
-                },
-                Direction::Backward => {
-                    let next_line_number: Integer = self.line_number - 1;
-                    if next_line_number >= 0 {
-                        if let Some(line) = self.cache.lines.get(next_line_number.as_usize()) {
-                            Some(Cow::Borrowed(line))
-                        } else {
-                            self.read_non_cached_line_backward()
-                        }
-                    } else {
-                        self.read_non_cached_line_backward()
-                    }
-                }
-            };
-            if next_line.is_none() {
-                self.exhausted = true;
-            }
-            self.current_line = next_line;
-            self.line_number += match self.direction {
-                Direction::Forward => 1,
-                Direction::Backward => -1,
-            };
-            self.current_line.clone()
-        }
     }
 }

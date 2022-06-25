@@ -1,5 +1,5 @@
 use cursive::event::{Event, EventResult};
-use crate::RootModel;
+use crate::model::model::RootModel;
 
 /// Generic trait for any UI action
 pub trait Action {

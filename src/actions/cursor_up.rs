@@ -1,7 +1,7 @@
-use cursive::event::{EventResult, Key};
+use cursive::event::{Event, EventResult, Key};
 use crate::actions::action::Action;
-use crate::{Event, RootModel};
-use crate::model::CursorShift;
+use crate::model::cursor_shift::CursorShift;
+use crate::model::model::RootModel;
 
 pub struct CursorUpAction {}
 
