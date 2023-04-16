@@ -12,6 +12,7 @@ mod selection;
 mod actions;
 mod highlight;
 mod test_extensions;
+mod advanced_io;
 
 use cursive::{CursiveRunnable, CursiveRunner, View};
 use cursive::views::{TextView, ViewRef, Canvas};
@@ -25,6 +26,7 @@ use crate::model::model::ModelEvent::*;
 use cursive::direction::Direction;
 use std::fs::OpenOptions;
 use std::panic;
+use std::str::FromStr;
 use cursive::event::Event;
 use log4rs::append::file::FileAppender;
 use log4rs::encode::pattern::PatternEncoder;
@@ -33,22 +35,23 @@ use log4rs::config::{Appender, Root};
 use log::LevelFilter;
 use crate::shared::Shared;
 
-fn main() {
-	init_logging();
-	init_panic_hook();
-
+fn main() -> std::io::Result<()> {
 	let args = parse_args();
 
+	init_logging(&args)?;
+	init_panic_hook();
+
 	let (sender, receiver) = unbounded();
-	let model = create_model(args, sender);
+	let model = create_model(&args, sender);
 
     run_ui(receiver, model);
+	Ok(())
 }
 
-fn init_logging() {
+fn init_logging(args: &ArgMatches) -> std::io::Result<()> {
 	let file = OpenOptions::new().write(true).open("./logv.log");
 	if let Ok(file) = file {
-		file.set_len(0);
+		file.set_len(0)?;
 	}
 
 	let logfile = FileAppender::builder()
@@ -56,17 +59,24 @@ fn init_logging() {
 		.build("./logv.log")
 		.unwrap();
 
+	let level = match args.value_of("loglevel") {
+		Some(loglevel) => LevelFilter::from_str(loglevel).unwrap_or(LevelFilter::Info),
+		None => LevelFilter::Info
+	};
+
 	let config = Config::builder()
 		.appender(Appender::builder().build("logfile", Box::new(logfile)))
 		.build(Root::builder()
 			.appender("logfile")
-			.build(LevelFilter::Debug)) // TODO change to Info
+			.build(level))
 		.unwrap();
 
 	log4rs::init_config(config).unwrap();
 
 	// log::info!("=".repeat(25));
-	log::info!("Logging from logv started");
+	log::info!("Logging from logv started. level = {}", level);
+
+	Ok(())
 }
 
 fn init_panic_hook() {
@@ -90,10 +100,17 @@ fn parse_args<'a>() -> ArgMatches<'a> {
 			.help("Log file")
 			.takes_value(true)
 		)
+		.arg(Arg::with_name("loglevel")
+			.short("L")
+			.value_name("LOGLEVEL")
+			.help("Logging level")
+			.default_value("info")
+			.takes_value(true)
+		)
 		.get_matches()
 }
 
-fn create_model(args: ArgMatches, sender: Sender<ModelEvent>) -> RootModel {
+fn create_model(args: &ArgMatches, sender: Sender<ModelEvent>) -> RootModel {
 	let mut model = RootModel::new(sender);
 	if let Some(file_name) = args.value_of("file") {
 		model.set_file_name(file_name.to_owned());

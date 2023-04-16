@@ -1,9 +1,10 @@
 use std::path::PathBuf;
 use std::io::{Read, Seek, BufReader, SeekFrom, Cursor};
 use std::fs::File;
-use std::cmp::Ordering;
+use std::cmp::{min, Ordering};
 use std::cell::RefMut;
 use fluent_integer::Integer;
+use crate::advanced_io::advanced_buf_reader::BidirectionalBufRead;
 use crate::shared::Shared;
 use crate::utils;
 use crate::utils::utf8::UtfChar;
@@ -15,7 +16,8 @@ pub const BUFFER_SIZE: usize = 8192;
 pub struct Line {
     pub content: String, // TODO use appropriate type
     pub start: Integer, // offset of the first symbol in line
-    pub end: Integer // offset of the first symbol of the next line
+    pub end: Integer, // offset of the first symbol of the next line
+    pub line_no: Option<u64>,
 }
 
 impl Line {
@@ -25,7 +27,69 @@ impl Line {
         Line {
             content: content.to_string(),
             start: start.into(),
-            end: end.into()
+            end: end.into(),
+            line_no: None,
+        }
+    }
+
+    pub fn new_with_line_no<T, I>(content: T, start: I, end: I, line_no: u64) -> Self
+        where T: ToString, I: Into<Integer>
+    {
+        Line {
+            content: content.to_string(),
+            start: start.into(),
+            end: end.into(),
+            line_no: Some(line_no),
+        }
+    }
+
+    fn builder() -> LineBuilder {
+        LineBuilder::default()
+    }
+}
+
+#[derive(Debug, Default, Clone, Eq, PartialEq)]
+pub struct LineBuilder {
+    content: Option<String>,
+    start: Option<Integer>,
+    end: Option<Integer>,
+    line_no: Option<u64>,
+}
+
+impl LineBuilder {
+
+    fn with_content<T: ToString>(mut self, content: T) -> Self {
+        self.content.replace(content.to_string());
+        self
+    }
+
+    fn with_start<I: Into<Integer>>(mut self, start: I) -> Self {
+        self.start.replace(start.into());
+        self
+    }
+
+    fn with_end<I: Into<Integer>>(mut self, end: I) -> Self {
+        self.end.replace(end.into());
+        self
+    }
+
+    fn with_line_no(mut self, n: Option<u64>) -> Self {
+        if let Some(n) = n {
+            self.line_no.replace(n);
+        }
+        self
+    }
+
+    fn build(self) -> Line {
+        let content = self.content.unwrap();
+        let start = self.start.unwrap();
+        let end = self.end.unwrap();
+        let line_no = self.line_no.clone();
+        Line {
+            content,
+            start,
+            end,
+            line_no,
         }
     }
 }
@@ -34,7 +98,8 @@ impl Line {
 pub struct Data {
     pub lines: Vec<Line>,
     pub start: Option<Integer>,
-    pub end: Option<Integer>
+    pub end: Option<Integer>,
+    current_line_no: Option<u64>,
 }
 
 #[derive(PartialEq, Eq, Copy, Clone)]
@@ -53,6 +118,7 @@ pub fn read_delimited<R, F>(
     offset: Integer,
     n: Integer,
     allow_empty_segments: bool,
+    current_no: Option<u64>,
     is_delimiter: F) -> std::io::Result<Data>
     where R: Read + Seek, F: Fn(&char) -> bool
 {
@@ -61,12 +127,27 @@ pub fn read_delimited<R, F>(
     }
 
     let actual_offset: Integer = f.stream_position()?.into();
-    f.seek_relative((offset - actual_offset).as_i64())?;
+    let shift = (offset - actual_offset).as_i64();
+    let mut current_no = match current_no {
+        Some(n) => {
+            let mut number_of_lines = 0_u64;
+            let line_counter = |chunk: &[u8]|
+                number_of_lines += chunk.iter().filter(|b| char::from(**b) == '\n').count() as u64;
+            f.read_fluently(shift, line_counter)?;
+            Some(if shift > 0 { n + number_of_lines } else { n - number_of_lines })
+        },
+        None => {
+            f.seek_relative(shift)?;
+            None
+        }
+    };
+
     let direction = match n.cmp(&0.into()) {
         Ordering::Equal => return Ok(Data {
             lines: vec![],
             start: None,
-            end: None
+            end: None,
+            current_line_no: current_no,
         }),
         Ordering::Greater => Direction::Forward,
         Ordering::Less => Direction::Backward
@@ -100,9 +181,17 @@ pub fn read_delimited<R, F>(
                         stack.push(ch.get_char());
                         start = start.or(Some(ch.get_offset()));
                     } else {
+                        let line_no = current_no.clone();
+                        current_no = current_no.map(|n| n + 1);
                         if !stack.is_empty() || allow_empty_segments {
                             let (content, bytes_trimmed) = flush(&mut stack);
-                            data.push(Line::new(content, start.unwrap_or(ch.get_offset()), ch.get_offset() - bytes_trimmed));
+                            let line = Line::builder()
+                                .with_content(content)
+                                .with_start(start.unwrap_or(ch.get_offset()))
+                                .with_end(ch.get_offset() - bytes_trimmed)
+                                .with_line_no(line_no)
+                                .build();
+                            data.push(line);
                             if data.len() == n.abs() {
                                 break;
                             }
@@ -113,7 +202,13 @@ pub fn read_delimited<R, F>(
                     // EOF
                     if !stack.is_empty() || (allow_empty_segments && start.is_some()) {
                         let (content, bytes_trimmed) = flush(&mut stack);
-                        data.push(Line::new(content, start.unwrap(), f.stream_position()? - bytes_trimmed));
+                        let line = Line::builder()
+                            .with_content(content)
+                            .with_start(start.unwrap())
+                            .with_end(f.stream_position()? - bytes_trimmed)
+                            .with_line_no(current_no.clone())
+                            .build();
+                        data.push(line);
                     }
                     break;
                 }
@@ -137,10 +232,18 @@ pub fn read_delimited<R, F>(
                         stack.push(ch.get_char());
                         end = end.or(Some(ch.get_end()));
                     } else {
+                        let line_no = current_no.clone();
+                        current_no = current_no.map(|n| n.saturating_sub(1));
                         if !stack.is_empty() || allow_empty_segments {
                             stack.reverse();
                             let (content, bytes_trimmed) = flush(&mut stack);
-                            data.push(Line::new(content, ch.get_offset() + 1, end.unwrap_or(ch.get_end()) - bytes_trimmed));
+                            let line = Line::builder()
+                                .with_content(content)
+                                .with_start(ch.get_offset() + 1)
+                                .with_end(end.unwrap_or(ch.get_end()) - bytes_trimmed)
+                                .with_line_no(line_no)
+                                .build();
+                            data.push(line);
                             if data.len() == n.abs() {
                                 break;
                             }
@@ -152,7 +255,13 @@ pub fn read_delimited<R, F>(
                     if !stack.is_empty() || (allow_empty_segments && end.is_some()) {
                         stack.reverse();
                         let (content, bytes_trimmed) = flush(&mut stack);
-                        data.push(Line::new(content, 0, end.unwrap() - bytes_trimmed));
+                        let line = Line::builder()
+                            .with_content(content)
+                            .with_start(0)
+                            .with_end(end.unwrap() - bytes_trimmed)
+                            .with_line_no(current_no.clone())
+                            .build();
+                        data.push(line);
                     }
                     break;
                 }
@@ -161,12 +270,15 @@ pub fn read_delimited<R, F>(
         },
     }
 
+    log::trace!("current_no = {:?}, offset = {:?}", current_no, f.stream_position());
+
     let s = data.first().map(|segment| segment.start);
     let e = data.last().map(|segment| segment.end);
     Ok(Data {
         lines: data,
         start: s,
-        end: e
+        end: e,
+        current_line_no: current_no
     })
 }
 
@@ -222,6 +334,8 @@ pub trait LineSource {
     fn read_prev_line(&mut self, offset: Integer) -> Option<Line> {
         self.read_lines(offset, Integer::from(-1)).lines.pop()
     }
+
+    fn track_line_number(&mut self, track: bool);
 
     fn read_raw(&self, start: Integer, end: Integer) -> Result<String, ()>;
 
@@ -279,21 +393,27 @@ impl<'a> LineSourceBackend<Cursor<&'a [u8]>> for StrBackend<'a> {
 
 pub struct LineSourceImpl<R, B> where R: Read, B: LineSourceBackend<R> {
     backend: B,
-    file_reader: Option<Shared<BufReader<R>>>
+    file_reader: Option<Shared<BufReader<R>>>,
+    track_line_no: bool,
+    current_line_no: Option<u64>
 }
 
 impl<R, B> LineSourceImpl<R, B> where R: Read + Seek, B: LineSourceBackend<R> {
     pub fn from_file_name(file_name: PathBuf) -> LineSourceImpl<File, FileBackend> {
         LineSourceImpl {
             backend: FileBackend::new(file_name),
-            file_reader: None
+            file_reader: None,
+            track_line_no: false,
+            current_line_no: None,
         }
     }
 
     pub fn from_str(s: &str) -> LineSourceImpl<Cursor<&[u8]>, StrBackend> {
         LineSourceImpl {
             backend: StrBackend::new(s),
-            file_reader: None
+            file_reader: None,
+            track_line_no: false,
+            current_line_no: None
         }
     }
 
@@ -311,6 +431,36 @@ impl<R, B> LineSourceImpl<R, B> where R: Read + Seek, B: LineSourceBackend<R> {
         let file_reader = self.reader();
         f(file_reader)
     }
+
+    fn restore_current_line_no(&mut self) {
+        let current_line_no = if self.track_line_no {
+            let mut reader = self.reader();
+            let stream_position = reader.stream_position();
+            if let Ok(p) = stream_position {
+                reader.seek(SeekFrom::Start(0)).unwrap();
+                let mut buf = [0_u8; BUFFER_SIZE];
+                let mut number_of_lines = 0_u64;
+                let mut bytes_read = 0_usize;
+                loop {
+                    let n = min(p as usize - bytes_read, buf.len());
+                    match reader.read(&mut buf[0..n]) {
+                        Err(e) => panic!("{}", e.to_string().as_str()),
+                        Ok(0) => break,
+                        Ok(b) => {
+                            bytes_read += b;
+                            number_of_lines += buf.iter().filter(|ch| **ch == '\n' as u8).count() as u64
+                        },
+                    }
+                }
+                Some(number_of_lines)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        self.current_line_no = current_line_no;
+    }
 }
 
 impl<R, B> LineSource for LineSourceImpl<R, B> where R: Read + Seek, B: LineSourceBackend<R> {
@@ -320,27 +470,44 @@ impl<R, B> LineSource for LineSourceImpl<R, B> where R: Read + Seek, B: LineSour
     }
 
     fn read_lines(&mut self, offset: Integer, number_of_lines: Integer) -> Data {
-        self.with_reader(|mut f| {
+        let current_no = self.current_line_no;
+        let result = self.with_reader(|mut f| {
             log::trace!("read_lines number_of_lines = {}, offset = {}", number_of_lines, offset);
-            read_delimited(&mut f, offset, number_of_lines, true, |c| *c == '\n')
-        }).unwrap_or(Data::default())
+            read_delimited(&mut f, offset, number_of_lines, true, current_no, |c| *c == '\n')
+        }).unwrap_or(Data::default());
+
+        log::trace!("Result: {:?}", result);
+
+        if self.track_line_no {
+            if let Some(current_line_no) = result.current_line_no.clone() {
+                self.current_line_no.replace(current_line_no);
+            } else {
+                log::warn!("Current line no has not been calculated in read_lines(offset={}, number_of_lines={})", offset, number_of_lines);
+                self.restore_current_line_no();
+            }
+        }
+        result
+    }
+
+    fn track_line_number(&mut self, track: bool) {
+        if self.track_line_no != track {
+            self.track_line_no = track;
+            self.restore_current_line_no();
+        }
     }
 
     fn read_raw(&self, start: Integer, end: Integer) -> Result<String, ()> {
         let mut f = self.backend.new_reader();
         f.seek(SeekFrom::Start(start.as_u64())).map_err(|_| ())?;
-        let mut f = f.take((end - start).as_u64());
-        let mut buf = [0 as u8; BUFFER_SIZE];
-        let mut result = String::new();
-        loop {
-            let bytes_read = f.read(&mut buf);
-            match bytes_read {
-                Ok(0) => break,
-                Ok(bytes_read) => result.push_str(&*String::from_utf8(Vec::from(&buf[0..bytes_read])).unwrap()),
-                Err(_) => break
+        let len = (end - start).as_usize();
+        let mut result: Vec<u8> = Vec::with_capacity(len);
+        let consumer = |chunk: &[u8]| {
+            for x in chunk {
+                result.push(*x);
             }
-        }
-        Ok(result)
+        };
+        f.read_fluently(len as i128, consumer).map_err(|_| ())?;
+        Ok(String::from_utf8(result).unwrap())
     }
 
     fn skip_token(&mut self, offset: Integer, direction: Direction) -> Result<Integer, ()> {

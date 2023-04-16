@@ -34,6 +34,7 @@ pub struct RootModel {
     selection: Option<Box<Selection>>,
     datasource: Option<Shared<Box<dyn LineSource>>>,
     error: Option<Box<dyn ToString>>,
+    show_line_numbers: bool,
 }
 
 pub enum ModelEvent {
@@ -58,6 +59,7 @@ impl RootModel {
             selection: None,
             datasource: None,
             error: None,
+            show_line_numbers: true,
         }
     }
 
@@ -388,9 +390,21 @@ impl RootModel {
         self.emit_event(Quit);
     }
 
+    pub fn is_show_line_numbers(&self) -> bool {
+        self.show_line_numbers
+    }
+
+    pub fn set_show_line_numbers(&mut self, show_line_numbers: bool) {
+        self.show_line_numbers = show_line_numbers;
+        if let Some(ds) = &self.datasource {
+            ds.get_mut_ref().track_line_number(show_line_numbers);
+        }
+    }
+
     pub fn move_cursor_to_end(&mut self) -> bool {
         let offset = self.get_datasource_ref()
             .map(|ds| ds.get_length());
+            // .map(|len| len - bool_to_u64(len > 0, 1, 0));
         match offset {
             Some(offset) => self.move_cursor_to_offset(offset, false),
             None => false
@@ -440,7 +454,10 @@ impl RootModel {
 
     fn load_file(&mut self) {
         if let Some(path) = self.resolve_file_name() {
-            let line_source = LineSourceImpl::<File, FileBackend>::from_file_name(path);
+            let mut line_source = LineSourceImpl::<File, FileBackend>::from_file_name(path);
+            if self.show_line_numbers {
+                line_source.track_line_number(true);
+            }
             self.datasource = Some(Shared::new(Box::new(line_source)));
             self.update_viewport_content();
         }
@@ -596,14 +613,17 @@ impl RootModel {
                 log::trace!("bring_into_view 3rd case. (offset - end) = {}", offset - end_offset);
                 if offset - end_offset < OFFSET_THRESHOLD {
                     let mut i = 0_u8.into();
+                    let mut current_offset = end_offset;
                     let success = loop {
-                        if let Some(line) = datasource.read_next_line(end_offset + 1) {
+                        if let Some(line) = datasource.read_next_line(current_offset + 1) {
+                            current_offset = line.end;
                             i += 1;
-                            if line.end >= offset {
+                            if current_offset >= offset {
                                 break true
                             }
                         } else {
-                            break false
+                            i += 1;
+                            break true
                         }
                     };
                     if success {

@@ -6,8 +6,9 @@ use cursive::View;
 use cursive::views::{LinearLayout, TextView, Canvas, NamedView};
 use cursive::traits::{Nameable, Resizable};
 use cursive::event::EventResult;
+use cursive::reexports::enumset::EnumSet;
 use cursive::view::Selector;
-use cursive::theme::{Style, ColorStyle, Theme};
+use cursive::theme::{Style, ColorStyle, Theme, Effect};
 use cursive::theme::PaletteColor::{Background, HighlightText, Primary};
 use cursive::utils::span::{SpannedStr, IndexedSpan, SpannedString, IndexedCow};
 use fluent_integer::Integer;
@@ -91,10 +92,26 @@ fn build_canvas(model: Shared<RootModel>) -> NamedView<Canvas<Shared<RootModel>>
     let regular_style = StyleWithPriority::new(Style::from(ColorStyle::new(palette[Primary], palette[HighlightText])), 0, 0);
     let cursor_style = StyleWithPriority::new(Style::from(ColorStyle::new(palette[HighlightText], palette[Primary])), 1, 1);
     let selection_style = StyleWithPriority::new(Style::from(ColorStyle::new(palette[HighlightText], palette[Background])), 1, 0xff);
+    let line_number_style = StyleWithPriority::new(Style {
+        color: ColorStyle::new(palette[Primary], palette[HighlightText]),
+        effects: EnumSet::only(Effect::Italic)
+    }, 1, 0xff);
     Canvas::new(model.clone())
         .with_draw(move |state, printer| measure("draw",  || {
             let mut state = state.get_mut_ref();
-            state.set_viewport_size(Integer::from(printer.size.x), Integer::from(printer.size.y));
+
+            let mut max_line_number = None;
+            let mut effective_viewport_width = printer.size.x;
+            if state.is_show_line_numbers() {
+                if let Some(data) = state.data() {
+                    max_line_number = data.lines.iter().flat_map(|line| line.line_no).max();
+                    if let Some(max_line_number) = max_line_number {
+                        let max_line_number_len = format!("{} | ", max_line_number).len();
+                        effective_viewport_width -= max_line_number_len;
+                    }
+                }
+            }
+            state.set_viewport_size(Integer::from(effective_viewport_width), Integer::from(printer.size.y));
 
             if let Some(data) = state.data() {
                 let line_drawer = LineDrawer::new()
@@ -103,11 +120,14 @@ fn build_canvas(model: Shared<RootModel>) -> NamedView<Canvas<Shared<RootModel>>
                     .with_width(printer.size.x)
                     .with_regular_style(regular_style)
                     .with_cursor_style(cursor_style)
-                    .with_selection_style(selection_style);
+                    .with_selection_style(selection_style)
+                    .with_line_number_style(line_number_style)
+                    .with_show_line_numbers(state.is_show_line_numbers())
+                    .with_max_line_number(max_line_number.unwrap_or(0));
                 data.lines.iter()
                     .take(printer.size.y)
                     .enumerate()
-                    .map(|(i, line)| line_drawer.draw(i, line))
+                    .map(|(i, line)| (i, line_drawer.draw(i, line)))
                     .for_each(|(i, ss)|
                         printer.print_styled((0, i), SpannedStr::from(&ss))
                     );
@@ -151,6 +171,9 @@ struct LineDrawer<'a> {
     regular_style: Option<StyleWithPriority>,
     cursor_style: Option<StyleWithPriority>,
     selection_style: Option<StyleWithPriority>,
+    line_number_style: Option<StyleWithPriority>,
+    show_line_numbers: bool,
+    max_line_number: u64,
 }
 
 impl<'a> LineDrawer<'a> {
@@ -188,10 +211,30 @@ impl<'a> LineDrawer<'a> {
         self
     }
 
-    fn draw(&self, i: usize, line: &LineRender) -> (usize, SpannedString<Style>) {
+    fn with_line_number_style(mut self, line_number_style: StyleWithPriority) -> Self {
+        self.line_number_style.replace(line_number_style);
+        self
+    }
+
+    fn with_show_line_numbers(mut self, show_line_numbers: bool) -> Self {
+        self.show_line_numbers = show_line_numbers;
+        self
+    }
+
+    fn with_max_line_number(mut self, max_line_number: u64) -> Self {
+        self.max_line_number = max_line_number;
+        self
+    }
+
+    fn draw(&self, i: usize, line: &LineRender) -> SpannedString<Style> {
         let state = self.state.unwrap();
         let highlighters = self.highlighters.unwrap();
-        let width = self.width.unwrap();
+        let line_number_width = if self.show_line_numbers {
+            format!("{} | ", self.max_line_number + 1).len()
+        } else {
+            0
+        };
+        let width = self.width.map(|w| w.saturating_sub(line_number_width)).unwrap();
         let regular_style = self.regular_style.unwrap();
         let cursor_style = self.cursor_style.unwrap();
         let selection_style = self.selection_style.unwrap();
@@ -259,12 +302,29 @@ impl<'a> LineDrawer<'a> {
                 let e = get_visible_graphemes().nth(interval.1.as_usize() - 1)
                     .map(|g| g.render_offset + g.render.resolve(line.content.as_str()).len() - first_offset)
                     .unwrap();
-                spans.push(indexed_span(s, e, (interval.1 - interval.0).as_usize(), style));
+                spans.push(indexed_span(line_number_width + s, line_number_width + e, (interval.1 - interval.0).as_usize(), style));
             }
+            let display_str = if self.show_line_numbers {
+                spans.insert(0, indexed_span(0, line_number_width, line_number_width, self.line_number_style.unwrap().get_style()));
+                format!("{number:>width$} | {s}",
+                        number = line.line_no.unwrap_or(0) + 1,
+                        width = line_number_width - " | ".len(),
+                        s = display_str)
+            } else {
+                display_str
+            };
             log::trace!("{}: {}, spans = {:?}", i, display_str, spans);
-            (i, SpannedString::with_spans(display_str, spans))
+            SpannedString::with_spans(display_str, spans)
         } else {
-            (i, SpannedString::new())
+            if self.show_line_numbers {
+                let display_str = format!("{number:>width$} | ",
+                                          number = line.line_no.unwrap_or(0) + 1,
+                                          width = line_number_width - " | ".len());
+                let span = indexed_span(0, line_number_width, line_number_width, self.line_number_style.unwrap().get_style());
+                SpannedString::with_spans(display_str, vec![span])
+            } else {
+                SpannedString::new()
+            }
         }
     }
 }

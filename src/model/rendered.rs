@@ -7,6 +7,7 @@ pub struct LineRender {
     pub content: String,
     pub start: Integer, // offset of the first symbol in line
     pub end: Integer, // offset of the first symbol of the next line
+    pub line_no: Option<u64>,
     pub render: Vec<GraphemeRender>
 }
 
@@ -17,6 +18,7 @@ impl LineRender {
             content: line.content,
             start: line.start,
             end: line.end,
+            line_no: line.line_no,
             render,
         }
     }

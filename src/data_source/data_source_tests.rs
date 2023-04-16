@@ -469,6 +469,7 @@ mod test_read_delimited {
             offset.into(),
             n.into(),
             allow_empty_segments,
+            None,
             delimiter);
         (data, reader)
     }
@@ -490,7 +491,7 @@ mod test_read_lines {
     fn read_1_line() {
         let lines = test(LINES_UNIX, 0, 1);
 
-        assert_that!(lines).has_only_element().is_equal_to(Line::new("AAA", 0, 3));
+        assert_that!(lines).has_only_element().is_equal_to(Line::new_with_line_no("AAA", 0, 3, 0));
     }
 
     #[test]
@@ -498,8 +499,8 @@ mod test_read_lines {
         let lines = test(LINES_UNIX, 0, 2);
 
         assert_that!(lines).has_length(2);
-        assert_that!(lines).item_at(0).is_equal_to(Line::new("AAA", 0, 3));
-        assert_that!(lines).item_at(1).is_equal_to(Line::new("BBB", 4, 7));
+        assert_that!(lines).item_at(0).is_equal_to(Line::new_with_line_no("AAA", 0, 3, 0));
+        assert_that!(lines).item_at(1).is_equal_to(Line::new_with_line_no("BBB", 4, 7, 1));
     }
 
     #[test]
@@ -507,10 +508,10 @@ mod test_read_lines {
         let lines = test(LINES_UNIX, 0, 4);
 
         assert_that!(lines).has_length(4);
-        assert_that!(lines).item_at(0).is_equal_to(Line::new("AAA", 0, 3));
-        assert_that!(lines).item_at(1).is_equal_to(Line::new("BBB", 4, 7));
-        assert_that!(lines).item_at(2).is_equal_to(Line::new("CCC", 8, 11));
-        assert_that!(lines).item_at(3).is_equal_to(Line::new("DDD", 12, 15));
+        assert_that!(lines).item_at(0).is_equal_to(Line::new_with_line_no("AAA", 0, 3, 0));
+        assert_that!(lines).item_at(1).is_equal_to(Line::new_with_line_no("BBB", 4, 7, 1));
+        assert_that!(lines).item_at(2).is_equal_to(Line::new_with_line_no("CCC", 8, 11, 2));
+        assert_that!(lines).item_at(3).is_equal_to(Line::new_with_line_no("DDD", 12, 15, 3));
     }
 
     #[test]
@@ -518,8 +519,8 @@ mod test_read_lines {
         let lines = test(LINES_UNIX, 2, 2);
 
         assert_that!(lines).has_length(2);
-        assert_that!(lines).item_at(0).is_equal_to(Line::new("AAA", 0, 3));
-        assert_that!(lines).item_at(1).is_equal_to(Line::new("BBB", 4, 7));
+        assert_that!(lines).item_at(0).is_equal_to(Line::new_with_line_no("AAA", 0, 3, 0));
+        assert_that!(lines).item_at(1).is_equal_to(Line::new_with_line_no("BBB", 4, 7, 1));
     }
 
     #[test]
@@ -527,35 +528,36 @@ mod test_read_lines {
         let lines = test(LINES_UNIX, 2, 10);
 
         assert_that!(lines).has_length(4);
-        assert_that!(lines).item_at(0).is_equal_to(Line::new("AAA", 0, 3));
-        assert_that!(lines).item_at(1).is_equal_to(Line::new("BBB", 4, 7));
-        assert_that!(lines).item_at(2).is_equal_to(Line::new("CCC", 8, 11));
-        assert_that!(lines).item_at(3).is_equal_to(Line::new("DDD", 12, 15));
+        assert_that!(lines).item_at(0).is_equal_to(Line::new_with_line_no("AAA", 0, 3, 0));
+        assert_that!(lines).item_at(1).is_equal_to(Line::new_with_line_no("BBB", 4, 7, 1));
+        assert_that!(lines).item_at(2).is_equal_to(Line::new_with_line_no("CCC", 8, 11, 2));
+        assert_that!(lines).item_at(3).is_equal_to(Line::new_with_line_no("DDD", 12, 15, 3));
     }
 
     #[test]
     fn read_1_line_backward() {
         let lines = test(LINES_UNIX, 2, -1);
 
-        assert_that!(lines).has_only_element().is_equal_to(Line::new("AAA", 0, 3));
+        assert_that!(lines).has_only_element().is_equal_to(Line::new_with_line_no("AAA", 0, 3, 0));
     }
 
     #[test]
     fn read_1_line_backward_from_delimiter() {
         let lines = test(LINES_UNIX, 3, -1);
 
-        assert_that!(lines).has_only_element().is_equal_to(Line::new("AAA", 0, 3));
+        assert_that!(lines).has_only_element().is_equal_to(Line::new_with_line_no("AAA", 0, 3, 0));
     }
 
     #[test]
     fn read_1_line_with_windows_delimiter() {
         let lines = test(LINES_WINDOWS, 0, 1);
 
-        assert_that!(lines).has_only_element().is_equal_to(Line::new("AAA", 0, 3));
+        assert_that!(lines).has_only_element().is_equal_to(Line::new_with_line_no("AAA", 0, 3, 0));
     }
 
     fn test(s: &str, offset: u64, n: i32) -> Vec<Line> {
         let mut line_source = LineSourceImpl::<Cursor<&'static [u8]>, StrBackend<'static>>::from_str(s);
+        line_source.track_line_number(true);
         let data = line_source.read_lines(offset.into(), n.into());
         data.lines
     }
