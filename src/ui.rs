@@ -100,6 +100,8 @@ fn build_canvas(model: Shared<RootModel>) -> NamedView<Canvas<Shared<RootModel>>
         .with_draw(move |state, printer| measure("draw",  || {
             let mut state = state.get_mut_ref();
 
+            state.set_viewport_height(printer.size.y); // fetches data
+
             let mut max_line_number = None;
             let mut effective_viewport_width = printer.size.x;
             if state.is_show_line_numbers() {
@@ -111,7 +113,7 @@ fn build_canvas(model: Shared<RootModel>) -> NamedView<Canvas<Shared<RootModel>>
                     }
                 }
             }
-            state.set_viewport_size(Integer::from(effective_viewport_width), Integer::from(printer.size.y));
+            state.set_viewport_width(effective_viewport_width);
 
             if let Some(data) = state.data() {
                 let line_drawer = LineDrawer::new()

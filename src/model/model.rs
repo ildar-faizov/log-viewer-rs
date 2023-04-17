@@ -27,7 +27,8 @@ pub struct RootModel {
     file_name: Option<String>,
     file_size: Integer,
     data: Option<DataRender>,
-    viewport_size: Dimension,
+    viewport_height: Integer,
+    viewport_width: Integer,
     scroll_position: ScrollPosition,
     horizontal_scroll: Integer,
     cursor: Integer,
@@ -52,7 +53,8 @@ impl RootModel {
             file_name: None,
             file_size: 0.into(),
             data: None,
-            viewport_size: Dimension::default(),
+            viewport_height: 0.into(),
+            viewport_width: 0.into(),
             scroll_position: ScrollPosition::default(),
             horizontal_scroll: 0.into(),
             cursor: 0.into(),
@@ -93,18 +95,27 @@ impl RootModel {
         self.error.as_ref().map(|t| t.to_string())
     }
 
-    pub fn set_viewport_size(&mut self, width: Integer, height: Integer) {
-        let d = Dimension::new(width, height);
-        if self.viewport_size != d {
-            log::info!("Viewport size set to {}", d);
-            self.viewport_size = d;
-            // TODO: emit update
+    pub fn set_viewport_height<I: Into<Integer>>(&mut self, height: I) {
+        let height = height.into();
+        if self.viewport_height != height {
+            log::info!("Viewport height set to {}", height);
+            self.viewport_height = height;
+            // TODO: emit event
             self.update_viewport_content();
         }
     }
 
-    pub fn get_viewport_size(&self) -> Dimension {
-        self.viewport_size
+    pub fn get_viewport_height(&self) -> Integer {
+        self.viewport_height
+    }
+
+    pub fn set_viewport_width<I: Into<Integer>>(&mut self, width: I) {
+        let width = width.into();
+        if self.viewport_width != width {
+            log::info!("Viewport width set to {}", width);
+            self.viewport_width = width;
+            // TODO: emit event
+        }
     }
 
     fn set_scroll_position(&mut self, scroll_position: ScrollPosition) -> bool {
@@ -133,7 +144,7 @@ impl RootModel {
                     if sign == 1 {
                         if let Some(ds) = &self.datasource {
                             let mut ds = ds.get_mut_ref();
-                            let h = self.viewport_size.height;
+                            let h = self.viewport_height;
                             let lines = ds.read_lines(first_line.start,n + h).lines;
                             let k = lines.len();
                             if k > h {
@@ -178,12 +189,12 @@ impl RootModel {
         if self.horizontal_scroll < horizontal_scroll {
             if let Some(data) = &self.data {
                 let max_length = data.lines.iter()
-                    .take(self.viewport_size.height.as_usize())
+                    .take(self.viewport_height.as_usize())
                     .map(|line| line.content.len())
                     .max();
                 log::trace!("set_horizontal_scroll max_length = {:?}", max_length);
                 if let Some(max_length) = max_length {
-                    if horizontal_scroll + self.viewport_size.width <= max_length {
+                    if horizontal_scroll + self.viewport_width <= max_length {
                         log::trace!("set_horizontal_scroll success");
                         self.horizontal_scroll = horizontal_scroll;
                         self.emit_event(DataUpdated);
@@ -487,7 +498,7 @@ impl RootModel {
     }
 
     fn update_viewport_content(&mut self) -> bool {
-        if self.viewport_size.height == 0 {
+        if self.viewport_height == 0 {
             return true;
         }
         if let Some(datasource) = &self.datasource {
@@ -496,12 +507,12 @@ impl RootModel {
             let offset = (self.scroll_position.starting_point * source_length).to_integer()
                 + self.scroll_position.shift;
             log::info!("update_viewport_content offset = {}", offset);
-            let data = datasource.read_lines(offset, self.viewport_size.height);
+            let data = datasource.read_lines(offset, self.viewport_height);
             log::trace!("update_viewport_content data: {:?}", &data.lines[..min(3, data.lines.len())]);
 
             drop(datasource);
             // check if EOF is reached and viewport is not full
-            if data.lines.len() < self.viewport_size.height && offset > 0 {
+            if data.lines.len() < self.viewport_height && offset > 0 {
                 false
             } else {
                 self.set_data(data);
@@ -556,7 +567,7 @@ impl RootModel {
         let mut datasource = self.get_datasource_ref().unwrap();
         let calc_horizontal_scroll = |line: &LineRender, off: Integer| {
             let h = self.horizontal_scroll;
-            let w = self.viewport_size.width;
+            let w = self.viewport_width;
             let local_offset = off - line.start;
             line.find_grapheme_index_by_offset(local_offset)
                 .map(Integer::from)
@@ -666,7 +677,7 @@ impl RootModel {
 
     fn scroll_forcibly(&mut self, offset: Integer) -> bool {
         let mut datasource = self.get_datasource_ref().unwrap();
-        let h = self.viewport_size.height;
+        let h = self.viewport_height;
         let lines_below = datasource.read_lines(offset, h);
         let mut new_offset = lines_below.start.unwrap_or(offset);
         if lines_below.lines.len() < h {

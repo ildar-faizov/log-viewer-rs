@@ -20,7 +20,7 @@ impl Action for PgDownAction {
     }
 
     fn perform_action(&self, model: &mut RootModel, _event: &Event) -> EventResult {
-        let h = model.get_viewport_size().height;
+        let h = model.get_viewport_height();
         if model.scroll(h) {
             let p = model.data()
                 .and_then(|data| data.lines.first())
