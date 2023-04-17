@@ -342,14 +342,22 @@ impl RootModel {
                     };
                     if let Some(grapheme) = get_grapheme {
                         break line.start + grapheme.original_offset;
+                    // } else if expected_index == 0 && line_len == 0 {
+                    //     break line.start;
                     } else {
                         let d = line_len - position_in_line; // # of symbols remaining to end of line
                         position_in_line = 0.into();
                         dx -= d;
+                        // if line_len == 0 {
+                        //     dx -= 1;
+                        // }
                         best_possible_offset = line.end;
                     }
                 } else {
                     dx += position_in_line;
+                    // if line_len == 0 {
+                    //     dx += 1;
+                    // }
                     position_in_line = Integer::from(-1);
                     best_possible_offset = line.start;
                 }

@@ -316,15 +316,21 @@ impl<'a> LineDrawer<'a> {
             log::trace!("{}: {}, spans = {:?}", i, display_str, spans);
             SpannedString::with_spans(display_str, spans)
         } else {
+            let mut display_str = String::new();
+            let mut spans = vec![];
             if self.show_line_numbers {
-                let display_str = format!("{number:>width$} | ",
-                                          number = line.line_no.unwrap_or(0) + 1,
-                                          width = line_number_width - " | ".len());
+                display_str = format!("{number:>width$} | ",
+                                      number = line.line_no.unwrap_or(0) + 1,
+                                      width = line_number_width - " | ".len());
                 let span = indexed_span(0, line_number_width, line_number_width, self.line_number_style.unwrap().get_style());
-                SpannedString::with_spans(display_str, vec![span])
-            } else {
-                SpannedString::new()
+                spans.push(span);
             }
+            if cursor >= line.start && cursor <= line.end {
+                spans.push(indexed_span(line_number_width, line_number_width + 1, 1, cursor_style.get_style()));
+                display_str.push(' ');
+            }
+
+            SpannedString::with_spans(display_str, spans)
         }
     }
 }

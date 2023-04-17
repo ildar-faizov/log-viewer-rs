@@ -58,29 +58,29 @@ pub struct LineBuilder {
 
 impl LineBuilder {
 
-    fn with_content<T: ToString>(mut self, content: T) -> Self {
+    pub fn with_content<T: ToString>(mut self, content: T) -> Self {
         self.content.replace(content.to_string());
         self
     }
 
-    fn with_start<I: Into<Integer>>(mut self, start: I) -> Self {
+    pub fn with_start<I: Into<Integer>>(mut self, start: I) -> Self {
         self.start.replace(start.into());
         self
     }
 
-    fn with_end<I: Into<Integer>>(mut self, end: I) -> Self {
+    pub fn with_end<I: Into<Integer>>(mut self, end: I) -> Self {
         self.end.replace(end.into());
         self
     }
 
-    fn with_line_no(mut self, n: Option<u64>) -> Self {
+    pub fn with_line_no(mut self, n: Option<u64>) -> Self {
         if let Some(n) = n {
             self.line_no.replace(n);
         }
         self
     }
 
-    fn build(self) -> Line {
+    pub fn build(self) -> Line {
         let content = self.content.unwrap();
         let start = self.start.unwrap();
         let end = self.end.unwrap();

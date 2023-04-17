@@ -1,5 +1,5 @@
 use fluent_integer::Integer;
-use crate::data_source::{Data, Line};
+use crate::data_source::{Data, Line, LineBuilder};
 use crate::utils::GraphemeRender;
 
 #[derive(Debug, Default, Clone, Eq, PartialEq)]
@@ -52,6 +52,46 @@ impl LineRender {
 
     pub fn find_grapheme_index_by_offset(&self, offset: Integer) -> Option<usize> {
         self.find_grapheme_by_offset(offset).map(|(pos, _)| pos)
+    }
+
+    pub fn to_builder(&self) -> LineRenderBuilder {
+        LineRenderBuilder::default()
+            .with_content(self.content.clone())
+            .with_start(self.start)
+            .with_end(self.end)
+            .with_line_no(self.line_no)
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct LineRenderBuilder {
+    line_builder: LineBuilder
+}
+
+impl LineRenderBuilder {
+
+    pub fn with_content<T: ToString>(mut self, content: T) -> Self {
+        self.line_builder = self.line_builder.with_content(content);
+        self
+    }
+
+    pub fn with_start<I: Into<Integer>>(mut self, start: I) -> Self {
+        self.line_builder = self.line_builder.with_start(start);
+        self
+    }
+
+    pub fn with_end<I: Into<Integer>>(mut self, end: I) -> Self {
+        self.line_builder = self.line_builder.with_end(end);
+        self
+    }
+
+    pub fn with_line_no(mut self, n: Option<u64>) -> Self {
+        self.line_builder = self.line_builder.with_line_no(n);
+        self
+    }
+
+    pub fn build(self) -> LineRender {
+        LineRender::new(self.line_builder.build())
     }
 }
 

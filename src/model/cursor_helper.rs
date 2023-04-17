@@ -49,6 +49,17 @@ impl<'a> LineIterator<'a> {
             .map(LineRender::new)
             .map(Cow::Owned)
     }
+
+    fn replace_empty_line_with_space(line_render: Cow<LineRender>) -> Cow<LineRender> {
+        if line_render.content.is_empty() {
+            let replacement = line_render.to_builder()
+                .with_content(String::from(' '))
+                .build();
+            Cow::Owned(replacement)
+        } else {
+            line_render
+        }
+    }
 }
 
 impl<'a> Iterator for LineIterator<'a> {
@@ -65,7 +76,7 @@ impl<'a> Iterator for LineIterator<'a> {
             return match next_line {
                 Some(line_ref) => {
                     self.current_line = Some(Cow::Borrowed(line_ref));
-                    Some(Cow::Borrowed(line_ref))
+                    Some(LineIterator::replace_empty_line_with_space(Cow::Borrowed(line_ref)))
                 }
                 None => {
                     self.exhausted = true;
@@ -108,6 +119,6 @@ impl<'a> Iterator for LineIterator<'a> {
             Direction::Forward => 1,
             Direction::Backward => -1,
         };
-        self.current_line.clone()
+        self.current_line.clone().map(LineIterator::replace_empty_line_with_space)
     }
 }
