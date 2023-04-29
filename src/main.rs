@@ -20,7 +20,7 @@ use cursive::views::{TextView, ViewRef, Canvas};
 use clap::{Arg, App, ArgMatches};
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use crate::ui::{build_ui, UIElementName};
+use crate::ui::{build_search_ui, build_ui, UIElementName};
 use crate::model::model::{ModelEvent, RootModel};
 use crate::model::model::ModelEvent::*;
 use cursive::direction::Direction;
@@ -130,7 +130,7 @@ fn run_ui(receiver: Receiver<ModelEvent>, model: RootModel) {
 	app.clear_global_callbacks(Event::CtrlChar('c')); // Ctrl+C is for copy
 
 	app.add_fullscreen_layer(build_ui(model_ref.clone()));
-	app.set_user_data(model_ref);
+	app.set_user_data(model_ref.clone());
 
 	// cursive event loop
 	app.refresh();
@@ -138,7 +138,7 @@ fn run_ui(receiver: Receiver<ModelEvent>, model: RootModel) {
 		app.step();
         let mut state_changed = false;
         for event in receiver.try_iter() {
-            match handle_model_update(&mut app, event) {
+            match handle_model_update(&mut app, model_ref.clone(), event) {
                 Ok(b) => state_changed = state_changed || b,
                 Err(err) => panic!("failed to handle model update: {}", err)
             }
@@ -150,7 +150,7 @@ fn run_ui(receiver: Receiver<ModelEvent>, model: RootModel) {
 	}
 }
 
-fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, event: ModelEvent) -> Result<bool, &'static str> {
+fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<RootModel>, event: ModelEvent) -> Result<bool, &'static str> {
 	match event {
 		FileName(file_name) => {
 			let mut v: ViewRef<TextView> = app.find_name(&UIElementName::Status.to_string()).unwrap();
@@ -161,7 +161,15 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, event: ModelEve
 			let mut v: ViewRef<Canvas<Shared<RootModel>>> = app.find_name(&UIElementName::MainContent.to_string()).unwrap();
 			v.take_focus(Direction::none());
 			Ok(true)
-		}
+		},
+		Search(show) => {
+			if show	{
+				app.add_layer(build_search_ui(model));
+			} else {
+				app.pop_layer();
+			}
+			Ok(true)
+		},
 		Error(_err) => {
 			// let mut v: ViewRef<TextView> = app.find_name(&UIElementName::MainContent.to_string()).unwrap();
 			// v.set_content(format!("Error: {}", err));

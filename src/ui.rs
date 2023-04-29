@@ -2,8 +2,8 @@ use std::borrow::BorrowMut;
 use std::cmp::{max, min};
 use std::convert::TryInto;
 use std::rc::Rc;
-use cursive::View;
-use cursive::views::{LinearLayout, TextView, Canvas, NamedView};
+use cursive::{Cursive, View};
+use cursive::views::{LinearLayout, TextView, Canvas, NamedView, Dialog, EditView};
 use cursive::traits::{Nameable, Resizable};
 use cursive::event::EventResult;
 use cursive::reexports::enumset::EnumSet;
@@ -22,7 +22,8 @@ use crate::utils::measure;
 
 pub enum UIElementName {
     MainContent,
-    Status
+    Status,
+    SearchField,
 }
 
 impl ToString for UIElementName {
@@ -30,6 +31,7 @@ impl ToString for UIElementName {
         match self {
             UIElementName::MainContent => "main_content".to_string(),
             UIElementName::Status => "status".to_string(),
+            UIElementName::SearchField => "search_field".to_string(),
         }
     }
 }
@@ -369,4 +371,38 @@ impl SpanProducer {
     fn disjoint_intervals(&self) -> Vec<(Integer, Integer, Vec<StyleWithPriority>)> {
         utils::disjoint_intervals(&self.intervals)
     }
+}
+
+pub fn build_search_ui(state: Shared<RootModel>) -> Box<dyn View> {
+    let do_search = |app: &mut Cursive, search_str: &str| {
+        let state: &Shared<RootModel> = app.user_data().unwrap();
+        let ref_mut = state.get_mut_ref();
+        let search_model = &mut ref_mut.get_search_model();
+        search_model.set_visible(false);
+        search_model.set_pattern(search_str);
+        search_model.start_search();
+    };
+
+    let mut layout = LinearLayout::vertical();
+    layout.add_child(TextView::new("Enter text or regular expression:"));
+    let search_field = EditView::new()
+        .content(state.get_mut_ref().get_search_model().get_pattern())
+        .on_submit(do_search)
+        .with_name(UIElementName::SearchField.to_string());
+    layout.add_child(search_field);
+
+    let dialog = Dialog::new()
+        .title("Search")
+        .content(layout)
+        .button("Search", move |app| {
+            let search_field = app.find_name::<EditView>(&UIElementName::SearchField.to_string())
+                .expect("Element not found");
+            do_search(app, search_field.get_content().as_str());
+        })
+        .button("Cancel", |app| {
+            let state: &Shared<RootModel> = app.user_data().unwrap();
+            state.get_mut_ref().get_search_model().set_visible(false);
+        })
+        .full_width();
+    Box::new(dialog)
 }

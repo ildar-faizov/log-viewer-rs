@@ -18,6 +18,7 @@ use crate::model::cursor_shift::CursorShift;
 use crate::model::dimension::Dimension;
 use crate::model::rendered::{DataRender, LineRender};
 use crate::model::scroll_position::ScrollPosition;
+use crate::model::search_model::SearchModel;
 use crate::utils::GraphemeRender;
 
 const OFFSET_THRESHOLD: u64 = 8192;
@@ -36,18 +37,22 @@ pub struct RootModel {
     datasource: Option<Shared<Box<dyn LineSource>>>,
     error: Option<Box<dyn ToString>>,
     show_line_numbers: bool,
+    search_model: Shared<SearchModel>,
 }
 
+#[derive(Debug)]
 pub enum ModelEvent {
     FileName(String),
     DataUpdated,
     CursorMoved(Integer),
+    Search(bool),
     Error(String),
     Quit,
 }
 
 impl RootModel {
     pub fn new(model_sender: Sender<ModelEvent>) -> Self {
+        let sender = model_sender.clone();
         RootModel {
             model_sender,
             file_name: None,
@@ -62,6 +67,7 @@ impl RootModel {
             datasource: None,
             error: None,
             show_line_numbers: true,
+            search_model: Shared::new(SearchModel::new(sender)),
         }
     }
 
@@ -690,5 +696,9 @@ impl RootModel {
         let scroll_starting_point = Ratio::new(new_offset, datasource.get_length());
         drop(datasource);
         self.set_scroll_position(ScrollPosition::new(scroll_starting_point, 0.into()))
+    }
+
+    pub fn get_search_model(&self) -> RefMut<SearchModel> {
+        self.search_model.get_mut_ref()
     }
 }

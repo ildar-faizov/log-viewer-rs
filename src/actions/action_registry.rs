@@ -18,6 +18,7 @@ use crate::actions::scroll_down::ScrollDownAction;
 use crate::actions::word_backward::WordBackwardAction;
 use crate::actions::word_forward::WordForwardAction;
 use crate::actions::scroll_up::ScrollUpAction;
+use crate::actions::search::SearchAction;
 use crate::actions::select_all::SelectAllAction;
 use crate::actions::select_word_forward::SelectWordForwardAction;
 use crate::actions::select_word_backward::SelectWordBackwardAction;
@@ -68,6 +69,8 @@ fn plain_action_registry() -> Vec<Rc<dyn Action + 'static>> {
         Rc::new(SelectWordBackwardAction::new()),
 
         Rc::new(CopyAction::new()),
+
+        Rc::new(SearchAction::default()),
 
         Rc::new(QuitAction::new()),
     ]
