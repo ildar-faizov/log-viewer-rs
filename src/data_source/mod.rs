@@ -355,7 +355,7 @@ pub struct FileBackend {
 }
 
 impl FileBackend {
-    fn new(file_name: PathBuf) -> Self {
+    pub fn new(file_name: PathBuf) -> Self {
         FileBackend { file_name }
     }
 }

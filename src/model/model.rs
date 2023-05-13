@@ -19,6 +19,7 @@ use crate::model::dimension::Dimension;
 use crate::model::rendered::{DataRender, LineRender};
 use crate::model::scroll_position::ScrollPosition;
 use crate::model::search_model::SearchModel;
+use crate::search::searcher::SearchResult;
 use crate::utils::GraphemeRender;
 
 const OFFSET_THRESHOLD: u64 = 8192;
@@ -45,15 +46,16 @@ pub enum ModelEvent {
     FileName(String),
     DataUpdated,
     CursorMoved(Integer),
-    Search(bool),
+    SearchOpen(bool),
+    Search(SearchResult),
     Error(String),
     Quit,
 }
 
 impl RootModel {
-    pub fn new(model_sender: Sender<ModelEvent>) -> Self {
+    pub fn new(model_sender: Sender<ModelEvent>) -> Shared<RootModel> {
         let sender = model_sender.clone();
-        RootModel {
+        let root_model = RootModel {
             model_sender,
             file_name: None,
             file_size: 0.into(),
@@ -68,7 +70,9 @@ impl RootModel {
             error: None,
             show_line_numbers: true,
             search_model: Shared::new(SearchModel::new(sender)),
-        }
+        };
+
+        Shared::new(root_model)
     }
 
     fn emit_event(&self, event: ModelEvent) {
@@ -82,7 +86,8 @@ impl RootModel {
     pub fn set_file_name(&mut self, value: String) {
         if self.file_name.as_ref().map(|file_name| *file_name != value).unwrap_or(true) {
             log::info!("File name set to {}", value);
-            self.file_name = Some(value);
+            self.file_name = Some(value.clone());
+            self.search_model.get_mut_ref().set_file_name(value.clone());
             self.emit_event(FileName(self.file_name.as_ref().unwrap().to_owned()));
             self.load_file();
         }

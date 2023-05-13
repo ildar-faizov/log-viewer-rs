@@ -13,6 +13,7 @@ mod actions;
 mod highlight;
 mod test_extensions;
 mod advanced_io;
+mod search;
 
 use cursive::{CursiveRunnable, CursiveRunner, View};
 use cursive::views::{TextView, ViewRef, Canvas};
@@ -33,6 +34,7 @@ use log4rs::encode::pattern::PatternEncoder;
 use log4rs::Config;
 use log4rs::config::{Appender, Root};
 use log::LevelFilter;
+use crate::search::searcher::SearchError;
 use crate::shared::Shared;
 
 fn main() -> std::io::Result<()> {
@@ -110,22 +112,19 @@ fn parse_args<'a>() -> ArgMatches<'a> {
 		.get_matches()
 }
 
-fn create_model(args: &ArgMatches, sender: Sender<ModelEvent>) -> RootModel {
+fn create_model(args: &ArgMatches, sender: Sender<ModelEvent>) -> Shared<RootModel> {
 	let mut model = RootModel::new(sender);
 	if let Some(file_name) = args.value_of("file") {
-		model.set_file_name(file_name.to_owned());
+		model.get_mut_ref().set_file_name(file_name.to_owned());
 	} else {
 		// TODO: sample only
 		// model.set_file_name("/var/log/bootstrap.log".to_owned())
-		model.set_file_name("./test.txt".to_owned())
+		model.get_mut_ref().set_file_name("./test.txt".to_owned())
 	}
 	model
 }
 
-fn run_ui(receiver: Receiver<ModelEvent>, model: RootModel) {
-	// let mut model_ref = Rc::new(RefCell::new(model));
-	let model_ref = Shared::new(model);
-
+fn run_ui(receiver: Receiver<ModelEvent>, model_ref: Shared<RootModel>) {
 	let mut app = cursive::default().into_runner();
 	app.clear_global_callbacks(Event::CtrlChar('c')); // Ctrl+C is for copy
 
@@ -162,7 +161,7 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<R
 			v.take_focus(Direction::none());
 			Ok(true)
 		},
-		Search(show) => {
+		SearchOpen(show) => {
 			if show	{
 				app.add_layer(build_search_ui(model));
 			} else {
@@ -170,6 +169,19 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<R
 			}
 			Ok(true)
 		},
+		Search(result) => {
+			match result {
+				Ok(p) => Ok(model.get_mut_ref().move_cursor_to_offset(p, false)),
+				Err(SearchError::NotFound) => {
+					log::info!("Search finished");
+					Ok(false)
+				},
+				Err(SearchError::IO(err)) => {
+					log::error!("{}", err);
+					Err("Search failed")
+				},
+			}
+		}
 		Error(_err) => {
 			// let mut v: ViewRef<TextView> = app.find_name(&UIElementName::MainContent.to_string()).unwrap();
 			// v.set_content(format!("Error: {}", err));

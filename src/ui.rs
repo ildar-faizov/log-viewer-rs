@@ -16,6 +16,7 @@ use crate::actions::action_registry::action_registry;
 use crate::highlight::highlighter_registry::cursive_highlighters;
 use crate::highlight::style_with_priority::StyleWithPriority;
 use crate::{RootModel, Shared, utils};
+use crate::data_source::Direction;
 use crate::highlight::highlight::Highlighter;
 use crate::model::rendered::LineRender;
 use crate::utils::measure;
@@ -380,7 +381,7 @@ pub fn build_search_ui(state: Shared<RootModel>) -> Box<dyn View> {
         let search_model = &mut ref_mut.get_search_model();
         search_model.set_visible(false);
         search_model.set_pattern(search_str);
-        search_model.start_search();
+        search_model.search(Direction::Forward);
     };
 
     let mut layout = LinearLayout::vertical();
