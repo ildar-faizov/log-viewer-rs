@@ -29,6 +29,8 @@ use std::fs::OpenOptions;
 use std::panic;
 use std::str::FromStr;
 use cursive::event::Event;
+use cursive::event::Event::Key;
+use cursive::event::Key::Esc;
 use log4rs::append::file::FileAppender;
 use log4rs::encode::pattern::PatternEncoder;
 use log4rs::Config;
@@ -163,9 +165,14 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<R
 		},
 		SearchOpen(show) => {
 			if show	{
+				app.add_global_callback(Key(Esc), |t| {
+					let state: &Shared<RootModel> = t.user_data().unwrap();
+					state.get_mut_ref().get_search_model().set_visible(false);
+				});
 				app.add_layer(build_search_ui(model));
 			} else {
 				app.pop_layer();
+				app.clear_global_callbacks(Key(Esc));
 			}
 			Ok(true)
 		},

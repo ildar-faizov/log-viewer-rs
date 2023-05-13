@@ -70,12 +70,13 @@ impl SearchModel {
     }
 
     fn update_searcher(&mut self) {
+        self.searcher = None;
         if let Some(file_name) = &self.file_name {
-            let backend = FileBackend::new(file_name.clone());
-            let searcher = create_searcher(backend, self.pattern.clone(), 0);
-            self.searcher = Some(searcher)
-        } else {
-            self.searcher = None
+            if !self.pattern.is_empty() {
+                let backend = FileBackend::new(file_name.clone());
+                let searcher = create_searcher(backend, self.pattern.clone(), 0);
+                self.searcher = Some(searcher)
+            }
         }
     }
 }
