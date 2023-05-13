@@ -43,6 +43,10 @@ impl<R> Searcher for SearcherImpl<R>
             Direction::Backward => self.scan_backward()
         }
     }
+
+    fn get_last_occurrence(&self) -> Option<Integer> {
+        self.last_occurrence
+    }
 }
 
 impl<R> SearcherImpl<R> where R: Read + Seek {

@@ -1,5 +1,7 @@
 use regex::Regex;
+use fluent_integer::Integer;
 use crate::highlight::highlight::{Highlight, Highlighter};
+use crate::model::model::RootModel;
 use crate::utils::measure;
 
 pub struct PatternBasedHighlighter<T> {
@@ -17,7 +19,7 @@ impl <T> PatternBasedHighlighter<T> {
 }
 
 impl <T> Highlighter<T> for PatternBasedHighlighter<T> where T: Clone {
-    fn process(&self, str: &str) -> Vec<Highlight<T>> {
+    fn process(&self, str: &str, _offset: Integer, _model: &RootModel) -> Vec<Highlight<T>> {
         measure("PatternBasedHighlight process", || {
             self.patterns.iter().flat_map(|regex|
                 regex.captures_iter(str)

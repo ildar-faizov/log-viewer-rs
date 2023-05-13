@@ -10,6 +10,8 @@ pub trait Searcher {
     /// character of the match. `pattern` **must not** contain multiple lines, the search is
     /// performed line by line.
     fn next_occurrence(&mut self, direction: Direction) -> SearchResult;
+
+    fn get_last_occurrence(&self) -> Option<Integer>;
 }
 
 #[derive(Debug)]

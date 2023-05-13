@@ -288,7 +288,7 @@ impl<'a> LineDrawer<'a> {
             }
 
             highlighters.iter()
-                .flat_map(|highlighter| highlighter.process(line.content.as_str()))
+                .flat_map(|highlighter| highlighter.process(line.content.as_str(), line.start, state))
                 .for_each(|h| {
                     let s = line.find_grapheme_index_by_offset(h.get_start().into());
                     let e = line.find_grapheme_index_by_offset(h.get_end().into());

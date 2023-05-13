@@ -1,5 +1,9 @@
+use cursive::theme::{Color, ColorStyle, ColorType, Style};
+use fluent_integer::Integer;
 use crate::highlight::highlight::{Highlight, Highlighter};
 use crate::highlight::pattern_based_highlighter::PatternBasedHighlighter;
+use crate::highlight::style_with_priority::StyleWithPriority;
+use crate::model::model::RootModel;
 
 pub struct DateHighlighter<T> {
     pattern_based_highlighter: PatternBasedHighlighter<T>
@@ -17,7 +21,12 @@ impl <T> DateHighlighter<T> {
 }
 
 impl <T> Highlighter<T> for DateHighlighter<T> where T: Clone {
-    fn process(&self, str: &str) -> Vec<Highlight<T>> {
-        self.pattern_based_highlighter.process(str)
+    fn process(&self, str: &str, offset: Integer, model: &RootModel) -> Vec<Highlight<T>> {
+        self.pattern_based_highlighter.process(str, offset, model)
     }
+}
+
+pub fn create_date_highlighter() -> DateHighlighter<StyleWithPriority> {
+    let style = Style::from(ColorStyle::new(ColorType::Color(Color::Rgb(0, 0, 0xff)), ColorType::InheritParent));
+    DateHighlighter::new(StyleWithPriority::new(style, 0xff, 0))
 }

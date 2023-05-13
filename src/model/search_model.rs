@@ -63,6 +63,12 @@ impl SearchModel {
         self.emit_event(ModelEvent::Search(result))
     }
 
+    pub fn get_current_occurrence(&self) -> Option<Integer> {
+        self.searcher.as_ref()
+            .map(|searcher| searcher.get_last_occurrence())
+            .flatten()
+    }
+
     fn emit_event(&self, evt: ModelEvent) {
         let msg = format!("Failed to send event: {:?}", evt);
         self.model_sender.send(evt)
