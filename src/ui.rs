@@ -1,9 +1,10 @@
 use std::borrow::BorrowMut;
+use std::cell::RefMut;
 use std::cmp::{max, min};
 use std::convert::TryInto;
 use std::rc::Rc;
 use cursive::{Cursive, View};
-use cursive::views::{LinearLayout, TextView, Canvas, NamedView, Dialog, EditView};
+use cursive::views::{LinearLayout, TextView, Canvas, NamedView, Dialog, EditView, Checkbox};
 use cursive::traits::{Nameable, Resizable};
 use cursive::event::EventResult;
 use cursive::reexports::enumset::EnumSet;
@@ -16,7 +17,6 @@ use crate::actions::action_registry::action_registry;
 use crate::highlight::highlighter_registry::cursive_highlighters;
 use crate::highlight::style_with_priority::StyleWithPriority;
 use crate::{RootModel, Shared, utils};
-use crate::data_source::Direction;
 use crate::highlight::highlight::Highlighter;
 use crate::model::rendered::LineRender;
 use crate::utils::measure;
@@ -25,6 +25,8 @@ pub enum UIElementName {
     MainContent,
     Status,
     SearchField,
+    SearchFromCursor,
+    SearchBackward,
 }
 
 impl ToString for UIElementName {
@@ -33,6 +35,8 @@ impl ToString for UIElementName {
             UIElementName::MainContent => "main_content".to_string(),
             UIElementName::Status => "status".to_string(),
             UIElementName::SearchField => "search_field".to_string(),
+            UIElementName::SearchFromCursor => "search_from_cursor".to_string(),
+            UIElementName::SearchBackward => "search_backward".to_string(),
         }
     }
 }
@@ -376,21 +380,45 @@ impl SpanProducer {
 
 pub fn build_search_ui(state: Shared<RootModel>) -> Box<dyn View> {
     let do_search = |app: &mut Cursive, search_str: &str| {
-        let state: &Shared<RootModel> = app.user_data().unwrap();
-        let ref_mut = state.get_mut_ref();
-        let search_model = &mut ref_mut.get_search_model();
+        let root_model = app.get_root_model();
+        let mut search_model = root_model.get_search_model();
+        if search_model.is_from_cursor() {
+            search_model.set_cursor(root_model.get_cursor());
+        }
         search_model.set_visible(false);
         search_model.set_pattern(search_str);
-        search_model.search(Direction::Forward);
+        search_model.start_search();
     };
+    let root_model = state.get_mut_ref();
+    let search_model = root_model.get_search_model();
 
     let mut layout = LinearLayout::vertical();
     layout.add_child(TextView::new("Enter text or regular expression:"));
     let search_field = EditView::new()
-        .content(state.get_mut_ref().get_search_model().get_pattern())
+        .content(search_model.get_pattern())
         .on_submit(do_search)
         .with_name(UIElementName::SearchField.to_string());
     layout.add_child(search_field);
+
+    let mut search_settings_panel = LinearLayout::horizontal();
+    search_settings_panel.add_child(Checkbox::new()
+        .with_checked(search_model.is_from_cursor())
+        .on_change(|app, is_checked| {
+            let model = app.get_root_model();
+            model.get_search_model().set_from_cursor(is_checked);
+        })
+        .with_name(UIElementName::SearchFromCursor.to_string()));
+    search_settings_panel.add_child(TextView::new("From cursor"));
+    search_settings_panel.add_child(Checkbox::new()
+        .with_checked(search_model.is_backward())
+        .with_enabled(search_model.is_from_cursor())
+        .on_change(|app, is_checked| {
+            let model = app.get_root_model();
+            model.get_search_model().set_backward(is_checked);
+        })
+        .with_name(UIElementName::SearchBackward.to_string()));
+    search_settings_panel.add_child(TextView::new("Backward"));
+    layout.add_child(search_settings_panel);
 
     let dialog = Dialog::new()
         .title("Search")
@@ -406,4 +434,15 @@ pub fn build_search_ui(state: Shared<RootModel>) -> Box<dyn View> {
         })
         .full_width();
     Box::new(dialog)
+}
+
+pub trait WithRootModel {
+    fn get_root_model(&mut self) -> RefMut<RootModel>;
+}
+
+impl WithRootModel for Cursive {
+    fn get_root_model(&mut self) -> RefMut<RootModel> {
+        let state: &Shared<RootModel> = self.user_data().unwrap();
+        state.get_mut_ref()
+    }
 }

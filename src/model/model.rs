@@ -48,6 +48,7 @@ pub enum ModelEvent {
     CursorMoved(Integer),
     SearchOpen(bool),
     Search(SearchResult),
+    SearchFromCursor,
     Error(String),
     Quit,
 }

@@ -13,6 +13,9 @@ pub struct SearchModel {
     searcher: Option<Box<dyn Searcher>>,
     visible: bool,
     pattern: String,
+    is_from_cursor: bool,
+    cursor_pos: Option<Integer>,
+    is_backward: bool,
     is_regexp: bool,
 }
 
@@ -24,6 +27,9 @@ impl SearchModel {
             searcher: None,
             visible: false,
             pattern: String::new(),
+            is_from_cursor: false,
+            cursor_pos: None,
+            is_backward: false,
             is_regexp: false,
         }
     }
@@ -53,6 +59,15 @@ impl SearchModel {
         self.pattern.as_str()
     }
 
+    pub fn start_search(&mut self) {
+        let direction = if self.is_backward {
+            Direction::Backward
+        } else {
+            Direction::Forward
+        };
+        self.search(direction);
+    }
+
     pub fn search(&mut self, direction: Direction) {
         log::info!("Search: {:?}", self.pattern);
         let result = if let Some(searcher) = &mut self.searcher {
@@ -60,13 +75,36 @@ impl SearchModel {
         } else {
             Err(NotFound)
         };
-        self.emit_event(ModelEvent::Search(result))
+        self.emit_event(ModelEvent::Search(result));
     }
 
     pub fn get_current_occurrence(&self) -> Option<Integer> {
         self.searcher.as_ref()
             .map(|searcher| searcher.get_last_occurrence())
             .flatten()
+    }
+
+    pub fn is_from_cursor(&self) -> bool {
+        self.is_from_cursor
+    }
+
+    pub fn set_from_cursor(&mut self, is_from_cursor: bool) {
+        if self.is_from_cursor != is_from_cursor {
+            self.is_from_cursor = is_from_cursor;
+            self.emit_event(ModelEvent::SearchFromCursor);
+        }
+    }
+
+    pub fn set_cursor(&mut self, cursor: Integer) {
+        self.cursor_pos = Some(cursor);
+    }
+
+    pub fn is_backward(&self) -> bool {
+        self.is_backward
+    }
+
+    pub fn set_backward(&mut self, is_backward: bool) {
+        self.is_backward = is_backward;
     }
 
     fn emit_event(&self, evt: ModelEvent) {
@@ -80,7 +118,12 @@ impl SearchModel {
         if let Some(file_name) = &self.file_name {
             if !self.pattern.is_empty() {
                 let backend = FileBackend::new(file_name.clone());
-                let searcher = create_searcher(backend, self.pattern.clone(), 0);
+                let offset = if self.is_from_cursor {
+                    *&self.cursor_pos.unwrap()
+                } else {
+                    0.into()
+                };
+                let searcher = create_searcher(backend, self.pattern.clone(), offset);
                 self.searcher = Some(searcher)
             }
         }

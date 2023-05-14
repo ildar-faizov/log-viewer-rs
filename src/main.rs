@@ -16,7 +16,7 @@ mod advanced_io;
 mod search;
 
 use cursive::{CursiveRunnable, CursiveRunner, View};
-use cursive::views::{TextView, ViewRef, Canvas};
+use cursive::views::{TextView, ViewRef, Canvas, Checkbox};
 
 use clap::{Arg, App, ArgMatches};
 
@@ -115,7 +115,7 @@ fn parse_args<'a>() -> ArgMatches<'a> {
 }
 
 fn create_model(args: &ArgMatches, sender: Sender<ModelEvent>) -> Shared<RootModel> {
-	let mut model = RootModel::new(sender);
+	let model = RootModel::new(sender);
 	if let Some(file_name) = args.value_of("file") {
 		model.get_mut_ref().set_file_name(file_name.to_owned());
 	} else {
@@ -188,7 +188,14 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<R
 					Err("Search failed")
 				},
 			}
-		}
+		},
+		SearchFromCursor => {
+			let is_from_cursor = model.get_mut_ref().get_search_model().is_from_cursor();
+			app.call_on_name(&UIElementName::SearchBackward.to_string(), |chk: &mut Checkbox| {
+				chk.set_enabled(is_from_cursor);
+			});
+			Ok(true)
+		},
 		Error(_err) => {
 			// let mut v: ViewRef<TextView> = app.find_name(&UIElementName::MainContent.to_string()).unwrap();
 			// v.set_content(format!("Error: {}", err));
