@@ -4,7 +4,7 @@ use std::cmp::{max, min};
 use std::convert::TryInto;
 use std::rc::Rc;
 use cursive::{Cursive, View};
-use cursive::views::{LinearLayout, TextView, Canvas, NamedView, Dialog, EditView, Checkbox};
+use cursive::views::{LinearLayout, TextView, Canvas, NamedView, Dialog, EditView, Checkbox, DummyView};
 use cursive::traits::{Nameable, Resizable};
 use cursive::event::EventResult;
 use cursive::reexports::enumset::EnumSet;
@@ -23,7 +23,8 @@ use crate::utils::measure;
 
 pub enum UIElementName {
     MainContent,
-    Status,
+    StatusFile,
+    StatusPosition,
     SearchField,
     SearchFromCursor,
     SearchBackward,
@@ -33,7 +34,8 @@ impl ToString for UIElementName {
     fn to_string(&self) -> String {
         match self {
             UIElementName::MainContent => "main_content".to_string(),
-            UIElementName::Status => "status".to_string(),
+            UIElementName::StatusFile => "status_file".to_string(),
+            UIElementName::StatusPosition => "status_position".to_string(),
             UIElementName::SearchField => "search_field".to_string(),
             UIElementName::SearchFromCursor => "search_from_cursor".to_string(),
             UIElementName::SearchBackward => "search_backward".to_string(),
@@ -81,9 +83,7 @@ pub fn build_ui(model: Shared<RootModel>) -> Box<dyn View> {
     let mut layout = LinearLayout::vertical();
     // layout.add_child(menu);
     layout.add_child(build_canvas(model).full_height());
-    layout.add_child(TextView::new("status")
-        .with_name(UIElementName::Status)
-        .full_width());
+    layout.add_child(build_status_panel());
 
     layout.focus_view(&Selector::Name(UIElementName::MainContent.to_string().as_str()))
         .expect("TODO: panic message");
@@ -436,6 +436,16 @@ pub fn build_search_ui(state: Shared<RootModel>) -> Box<dyn View> {
         })
         .full_width();
     Box::new(dialog)
+}
+
+fn build_status_panel() -> Box<dyn View> {
+    let mut layout = LinearLayout::horizontal();
+
+    layout.add_child(TextView::empty().with_name(UIElementName::StatusFile));
+    layout.add_child(DummyView {}.full_width());
+    layout.add_child(TextView::empty().with_name(UIElementName::StatusPosition));
+
+    Box::new(layout.full_width())
 }
 
 pub trait WithRootModel {

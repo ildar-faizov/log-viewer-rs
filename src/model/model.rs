@@ -2,7 +2,7 @@ use crossbeam_channel::Sender;
 use std::path::{Path, PathBuf};
 use std::env::current_dir;
 use ModelEvent::*;
-use crate::data_source::{Data, Direction, FileBackend, LineSource, LineSourceImpl};
+use crate::data_source::{Data, Direction, FileBackend, Line, LineSource, LineSourceImpl};
 use std::cell::RefMut;
 use num_rational::Ratio;
 use std::cmp::min;
@@ -45,12 +45,19 @@ pub struct RootModel {
 pub enum ModelEvent {
     FileName(String),
     DataUpdated,
-    CursorMoved(Integer),
+    CursorMoved(CursorPosition),
     SearchOpen(bool),
     Search(SearchResult),
     SearchFromCursor,
     Error(String),
     Quit,
+}
+
+#[derive(Debug)]
+pub struct CursorPosition {
+    pub line_no: u64,
+    pub position_in_line: u64,
+    pub offset: u64,
 }
 
 impl RootModel {
@@ -101,6 +108,7 @@ impl RootModel {
     fn set_data(&mut self, data: Data) {
         self.data = Some(DataRender::new(data));
         self.emit_event(DataUpdated);
+        self.emit_cursor_moved();
     }
 
     pub fn error(&self) -> Option<String> {
@@ -231,7 +239,7 @@ impl RootModel {
         if self.cursor != pos {
             self.cursor = pos;
             log::trace!("Cursor position set to {:?}", pos);
-            self.emit_event(CursorMoved(pos));
+            self.emit_cursor_moved();
         }
     }
 
@@ -706,5 +714,17 @@ impl RootModel {
 
     pub fn get_search_model(&self) -> RefMut<SearchModel> {
         self.search_model.get_mut_ref()
+    }
+
+    fn emit_cursor_moved(&self) {
+        if let Some(cp) = &self.get_cursor_in_cache() {
+            let i = cp.height.as_usize();
+            let option = self.data.as_ref().and_then(|render| render.lines.get(i).and_then(|line| line.line_no));
+            self.emit_event(CursorMoved(CursorPosition {
+                line_no: option.unwrap(),
+                position_in_line: cp.width.as_u64(),
+                offset: self.cursor.as_u64(),
+            }))
+        }
     }
 }
