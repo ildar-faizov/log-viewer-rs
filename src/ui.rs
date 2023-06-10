@@ -238,12 +238,13 @@ impl<'a> LineDrawer<'a> {
     fn draw(&self, i: usize, line: &LineRender) -> SpannedString<Style> {
         let state = self.state.unwrap();
         let highlighters = self.highlighters.unwrap();
-        let line_number_width = if self.show_line_numbers {
-            format!("{} | ", self.max_line_number + 1).len()
+        let (line_number_width, line_span_width) = if self.show_line_numbers {
+            let r = format!("{}", self.max_line_number + 1).len();
+            (r, r + " | ".len())
         } else {
-            0
+            (0, 0)
         };
-        let width = self.width.map(|w| w.saturating_sub(line_number_width)).unwrap();
+        let width = self.width.map(|w| w.saturating_sub(line_span_width)).unwrap();
         let regular_style = self.regular_style.unwrap();
         let cursor_style = self.cursor_style.unwrap();
         let selection_style = self.selection_style.unwrap();
@@ -311,13 +312,14 @@ impl<'a> LineDrawer<'a> {
                 let e = get_visible_graphemes().nth(interval.1.as_usize() - 1)
                     .map(|g| g.render_offset + g.render.resolve(line.content.as_str()).len() - first_offset)
                     .unwrap();
-                spans.push(indexed_span(line_number_width + s, line_number_width + e, (interval.1 - interval.0).as_usize(), style));
+                spans.push(indexed_span(line_span_width + s, line_span_width + e, (interval.1 - interval.0).as_usize(), style));
             }
             let display_str = if self.show_line_numbers {
                 spans.insert(0, indexed_span(0, line_number_width, line_number_width, self.line_number_style.unwrap().get_style()));
+                spans.insert(1, indexed_span(line_number_width, line_span_width, line_span_width - line_number_width, regular_style.get_style()));
                 format!("{number:>width$} | {s}",
                         number = line.line_no.unwrap_or(0) + 1,
-                        width = line_number_width - " | ".len(),
+                        width = line_number_width,
                         s = display_str)
             } else {
                 display_str
@@ -330,12 +332,12 @@ impl<'a> LineDrawer<'a> {
             if self.show_line_numbers {
                 display_str = format!("{number:>width$} | ",
                                       number = line.line_no.unwrap_or(0) + 1,
-                                      width = line_number_width - " | ".len());
-                let span = indexed_span(0, line_number_width, line_number_width, self.line_number_style.unwrap().get_style());
-                spans.push(span);
+                                      width = line_number_width);
+                spans.push(indexed_span(0, line_number_width, line_number_width, self.line_number_style.unwrap().get_style()));
+                spans.push(indexed_span(line_number_width, line_span_width, line_span_width - line_number_width, regular_style.get_style()))
             }
             if cursor >= line.start && cursor <= line.end {
-                spans.push(indexed_span(line_number_width, line_number_width + 1, 1, cursor_style.get_style()));
+                spans.push(indexed_span(line_span_width, line_span_width + 1, 1, cursor_style.get_style()));
                 display_str.push(' ');
             }
 
