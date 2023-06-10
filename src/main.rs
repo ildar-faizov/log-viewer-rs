@@ -39,6 +39,8 @@ use log::LevelFilter;
 use crate::search::searcher::SearchError;
 use crate::shared::Shared;
 
+use human_bytes::human_bytes;
+
 fn main() -> std::io::Result<()> {
 	let args = parse_args();
 
@@ -153,9 +155,9 @@ fn run_ui(receiver: Receiver<ModelEvent>, model_ref: Shared<RootModel>) {
 
 fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<RootModel>, event: ModelEvent) -> Result<bool, &'static str> {
 	match event {
-		FileName(file_name) => {
+		FileName(file_name, file_size) => {
 			let mut v: ViewRef<TextView> = app.find_name(&UIElementName::StatusFile.to_string()).unwrap();
-			v.set_content(file_name);
+			v.set_content(format!("{} {}", file_name, human_bytes(file_size as f64)));
 			Ok(true)
 		},
 		DataUpdated => {
@@ -207,7 +209,7 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<R
 		},
 		CursorMoved(cursor_position) => {
 			let mut v: ViewRef<TextView> = app.find_name(&UIElementName::StatusPosition.to_string()).unwrap();
-			v.set_content(format!("{}:{}:{}", cursor_position.line_no + 1, cursor_position.position_in_line + 1, cursor_position.offset));
+			v.set_content(format!("L {}, C {}, O {}", cursor_position.line_no + 1, cursor_position.position_in_line + 1, cursor_position.offset));
 			Ok(true)
 		},
 		Quit => {

@@ -43,7 +43,7 @@ pub struct RootModel {
 
 #[derive(Debug)]
 pub enum ModelEvent {
-    FileName(String),
+    FileName(String, u64),
     DataUpdated,
     CursorMoved(CursorPosition),
     SearchOpen(bool),
@@ -96,7 +96,6 @@ impl RootModel {
             log::info!("File name set to {}", value);
             self.file_name = Some(value.clone());
             self.search_model.get_mut_ref().set_file_name(value.clone());
-            self.emit_event(FileName(self.file_name.as_ref().unwrap().to_owned()));
             self.load_file();
         }
     }
@@ -497,7 +496,9 @@ impl RootModel {
             if self.show_line_numbers {
                 line_source.track_line_number(true);
             }
+            let file_size = line_source.get_length();
             self.datasource = Some(Shared::new(Box::new(line_source)));
+            self.emit_event(FileName(self.file_name.as_ref().unwrap().to_owned(), file_size.as_u64()));
             self.update_viewport_content();
         }
     }
