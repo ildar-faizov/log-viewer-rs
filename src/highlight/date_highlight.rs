@@ -28,5 +28,5 @@ impl <T> Highlighter<T> for DateHighlighter<T> where T: Clone {
 
 pub fn create_date_highlighter() -> DateHighlighter<StyleWithPriority> {
     let style = Style::from(ColorStyle::new(ColorType::Color(Color::Rgb(0, 0, 0xff)), ColorType::InheritParent));
-    DateHighlighter::new(StyleWithPriority::new(style, 0xff, 0))
+    DateHighlighter::new(StyleWithPriority::new(style, 0xfe, 0))
 }

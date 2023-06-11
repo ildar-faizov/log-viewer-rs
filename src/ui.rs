@@ -97,7 +97,7 @@ fn build_canvas(model: Shared<RootModel>) -> NamedView<Canvas<Shared<RootModel>>
     let palette = Theme::default().palette;
     let highlighters = cursive_highlighters(&palette);
     let regular_style = StyleWithPriority::new(Style::from(ColorStyle::new(palette[Primary], palette[HighlightText])), 0, 0);
-    let cursor_style = StyleWithPriority::new(Style::from(ColorStyle::new(palette[HighlightText], palette[Primary])), 1, 1);
+    let cursor_style = StyleWithPriority::new(Style::from(ColorStyle::new(palette[HighlightText], palette[Primary])), 0xff, 0xff);
     let selection_style = StyleWithPriority::new(Style::from(ColorStyle::new(palette[HighlightText], palette[Background])), 1, 0xff);
     let line_number_style = StyleWithPriority::new(Style {
         color: ColorStyle::new(palette[Primary], palette[HighlightText]),
