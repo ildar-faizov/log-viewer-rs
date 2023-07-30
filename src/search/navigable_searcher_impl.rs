@@ -33,7 +33,7 @@ impl NavigableSearcher for NavigableSearcherImpl {
         self.range = range;
         let mut scope = range;
         loop {
-            match self.searcher.next_occurrence(Direction::Forward, scope) {
+            match self.searcher.search(Direction::Forward, scope) {
                 Ok(p) => {
                     new_occurrences.push(p);
                     scope = scope.to_builder().left_bound_exclusive(p.start).build()
@@ -66,7 +66,7 @@ impl NavigableSearcher for NavigableSearcherImpl {
                 }
             }
         };
-        self.searcher.next_occurrence(direction, scope)
+        self.searcher.search(direction, scope)
     }
 
     fn set_initial_offset(&mut self, offset: Integer) {

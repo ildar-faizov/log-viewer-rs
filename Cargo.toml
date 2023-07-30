@@ -23,6 +23,7 @@ stopwatch = "0.0.7"
 spectral = "0.6.0"
 unicode-segmentation = "1.9.0"
 human_bytes = "0.4"
+paste = "*"
 
 #[dependencies.cursive]
 #version = "*"

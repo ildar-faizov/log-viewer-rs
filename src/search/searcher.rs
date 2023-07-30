@@ -15,7 +15,7 @@ pub struct Occurrence {
 }
 
 pub trait Searcher {
-    fn next_occurrence(&mut self, direction: Direction, range: Interval<Integer>) -> SearchResult;
+    fn search(&mut self, direction: Direction, range: Interval<Integer>) -> SearchResult;
 }
 
 #[derive(Debug)]
@@ -61,5 +61,20 @@ impl<I: Into<Integer>> Add<I> for Occurrence {
     fn add(self, rhs: I) -> Self::Output {
         let rhs = rhs.into();
         Occurrence::new(self.start + rhs, self.end + rhs)
+    }
+}
+
+impl PartialEq<SearchError> for SearchError {
+    fn eq(&self, other: &SearchError) -> bool {
+        self.is_not_found() && other.is_not_found()
+    }
+}
+
+impl SearchError {
+    pub fn is_not_found(&self) -> bool {
+        match &self {
+            SearchError::NotFound => true,
+            _ => false
+        }
     }
 }

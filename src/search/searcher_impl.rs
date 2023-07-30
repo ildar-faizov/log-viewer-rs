@@ -33,7 +33,7 @@ impl<R> SearcherImpl<R>
 impl<R> Searcher for SearcherImpl<R>
     where R: Read + Seek
 {
-    fn next_occurrence(&mut self, direction: Direction, range: Interval<Integer>) -> SearchResult {
+    fn search(&mut self, direction: Direction, range: Interval<Integer>) -> SearchResult {
         let offset_boundary = calculate_offset_and_boundary(&mut self.f, direction, range)?.offset_boundary;
 
         match direction {

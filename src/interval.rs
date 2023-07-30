@@ -1,7 +1,9 @@
 use std::cmp::Ordering;
+use std::fmt;
+use std::fmt::{Display, Formatter};
 
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
-pub enum IntervalBound<T> where T : PartialEq<T> {
+pub enum IntervalBound<T> where T : Eq {
     PositiveInfinity,
     NegativeInfinity,
     Fixed {
@@ -12,17 +14,17 @@ pub enum IntervalBound<T> where T : PartialEq<T> {
 
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
 pub struct Interval<T>
-    where T: PartialOrd<T>, T: PartialEq<T>, T: Copy {
+    where T: Ord, T: Eq, T: Copy {
     pub left_bound: IntervalBound<T>,
     pub right_bound: IntervalBound<T>,
 }
 
-pub struct IntervalBuilder<T> where T: PartialOrd, T: PartialEq, T: Copy {
+pub struct IntervalBuilder<T> where T: Ord, T: Eq, T: Copy {
     object: Interval<T>,
 }
 
 impl<T> IntervalBuilder<T>
-    where T: PartialOrd, T: PartialEq, T: Copy {
+    where T: Ord, T: Eq, T: Copy {
 
     pub fn left_bound_inclusive(self, value: T) -> Self {
         self.left_bound(value, true)
@@ -71,7 +73,7 @@ impl<T> IntervalBuilder<T>
     }
 }
 
-impl<T> Default for Interval<T> where T: PartialOrd<T>, T: PartialEq<T>, T: Copy {
+impl<T> Default for Interval<T> where T: Ord, T: Eq, T: Copy {
     fn default() -> Self {
         Interval {
             left_bound: IntervalBound::NegativeInfinity,
@@ -80,7 +82,7 @@ impl<T> Default for Interval<T> where T: PartialOrd<T>, T: PartialEq<T>, T: Copy
     }
 }
 
-impl<T> Interval<T> where T: PartialOrd<T>, T: PartialEq<T>, T: Copy {
+impl<T> Interval<T> where T: Ord, T: Eq, T: Copy {
     pub fn builder() -> IntervalBuilder<T> {
         IntervalBuilder {
             object: Interval::default()
@@ -105,6 +107,22 @@ impl<T> Interval<T> where T: PartialOrd<T>, T: PartialEq<T>, T: Copy {
         Self::builder().left_bound_inclusive(s).right_bound_inclusive(e).build()
     }
 
+    pub fn open(s: T, e: T) -> Self {
+        Self::builder().left_bound_exclusive(s).right_bound_exclusive(e).build()
+    }
+
+    pub fn open_closed(s: T, e: T) -> Self {
+        Self::builder().left_bound_exclusive(s).right_bound_inclusive(e).build()
+    }
+
+    pub fn closed_open(s: T, e: T) -> Self {
+        Self::builder().left_bound_inclusive(s).right_bound_exclusive(e).build()
+    }
+
+    pub fn closed_inf(s: T) -> Self {
+        Self::builder().left_bound_inclusive(s).right_unbounded().build()
+    }
+
     pub fn point(point: T) -> Self {
         Self::closed(point, point)
     }
@@ -122,9 +140,29 @@ impl<T> Interval<T> where T: PartialOrd<T>, T: PartialEq<T>, T: Copy {
             object: self
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        match self.left_bound {
+            IntervalBound::NegativeInfinity => self.right_bound == IntervalBound::NegativeInfinity,
+            IntervalBound::PositiveInfinity => true,
+            IntervalBound::Fixed { value: lb, is_included: lbb } => {
+                match self.right_bound {
+                    IntervalBound::PositiveInfinity => false,
+                    IntervalBound::NegativeInfinity => true,
+                    IntervalBound::Fixed { value: rb, is_included: rbb } => {
+                        match lb.cmp(&rb) {
+                            Ordering::Less => false,
+                            Ordering::Greater => true,
+                            Ordering::Equal => !lbb || !rbb,
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
-impl<T> PartialEq<T> for IntervalBound<T> where T: PartialEq<T> {
+impl<T> PartialEq<T> for IntervalBound<T> where T: Eq {
     fn eq(&self, other: &T) -> bool {
         match self {
             IntervalBound::NegativeInfinity => false,
@@ -134,7 +172,7 @@ impl<T> PartialEq<T> for IntervalBound<T> where T: PartialEq<T> {
     }
 }
 
-impl<T> PartialOrd<T> for IntervalBound<T> where T: PartialOrd<T> {
+impl<T> PartialOrd<T> for IntervalBound<T> where T: Ord {
     fn partial_cmp(&self, other: &T) -> Option<Ordering> {
         match &self {
             IntervalBound::NegativeInfinity => Some(Ordering::Less),
@@ -155,21 +193,39 @@ impl<T> PartialOrd<T> for IntervalBound<T> where T: PartialOrd<T> {
     }
 }
 
-// TODO
-// impl<T> fmt::Debug for Interval<T> {
-//     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-//         let (left_bracket, left_bound) = match &self.left_bound {
-//             IntervalBound::NegativeInfinity => write!(f, "{}{}", "(", "-∞"),
-//             IntervalBound::PositiveInfinity => { write!(f, "∅") },
-//             IntervalBound::Fixed { value, true } => ("[", value.fmt(f)?)
-//         }
-//         write!(f, "{}{}, {}{}")
-//     }
-// }
-//
-// #[macro_export]
-// macro_rules! interval {
-//     ($left:expr, .., $right: expr) => {
-//         Interval::builder().left_bound_inclusive($left).right_bound_inclusive($right).build()
-//     };
-// }
+impl<T> Display for Interval<T>
+    where T: Ord, T: Eq, T: Copy, T: Display
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        if self.is_empty() {
+            return write!(f, "∅")
+        }
+        match &self.left_bound {
+            IntervalBound::NegativeInfinity => write!(f, "(-∞")?,
+            IntervalBound::PositiveInfinity => {
+                return write!(f, "∅")
+            },
+            IntervalBound::Fixed { value, is_included } => {
+                let bracket = if *is_included { "[" } else { "(" };
+                write!(f, "{}{}", bracket, value)?
+            }
+        };
+        write!(f, ", ")?;
+        match &self.right_bound {
+            IntervalBound::NegativeInfinity => {
+                return write!(f, "∅")
+            },
+            IntervalBound::PositiveInfinity => write!(f, "+∞)")?,
+            IntervalBound::Fixed { value, is_included } => {
+                let bracket = if *is_included { "]" } else { ")" };
+                write!(f, "{}{}", value, bracket)?
+            }
+        };
+        Ok(())
+    }
+}
+
+// Tests are included according to http://xion.io/post/code/rust-unit-test-placement.html
+#[cfg(test)]
+#[path = "./interval_tests.rs"]
+mod interval_tests;

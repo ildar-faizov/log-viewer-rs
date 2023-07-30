@@ -57,7 +57,7 @@ fn test_search_backward_exhaustive() {
 fn test_search_backward_with_failure() {
     let backend = StrBackend::new("bar foo");
     let mut searcher = SearcherImpl::new(backend, "foo".to_string());
-    let result = searcher.next_occurrence(Direction::Backward, Interval::builder().left_unbounded().right_bound_inclusive(3.into()).build());
+    let result = searcher.search(Direction::Backward, Interval::builder().left_unbounded().right_bound_inclusive(3.into()).build());
     assert_that(&result).is_err();
 }
 
@@ -79,7 +79,7 @@ fn test_search(src: &'static str, pattern: &'static str, direction: Direction, n
             Direction::Forward => Interval::builder().left_bound_inclusive(offset.into()).right_unbounded().build(),
             Direction::Backward => Interval::builder().left_unbounded().right_bound_inclusive(offset.into()).build(),
         };
-        let result = searcher.next_occurrence(direction, range);
+        let result = searcher.search(direction, range);
         let description = format!("Occurrence {}", i + 1);
         if let Some(pos) = find(offset) {
             asserting(&description).that(&result)
