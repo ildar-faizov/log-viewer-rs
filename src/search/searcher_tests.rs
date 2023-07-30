@@ -1,6 +1,8 @@
 use crate::data_source::{Direction, StrBackend};
-use crate::search::searcher::create_searcher;
+use crate::search::searcher::{Occurrence, Searcher};
 use spectral::prelude::*;
+use crate::interval::Interval;
+use crate::search::searcher_impl::SearcherImpl;
 
 #[test]
 fn test_search_letter_forward_once() {
@@ -54,8 +56,8 @@ fn test_search_backward_exhaustive() {
 #[test]
 fn test_search_backward_with_failure() {
     let backend = StrBackend::new("bar foo");
-    let mut searcher = create_searcher(backend, "foo".to_string(), 3);
-    let result = searcher.next_occurrence(Direction::Backward);
+    let mut searcher = SearcherImpl::new(backend, "foo".to_string());
+    let result = searcher.next_occurrence(Direction::Backward, Interval::builder().left_unbounded().right_bound_inclusive(3.into()).build());
     assert_that(&result).is_err();
 }
 
@@ -65,7 +67,7 @@ fn test_search(src: &'static str, pattern: &'static str, direction: Direction, n
         Direction::Forward => 0_usize,
         Direction::Backward => src.len(),
     };
-    let mut searcher = create_searcher(backend, pattern.to_string(), offset);
+    let mut searcher = SearcherImpl::new(backend, pattern.to_string());
     let find = |p: usize| {
         match direction {
             Direction::Forward => src[p..].find(pattern).map(|r| r + p),
@@ -73,11 +75,15 @@ fn test_search(src: &'static str, pattern: &'static str, direction: Direction, n
         }
     };
     for i in 0..n {
-        let result = searcher.next_occurrence(direction);
+        let range = match direction {
+            Direction::Forward => Interval::builder().left_bound_inclusive(offset.into()).right_unbounded().build(),
+            Direction::Backward => Interval::builder().left_unbounded().right_bound_inclusive(offset.into()).build(),
+        };
+        let result = searcher.next_occurrence(direction, range);
         let description = format!("Occurrence {}", i + 1);
         if let Some(pos) = find(offset) {
             asserting(&description).that(&result)
-                .is_ok_containing(&pos.into());
+                .is_ok_containing(Occurrence::new(pos, pos + pattern.len()));
             match direction {
                 Direction::Forward => offset = pos + 1,
                 Direction::Backward => offset = pos.saturating_sub(1),

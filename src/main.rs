@@ -14,6 +14,7 @@ mod highlight;
 mod test_extensions;
 mod advanced_io;
 mod search;
+mod interval;
 
 use cursive::{CursiveRunnable, CursiveRunner, View};
 use cursive::views::{TextView, ViewRef, Canvas, Checkbox};
@@ -180,7 +181,7 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<R
 		},
 		Search(result) => {
 			match result {
-				Ok(p) => Ok(model.get_mut_ref().move_cursor_to_offset(p, false)),
+				Ok(p) => Ok(model.get_mut_ref().move_cursor_to_offset(p.start, false)),
 				Err(SearchError::NotFound) => {
 					log::info!("Search finished");
 					Ok(false)

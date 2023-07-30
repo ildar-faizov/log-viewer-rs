@@ -2,7 +2,7 @@ use crossbeam_channel::Sender;
 use std::path::{Path, PathBuf};
 use std::env::current_dir;
 use ModelEvent::*;
-use crate::data_source::{Data, Direction, FileBackend, Line, LineSource, LineSourceImpl};
+use crate::data_source::{Data, Direction, FileBackend, LineSource, LineSourceImpl};
 use std::cell::RefMut;
 use num_rational::Ratio;
 use std::cmp::min;

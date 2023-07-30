@@ -1,11 +1,12 @@
 use std::collections::LinkedList;
-use std::io::{BufReader, Read, Seek, SeekFrom};
+use std::io::{BufReader, Read, Seek};
 use fluent_integer::Integer;
 use SearchError::IO;
 use crate::advanced_io::advanced_buf_reader::BidirectionalBufRead;
-use crate::advanced_io::seek_to::SeekTo;
 use crate::data_source::{Direction, LineSourceBackend};
-use crate::search::searcher::{Searcher, SearchError, SearchResult};
+use crate::interval::Interval;
+use crate::search::search_utils::calculate_offset_and_boundary;
+use crate::search::searcher::{Occurrence, Searcher, SearchError, SearchResult};
 use crate::search::searcher::SearchError::NotFound;
 
 pub struct SearcherImpl<R>
@@ -14,22 +15,17 @@ pub struct SearcherImpl<R>
     f: BufReader<R>,
     pattern: String,
     buffer: LinkedList<u8>,
-    last_occurrence: Option<Integer>,
 }
 
 impl<R> SearcherImpl<R>
     where R: Read + Seek
 {
-    pub fn new<B: LineSourceBackend<R>>(backend: B, pattern: String, offset: Integer) -> SearcherImpl<R> {
-        let mut reader = backend.new_reader();
-        if offset > 0 {
-            reader.seek(SeekFrom::Start(offset.as_u64())).expect("Failed to seek");
-        }
+    pub fn new<B: LineSourceBackend<R>>(backend: B, pattern: String) -> SearcherImpl<R> {
+        let reader = backend.new_reader();
         SearcherImpl {
             f: reader,
             pattern,
             buffer: LinkedList::default(),
-            last_occurrence: None,
         }
     }
 }
@@ -37,34 +33,30 @@ impl<R> SearcherImpl<R>
 impl<R> Searcher for SearcherImpl<R>
     where R: Read + Seek
 {
-    fn next_occurrence(&mut self, direction: Direction) -> SearchResult {
-        match direction {
-            Direction::Forward => self.scan(),
-            Direction::Backward => self.scan_backward()
-        }
-    }
+    fn next_occurrence(&mut self, direction: Direction, range: Interval<Integer>) -> SearchResult {
+        let offset_boundary = calculate_offset_and_boundary(&mut self.f, direction, range)?.offset_boundary;
 
-    fn get_last_occurrence(&self) -> Option<Integer> {
-        self.last_occurrence
+        match direction {
+            Direction::Forward => self.scan(offset_boundary),
+            Direction::Backward => self.scan_backward(offset_boundary)
+        }
     }
 }
 
 impl<R> SearcherImpl<R> where R: Read + Seek {
 
-    fn scan(&mut self) -> SearchResult {
+    fn scan(&mut self, offset_boundary: Option<Integer>) -> SearchResult {
         let mut offset: Integer = self.f.stream_position().map_err(|e| IO(e))?.into();
-        if let Some(p) = &self.last_occurrence {
-            offset = *p + 1_u8;
-            self.f.seek_to(offset).map_err(|e| IO(e))?;
-        }
         self.buffer.clear();
         loop {
             self.fill_buffer()?;
             if self.compare() {
-                self.last_occurrence = Some(offset);
-                break Ok(offset);
+                break Ok(Occurrence::with_len(offset, self.buffer.len()));
             } else if self.buffer.pop_front().is_some() {
                 offset += 1;
+                if offset_boundary.filter(|b| offset > b).is_some() {
+                    break Err(NotFound);
+                }
             } else {
                 break Err(NotFound);
             }
@@ -96,22 +88,17 @@ impl<R> SearcherImpl<R> where R: Read + Seek {
                 .all(|(a, b)| *a == *b)
     }
 
-    fn scan_backward(&mut self) -> SearchResult {
+    fn scan_backward(&mut self, offset_boundary: Option<Integer>) -> SearchResult {
         let mut offset: Integer = self.f.stream_position().map_err(|e| IO(e))?.into();
-        if let Some(p) = &self.last_occurrence {
-            offset = *p + self.pattern.as_bytes().len() - 1;
-            self.f.seek_to(offset).map_err(|e| IO(e))?;
-        }
+        let pattern_len = self.pattern.as_bytes().len();
         self.buffer.clear();
-        self.f.seek_to(offset).map_err(|e| IO(e))?;
         loop {
             self.fill_buffer_backward()?;
-            if offset < 0 {
+            if offset - pattern_len < offset_boundary.unwrap_or_default() {
                 break Err(NotFound)
             } else if self.compare() {
-                offset -= self.pattern.as_bytes().len();
-                self.last_occurrence = Some(offset);
-                break Ok(offset);
+                offset -= pattern_len;
+                break Ok(Occurrence::with_len(offset, pattern_len));
             } else if self.buffer.pop_back().is_some() {
                 offset -= 1;
             } else {

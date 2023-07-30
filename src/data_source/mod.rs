@@ -5,6 +5,7 @@ use std::cmp::{min, Ordering};
 use std::cell::RefMut;
 use fluent_integer::Integer;
 use crate::advanced_io::advanced_buf_reader::BidirectionalBufRead;
+use crate::advanced_io::seek_to::SeekTo;
 use crate::shared::Shared;
 use crate::utils;
 use crate::utils::utf8::UtfChar;
@@ -400,17 +401,16 @@ pub struct LineSourceImpl<R, B> where R: Read, B: LineSourceBackend<R> {
 
 impl<R, B> LineSourceImpl<R, B> where R: Read + Seek, B: LineSourceBackend<R> {
     pub fn from_file_name(file_name: PathBuf) -> LineSourceImpl<File, FileBackend> {
-        LineSourceImpl {
-            backend: FileBackend::new(file_name),
-            file_reader: None,
-            track_line_no: false,
-            current_line_no: None,
-        }
+        LineSourceImpl::new(FileBackend::new(file_name))
     }
 
     pub fn from_str(s: &str) -> LineSourceImpl<Cursor<&[u8]>, StrBackend> {
+        LineSourceImpl::new(StrBackend::new(s))
+    }
+
+    pub fn new(backend: B) -> LineSourceImpl<R, B> {
         LineSourceImpl {
-            backend: StrBackend::new(s),
+            backend,
             file_reader: None,
             track_line_no: false,
             current_line_no: None
@@ -460,6 +460,19 @@ impl<R, B> LineSourceImpl<R, B> where R: Read + Seek, B: LineSourceBackend<R> {
             None
         };
         self.current_line_no = current_line_no;
+    }
+}
+
+impl<R, B> Seek for LineSourceImpl<R, B> where B: LineSourceBackend<R>, R: Read + Seek {
+    fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
+        self.with_reader(|mut reader| reader.seek(pos))
+    }
+}
+
+impl<R, B> SeekTo for LineSourceImpl<R, B> where B: LineSourceBackend<R>, R: Read + Seek {
+
+    fn seek_to<I: Into<Integer>>(&mut self, pos: I) -> std::io::Result<()> {
+        self.with_reader(|mut reader| reader.seek_to(pos))
     }
 }
 
