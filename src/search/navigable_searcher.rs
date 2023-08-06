@@ -13,5 +13,5 @@ pub trait NavigableSearcher {
     /// Depends on `range` of last `find_all_in_range` invocation.
     fn next_occurrence(&mut self, direction: Direction) -> SearchResult;
 
-    fn set_initial_offset(&mut self, offset: Integer);
+    fn set_initial_offset(&mut self, offset: Integer, direction: Direction);
 }

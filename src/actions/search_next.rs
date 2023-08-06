@@ -17,7 +17,7 @@ impl Action for SearchNextAction {
     }
 
     fn perform_action(&self, model: &mut RootModel, _event: &Event) -> EventResult {
-        model.get_search_model().search(Direction::Forward);
+        model.get_current_search().as_mut().map(|s| s.search(Direction::Forward));
         EventResult::Ignored
     }
 }

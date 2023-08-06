@@ -28,6 +28,7 @@ pub enum UIElementName {
     SearchField,
     SearchFromCursor,
     SearchBackward,
+    SearchRegexp,
 }
 
 impl ToString for UIElementName {
@@ -39,6 +40,7 @@ impl ToString for UIElementName {
             UIElementName::SearchField => "search_field".to_string(),
             UIElementName::SearchFromCursor => "search_from_cursor".to_string(),
             UIElementName::SearchBackward => "search_backward".to_string(),
+            UIElementName::SearchRegexp => "search_regexp".to_string(),
         }
     }
 }
@@ -382,14 +384,25 @@ impl SpanProducer {
 
 pub fn build_search_ui(state: Shared<RootModel>) -> Box<dyn View> {
     let do_search = |app: &mut Cursive, search_str: &str| {
-        let root_model = app.get_root_model();
+        let mut root_model = app.get_root_model();
         let mut search_model = root_model.get_search_model();
         if search_model.is_from_cursor() {
             search_model.set_cursor(root_model.get_cursor());
         }
-        search_model.set_visible(false);
         search_model.set_pattern(search_str);
-        search_model.start_search();
+        let search = search_model.start_search();
+        match search {
+            Ok(search) => {
+                search_model.set_visible(false);
+                drop(search_model);
+                root_model.set_current_search(Some(search));
+            },
+            Err(err) => {
+                drop(search_model);
+                root_model.set_error(Box::new(err));
+            }
+        }
+
     };
     let root_model = state.get_mut_ref();
     let search_model = root_model.get_search_model();
@@ -420,6 +433,15 @@ pub fn build_search_ui(state: Shared<RootModel>) -> Box<dyn View> {
         })
         .with_name(UIElementName::SearchBackward.to_string()));
     search_settings_panel.add_child(TextView::new("Backward"));
+    search_settings_panel.add_child(Checkbox::new()
+        .with_checked(search_model.is_regexp())
+        .on_change(|app, is_checked| {
+            let model = app.get_root_model();
+            model.get_search_model().set_regexp(is_checked);
+        })
+        .with_name(UIElementName::SearchRegexp.to_string())
+    );
+    search_settings_panel.add_child(TextView::new("Regexp"));
     layout.add_child(search_settings_panel);
 
     let dialog = Dialog::new()
@@ -431,10 +453,21 @@ pub fn build_search_ui(state: Shared<RootModel>) -> Box<dyn View> {
             do_search(app, search_field.get_content().as_str());
         })
         .button("Cancel", |app| {
-            let state: &Shared<RootModel> = app.user_data().unwrap();
-            state.get_mut_ref().get_search_model().set_visible(false);
+            let state = app.get_root_model();
+            state.get_search_model().set_visible(false);
         })
         .full_width();
+    Box::new(dialog)
+}
+
+pub fn build_error_dialog(err: &str) -> Box<dyn View> {
+    let dialog = Dialog::new()
+        .title("Error")
+        .padding_lrtb(5, 5, 1, 1)
+        .content(TextView::new(err))
+        .button("Ok", move |app| {
+            app.pop_layer();
+        });
     Box::new(dialog)
 }
 

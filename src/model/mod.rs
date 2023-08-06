@@ -5,3 +5,4 @@ pub mod scroll_position;
 pub mod cursor_helper;
 pub mod rendered;
 pub mod search_model;
+pub mod search;

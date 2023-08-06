@@ -17,7 +17,7 @@ impl Action for SearchPrevAction {
     }
 
     fn perform_action(&self, model: &mut RootModel, _event: &Event) -> EventResult {
-        model.get_search_model().search(Direction::Backward);
+        model.get_current_search().as_mut().map(|s| s.search(Direction::Backward));
         EventResult::Ignored
     }
 }

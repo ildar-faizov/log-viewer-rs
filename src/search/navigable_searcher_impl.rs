@@ -69,8 +69,11 @@ impl NavigableSearcher for NavigableSearcherImpl {
         self.searcher.search(direction, scope)
     }
 
-    fn set_initial_offset(&mut self, offset: Integer) {
-        self.range = Interval::point(offset);
+    fn set_initial_offset(&mut self, offset: Integer, direction: Direction) {
+        self.range = match direction {
+            Direction::Forward => Interval::inf_open(offset),
+            Direction::Backward => Interval::open_inf(offset),
+        }
     }
 }
 

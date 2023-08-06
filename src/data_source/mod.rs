@@ -108,6 +108,16 @@ pub enum Direction {
     Forward, Backward
 }
 
+impl From<bool> for Direction {
+    fn from(value: bool) -> Self {
+        if value {
+            Direction::Forward
+        } else {
+            Direction::Backward
+        }
+    }
+}
+
 /// Reads a collection of at most `abs(n)` segments (lines, words, etc.) that are delimited by chars that
 /// satisfy `is_delimiter` in direction denoted by `sign(n)`.
 ///

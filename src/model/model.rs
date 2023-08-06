@@ -21,6 +21,7 @@ use crate::model::scroll_position::ScrollPosition;
 use crate::model::search_model::SearchModel;
 use crate::search::searcher::SearchResult;
 use crate::utils::GraphemeRender;
+use crate::model::search::Search;
 
 const OFFSET_THRESHOLD: u64 = 8192;
 
@@ -39,6 +40,7 @@ pub struct RootModel {
     error: Option<Box<dyn ToString>>,
     show_line_numbers: bool,
     search_model: Shared<SearchModel>,
+    current_search: Shared<Option<Search>>,
 }
 
 #[derive(Debug)]
@@ -78,6 +80,7 @@ impl RootModel {
             error: None,
             show_line_numbers: true,
             search_model: Shared::new(SearchModel::new(sender)),
+            current_search: Shared::new(None),
         };
 
         Shared::new(root_model)
@@ -485,9 +488,10 @@ impl RootModel {
         self.set_selection(None);
     }
 
-    fn set_error(&mut self, err: Box<dyn ToString>) {
+    pub fn set_error(&mut self, err: Box<dyn ToString>) {
+        let str = err.to_string();
         self.error.replace(err);
-        self.emit_event(Error(self.error.as_ref().unwrap().to_string()));
+        self.emit_event(Error(str));
     }
 
     fn load_file(&mut self) {
@@ -715,6 +719,15 @@ impl RootModel {
 
     pub fn get_search_model(&self) -> RefMut<SearchModel> {
         self.search_model.get_mut_ref()
+    }
+
+    pub fn get_current_search(&self) -> RefMut<Option<Search>> {
+        self.current_search.get_mut_ref()
+    }
+
+    pub fn set_current_search(&mut self, search: Option<Search>) {
+        let mut r = self.current_search.get_mut_ref();
+        *r = search;
     }
 
     fn emit_cursor_moved(&self) {

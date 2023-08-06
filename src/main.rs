@@ -22,7 +22,7 @@ use cursive::views::{TextView, ViewRef, Canvas, Checkbox};
 use clap::{Arg, App, ArgMatches};
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use crate::ui::{build_search_ui, build_ui, UIElementName};
+use crate::ui::{build_error_dialog, build_search_ui, build_ui, UIElementName};
 use crate::model::model::{ModelEvent, RootModel};
 use crate::model::model::ModelEvent::*;
 use cursive::direction::Direction;
@@ -184,6 +184,7 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<R
 				Ok(p) => Ok(model.get_mut_ref().move_cursor_to_offset(p.start, false)),
 				Err(SearchError::NotFound) => {
 					log::info!("Search finished");
+					model.get_mut_ref().set_error(Box::new("Nothing found"));
 					Ok(false)
 				},
 				Err(SearchError::IO(err)) => {
@@ -199,12 +200,9 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<R
 			});
 			Ok(true)
 		},
-		Error(_err) => {
-			// let mut v: ViewRef<TextView> = app.find_name(&UIElementName::MainContent.to_string()).unwrap();
-			// v.set_content(format!("Error: {}", err));
-
-			let mut v: ViewRef<Canvas<Shared<RootModel>>> = app.find_name(&UIElementName::MainContent.to_string()).unwrap();
-			v.take_focus(Direction::none());
+		Error(err) => {
+			let error_dialog = build_error_dialog(err.as_str());
+			app.add_layer(error_dialog);
 
 			Ok(true)
 		},

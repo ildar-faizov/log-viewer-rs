@@ -21,27 +21,30 @@ impl <T> SearchHighlighter<T> {
 
 impl<T: Clone> Highlighter<T> for SearchHighlighter<T> {
     fn process(&self, str: &str, offset: Integer, model: &RootModel) -> Vec<Highlight<T>> {
-        let mut search_model = model.get_search_model();
-        let viewport = model.data().map(|dr|
-            Interval::closed(dr.start.unwrap(), dr.end.unwrap())
-        );
-        let current_occurrence = search_model.get_current_occurrence(viewport.unwrap());
-        current_occurrence.map(|(occurrences, p)| {
-            occurrences.iter().enumerate().filter_map(|(i, occurrence)| {
-                if occurrence.end < offset || occurrence.start > offset + str.len() {
-                    None
-                } else {
-                    let s = (occurrence.start - offset).as_usize();
-                    let e = (occurrence.end - offset).as_usize();
-                    let payload = if Some(i) == p {
-                        self.current_occurrence_style.clone()
+        if let Some(search) = model.get_current_search().as_mut() {
+            let viewport = model.data().map(|dr|
+                Interval::closed(dr.start.unwrap(), dr.end.unwrap())
+            );
+            let current_occurrence = search.get_current_occurrence(viewport.unwrap());
+            current_occurrence.map(|(occurrences, p)| {
+                occurrences.iter().enumerate().filter_map(|(i, occurrence)| {
+                    if occurrence.end < offset || occurrence.start > offset + str.len() {
+                        None
                     } else {
-                        self.other_occurrence_style.clone()
-                    };
-                    Some(Highlight::new(s, e, payload))
-                }
-            }).collect()
-        }).unwrap_or_default()
+                        let s = (occurrence.start - offset).as_usize();
+                        let e = (occurrence.end - offset).as_usize();
+                        let payload = if Some(i) == p {
+                            self.current_occurrence_style.clone()
+                        } else {
+                            self.other_occurrence_style.clone()
+                        };
+                        Some(Highlight::new(s, e, payload))
+                    }
+                }).collect()
+            }).unwrap_or_default()
+        } else {
+            vec![]
+        }
     }
 }
 
