@@ -203,6 +203,12 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<R
 			});
 			Ok(true)
 		},
+		Hint(hint) => {
+			app.call_on_name(&UIElementName::StatusHint.to_string(), move |txt: &mut TextView| {
+				txt.set_content(hint);
+			});
+			Ok(true)
+		},
 		Error(err) => {
 			let error_dialog = build_error_dialog(err.as_str());
 			app.add_layer(error_dialog);

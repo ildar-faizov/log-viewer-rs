@@ -1,6 +1,9 @@
 use std::path::PathBuf;
 use crossbeam_channel::Sender;
 use fluent_integer::Integer;
+use crate::actions::action::Action;
+use crate::actions::search_next::SearchNextAction;
+use crate::actions::search_prev::SearchPrevAction;
 use crate::data_source::{Direction, FileBackend};
 use crate::model::model::ModelEvent;
 use crate::model::search::Search;
@@ -60,6 +63,7 @@ impl SearchModel {
 
     pub fn start_search(&mut self) -> Result<Search, SearchModelError> {
         self.evaluate_searcher().map(|s| {
+            self.emit_hint();
             let direction = Direction::from(!self.is_backward);
             let mut search = Search::new(self.model_sender.clone(), s);
             search.search(direction);
@@ -120,6 +124,17 @@ impl SearchModel {
         } else {
             Err(SearchModelError::FileNotSet)
         }
+    }
+
+    fn emit_hint(&self) {
+        let next = SearchNextAction::default();
+        let prev = SearchPrevAction::default();
+        let hint = format!(
+            "Use {}/{} for next/prev occurrence",
+            next.print_hotkeys(),
+            prev.print_hotkeys()
+        );
+        self.model_sender.emit_event(ModelEvent::Hint(hint));
     }
 }
 

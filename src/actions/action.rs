@@ -1,4 +1,5 @@
 use cursive::event::{Event, EventResult};
+use crate::actions::event_display::EventSliceDisplay;
 use crate::model::model::RootModel;
 
 /// Generic trait for any UI action
@@ -17,4 +18,9 @@ pub trait Action {
     /// The method is intended to mutate model if necessary and return a result
     /// indicating whether model state is changed
     fn perform_action(&self, model: &mut RootModel, event: &Event) -> EventResult;
+
+    fn print_hotkeys(&self) -> String {
+        let hotkeys = self.hotkeys();
+        format!("{}", EventSliceDisplay::new(&hotkeys))
+    }
 }

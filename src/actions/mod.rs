@@ -1,5 +1,6 @@
 pub mod action;
 pub mod action_registry;
+pub mod event_display;
 mod scroll_down;
 mod scroll_up;
 mod word_backward;
@@ -24,5 +25,5 @@ mod copy;
 mod select_word_forward;
 mod select_word_backward;
 mod search;
-mod search_next;
-mod search_prev;
+pub mod search_next;
+pub mod search_prev;

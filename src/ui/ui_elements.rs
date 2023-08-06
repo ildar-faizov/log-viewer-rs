@@ -2,6 +2,7 @@ pub enum UIElementName {
     MainContent,
     StatusFile,
     StatusPosition,
+    StatusHint,
     SearchField,
     SearchFromCursor,
     SearchBackward,
@@ -10,15 +11,17 @@ pub enum UIElementName {
 
 impl ToString for UIElementName {
     fn to_string(&self) -> String {
-        match self {
-            UIElementName::MainContent => "main_content".to_string(),
-            UIElementName::StatusFile => "status_file".to_string(),
-            UIElementName::StatusPosition => "status_position".to_string(),
-            UIElementName::SearchField => "search_field".to_string(),
-            UIElementName::SearchFromCursor => "search_from_cursor".to_string(),
-            UIElementName::SearchBackward => "search_backward".to_string(),
-            UIElementName::SearchRegexp => "search_regexp".to_string(),
-        }
+        let str = match self {
+            UIElementName::MainContent => "main_content",
+            UIElementName::StatusFile => "status_file",
+            UIElementName::StatusPosition => "status_position",
+            UIElementName::StatusHint => "status_hint",
+            UIElementName::SearchField => "search_field",
+            UIElementName::SearchFromCursor => "search_from_cursor",
+            UIElementName::SearchBackward => "search_backward",
+            UIElementName::SearchRegexp => "search_regexp",
+        };
+        str.to_string()
     }
 }
 
