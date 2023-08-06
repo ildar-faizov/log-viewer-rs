@@ -22,6 +22,7 @@ use crate::model::search_model::SearchModel;
 use crate::search::searcher::SearchResult;
 use crate::utils::GraphemeRender;
 use crate::model::search::Search;
+use crate::utils::event_emitter::EventEmitter;
 
 const OFFSET_THRESHOLD: u64 = 8192;
 
@@ -86,10 +87,6 @@ impl RootModel {
         Shared::new(root_model)
     }
 
-    fn emit_event(&self, event: ModelEvent) {
-        self.model_sender.send(event).unwrap();
-    }
-
     pub fn file_name(&self) -> Option<&str> {
         self.file_name.as_ref().map(|s| &s[..])
     }
@@ -109,7 +106,7 @@ impl RootModel {
 
     fn set_data(&mut self, data: Data) {
         self.data = Some(DataRender::new(data));
-        self.emit_event(DataUpdated);
+        self.model_sender.emit_event(DataUpdated);
         self.emit_cursor_moved();
     }
 
@@ -219,7 +216,7 @@ impl RootModel {
                     if horizontal_scroll + self.viewport_width <= max_length {
                         log::trace!("set_horizontal_scroll success");
                         self.horizontal_scroll = horizontal_scroll;
-                        self.emit_event(DataUpdated);
+                        self.model_sender.emit_event(DataUpdated);
                         return true;
                     }
                 }
@@ -227,7 +224,7 @@ impl RootModel {
         } else if self.horizontal_scroll > horizontal_scroll {
             log::trace!("set_horizontal_scroll success");
             self.horizontal_scroll = horizontal_scroll;
-            self.emit_event(DataUpdated);
+            self.model_sender.emit_event(DataUpdated);
             return true;
         }
         false
@@ -428,7 +425,7 @@ impl RootModel {
 
     pub fn quit(&self) {
         // TODO: close datasource
-        self.emit_event(Quit);
+        self.model_sender.emit_event(Quit);
     }
 
     pub fn is_show_line_numbers(&self) -> bool {
@@ -491,7 +488,8 @@ impl RootModel {
     pub fn set_error(&mut self, err: Box<dyn ToString>) {
         let str = err.to_string();
         self.error.replace(err);
-        self.emit_event(Error(str));
+        let event = Error(str);
+        self.model_sender.emit_event(event);
     }
 
     fn load_file(&mut self) {
@@ -502,7 +500,8 @@ impl RootModel {
             }
             let file_size = line_source.get_length();
             self.datasource = Some(Shared::new(Box::new(line_source)));
-            self.emit_event(FileName(self.file_name.as_ref().unwrap().to_owned(), file_size.as_u64()));
+            let event = FileName(self.file_name.as_ref().unwrap().to_owned(), file_size.as_u64());
+            self.model_sender.emit_event(event);
             self.update_viewport_content();
         }
     }
@@ -734,11 +733,12 @@ impl RootModel {
         if let Some(cp) = &self.get_cursor_in_cache() {
             let i = cp.height.as_usize();
             let option = self.data.as_ref().and_then(|render| render.lines.get(i).and_then(|line| line.line_no));
-            self.emit_event(CursorMoved(CursorPosition {
+            let event = CursorMoved(CursorPosition {
                 line_no: option.unwrap(),
                 position_in_line: cp.width.as_u64(),
                 offset: self.cursor.as_u64(),
-            }))
+            });
+            self.model_sender.emit_event(event);
         }
     }
 }

@@ -280,3 +280,21 @@ impl GraphemeRender {
         }
     }
 }
+
+pub mod event_emitter {
+    use std::fmt::Debug;
+    use crossbeam_channel::Sender;
+
+    pub trait EventEmitter<T: Debug> {
+        /// Convenient method for crossbeam_channel::Sender::send
+        fn emit_event(&self, evt: T);
+    }
+
+    impl<T: Debug> EventEmitter<T> for Sender<T> {
+        fn emit_event(&self, evt: T) {
+            let msg = format!("Failed to send event: {:?}", evt);
+            self.send(evt)
+                .expect(msg.as_str());
+        }
+    }
+}

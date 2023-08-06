@@ -7,6 +7,7 @@ use crate::model::search::Search;
 use crate::search::navigable_searcher::NavigableSearcher;
 use crate::search::navigable_searcher_impl::NavigableSearcherImpl;
 use crate::search::searcher::create_searcher;
+use crate::utils::event_emitter::EventEmitter;
 
 pub struct SearchModel {
     model_sender: Sender<ModelEvent>,
@@ -40,7 +41,8 @@ impl SearchModel {
     pub fn set_visible(&mut self, visible: bool) {
         if self.visible != visible {
             self.visible = visible;
-            self.emit_event(ModelEvent::SearchOpen(visible));
+            let evt = ModelEvent::SearchOpen(visible);
+            self.model_sender.emit_event(evt);
         }
     }
 
@@ -75,7 +77,8 @@ impl SearchModel {
             if !is_from_cursor {
                 self.cursor_pos = None;
             }
-            self.emit_event(ModelEvent::SearchFromCursor);
+            let evt = ModelEvent::SearchFromCursor;
+            self.model_sender.emit_event(evt);
         }
     }
 
@@ -97,12 +100,6 @@ impl SearchModel {
 
     pub fn set_regexp(&mut self, is_regexp: bool) {
         self.is_regexp = is_regexp;
-    }
-
-    fn emit_event(&self, evt: ModelEvent) {
-        let msg = format!("Failed to send event: {:?}", evt);
-        self.model_sender.send(evt)
-            .expect(msg.as_str());
     }
 
     fn evaluate_searcher(&mut self) -> Result<Box<dyn NavigableSearcher>, SearchModelError> {

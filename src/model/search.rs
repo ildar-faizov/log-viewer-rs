@@ -6,6 +6,7 @@ use crate::interval::Interval;
 use crate::model::model::ModelEvent;
 use crate::search::navigable_searcher::NavigableSearcher;
 use crate::search::searcher::{Occurrence, SearchError};
+use crate::utils::event_emitter::EventEmitter;
 
 pub struct Search {
     model_sender: Sender<ModelEvent>,
@@ -39,7 +40,8 @@ impl Search {
         if let Ok(last_occurrence) = &result {
             self.last_occurrence = Some(last_occurrence.clone());
         }
-        self.emit_event(ModelEvent::Search(result));
+        let evt = ModelEvent::Search(result);
+        self.model_sender.emit_event(evt);
     }
 
     pub fn get_current_occurrence(&mut self, viewport: Interval<Integer>) -> Result<(Rc<Vec<Occurrence>>, Option<usize>), SearchError> {
@@ -59,12 +61,5 @@ impl Search {
         self.occurrences.as_ref().zip(self.last_occurrence.as_ref())
             .and_then(|(occurrences, occurrence)|
                 occurrences.iter().position(|item| *item == *occurrence))
-    }
-
-    // TODO reusable trait for Sender<ModelEvent>
-    fn emit_event(&self, evt: ModelEvent) {
-        let msg = format!("Failed to send event: {:?}", evt);
-        self.model_sender.send(evt)
-            .expect(msg.as_str());
     }
 }
