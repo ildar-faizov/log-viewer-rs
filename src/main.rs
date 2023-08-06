@@ -22,7 +22,6 @@ use cursive::views::{TextView, ViewRef, Canvas, Checkbox};
 use clap::{Arg, App, ArgMatches};
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use crate::ui::{build_error_dialog, build_search_ui, build_ui, UIElementName};
 use crate::model::model::{ModelEvent, RootModel};
 use crate::model::model::ModelEvent::*;
 use cursive::direction::Direction;
@@ -41,6 +40,10 @@ use crate::search::searcher::SearchError;
 use crate::shared::Shared;
 
 use human_bytes::human_bytes;
+use crate::ui::error_dialog::build_error_dialog;
+use crate::ui::main_ui::build_ui;
+use crate::ui::search_ui::build_search_ui;
+use crate::ui::ui_elements::UIElementName;
 
 fn main() -> std::io::Result<()> {
 	let args = parse_args();
