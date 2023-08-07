@@ -53,7 +53,7 @@ pub enum ModelEvent {
     Search(SearchResult),
     SearchFromCursor,
     Hint(String),
-    Error(String),
+    Error(Option<String>),
     Quit,
 }
 
@@ -489,8 +489,17 @@ impl RootModel {
     pub fn set_error(&mut self, err: Box<dyn ToString>) {
         let str = err.to_string();
         self.error.replace(err);
-        let event = Error(str);
-        self.model_sender.emit_event(event);
+        self.model_sender.emit_event(Error(Some(str)));
+    }
+
+    pub fn reset_error(&mut self) -> bool {
+        if self.error.is_some() {
+            self.error = None;
+            self.model_sender.emit_event(Error(None));
+            true
+        } else {
+            false
+        }
     }
 
     fn load_file(&mut self) {
@@ -728,6 +737,32 @@ impl RootModel {
     pub fn set_current_search(&mut self, search: Option<Search>) {
         let mut r = self.current_search.get_mut_ref();
         *r = search;
+
+        let hint = r.as_ref().map(Search::get_hint).unwrap_or_default();
+        self.model_sender.emit_event(Hint(hint));
+    }
+
+    pub fn on_esc(&mut self) {
+        if self.reset_error() {
+            return;
+        }
+
+        {
+            let mut search_model = self.search_model.get_mut_ref();
+            if search_model.is_visible() {
+                search_model.set_visible(false);
+                return;
+            }
+        }
+
+        {
+            let current_search = self.current_search.get_mut_ref();
+            if current_search.is_some() {
+                drop(current_search);
+                self.set_current_search(None);
+                return;
+            }
+        }
     }
 
     fn emit_cursor_moved(&self) {

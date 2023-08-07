@@ -1,6 +1,9 @@
 use std::rc::Rc;
 use crossbeam_channel::Sender;
 use fluent_integer::Integer;
+use crate::actions::action::Action;
+use crate::actions::search_next::SearchNextAction;
+use crate::actions::search_prev::SearchPrevAction;
 use crate::data_source::Direction;
 use crate::interval::Interval;
 use crate::model::model::ModelEvent;
@@ -55,6 +58,16 @@ impl Search {
         let vec = Rc::new(self.searcher.find_all_in_range(viewport)?);
         self.occurrences = Some(vec.clone());
         Ok((vec, self.index_of_last_occurrence()))
+    }
+
+    pub fn get_hint(&self) -> String {
+        let next = SearchNextAction::default();
+        let prev = SearchPrevAction::default();
+        format!(
+            "Use {}/{} for next/prev occurrence",
+            next.print_hotkeys(),
+            prev.print_hotkeys()
+        )
     }
 
     fn index_of_last_occurrence(&self) -> Option<usize> {

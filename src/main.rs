@@ -16,7 +16,7 @@ mod advanced_io;
 mod search;
 mod interval;
 
-use cursive::{CursiveRunnable, CursiveRunner, View};
+use cursive::{Cursive, CursiveRunnable, CursiveRunner, View};
 use cursive::views::{TextView, ViewRef, Canvas, Checkbox};
 
 use clap::{Arg, App, ArgMatches};
@@ -43,6 +43,7 @@ use human_bytes::human_bytes;
 use crate::ui::error_dialog::build_error_dialog;
 use crate::ui::main_ui::build_ui;
 use crate::ui::search_ui::build_search_ui;
+use crate::ui::with_root_model::WithRootModel;
 use crate::ui::ui_elements::UIElementName;
 
 fn main() -> std::io::Result<()> {
@@ -136,6 +137,11 @@ fn run_ui(receiver: Receiver<ModelEvent>, model_ref: Shared<RootModel>) {
 	let mut app = cursive::default().into_runner();
 	app.clear_global_callbacks(Event::CtrlChar('c')); // Ctrl+C is for copy
 
+	app.add_global_callback(Key(Esc), |t: &mut Cursive| {
+		let mut state = t.get_root_model();
+		state.on_esc();
+	});
+
 	app.add_fullscreen_layer(build_ui(model_ref.clone()));
 	app.set_user_data(model_ref.clone());
 
@@ -171,14 +177,9 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<R
 		},
 		SearchOpen(show) => {
 			if show	{
-				app.add_global_callback(Key(Esc), |t| {
-					let state: &Shared<RootModel> = t.user_data().unwrap();
-					state.get_mut_ref().get_search_model().set_visible(false);
-				});
 				app.add_layer(build_search_ui(model));
 			} else {
 				app.pop_layer();
-				app.clear_global_callbacks(Key(Esc));
 			}
 			Ok(true)
 		},
@@ -209,12 +210,16 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<R
 			});
 			Ok(true)
 		},
-		Error(err) => {
+		Error(Some(err)) => {
 			let error_dialog = build_error_dialog(err.as_str());
 			app.add_layer(error_dialog);
 
 			Ok(true)
 		},
+		Error(None) => {
+			app.pop_layer();
+			Ok(true)
+		}
 		CursorMoved(cursor_position) => {
 			let mut v: ViewRef<TextView> = app.find_name(&UIElementName::StatusPosition.to_string()).unwrap();
 			v.set_content(format!("L {}, C {}, O {}", cursor_position.line_no + 1, cursor_position.position_in_line + 1, cursor_position.offset));
