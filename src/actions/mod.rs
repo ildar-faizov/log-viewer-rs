@@ -27,3 +27,4 @@ mod select_word_backward;
 mod search;
 pub mod search_next;
 pub mod search_prev;
+mod test_bgp;

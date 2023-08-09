@@ -15,6 +15,7 @@ mod test_extensions;
 mod advanced_io;
 mod search;
 mod interval;
+mod background_process;
 
 use cursive::{Cursive, CursiveRunnable, CursiveRunner, View};
 use cursive::views::{TextView, ViewRef, Canvas, Checkbox};
@@ -40,6 +41,7 @@ use crate::search::searcher::SearchError;
 use crate::shared::Shared;
 
 use human_bytes::human_bytes;
+use crate::background_process::background_process_registry::BackgroundProcessRegistry;
 use crate::ui::error_dialog::build_error_dialog;
 use crate::ui::main_ui::build_ui;
 use crate::ui::search_ui::build_search_ui;
@@ -53,9 +55,9 @@ fn main() -> std::io::Result<()> {
 	init_panic_hook();
 
 	let (sender, receiver) = unbounded();
-	let model = create_model(&args, sender);
+	let (model, background_process_registry) = create_model(&args, sender);
 
-    run_ui(receiver, model);
+    run_ui(receiver, model, background_process_registry);
 	Ok(())
 }
 
@@ -121,8 +123,9 @@ fn parse_args<'a>() -> ArgMatches<'a> {
 		.get_matches()
 }
 
-fn create_model(args: &ArgMatches, sender: Sender<ModelEvent>) -> Shared<RootModel> {
-	let model = RootModel::new(sender);
+fn create_model(args: &ArgMatches, sender: Sender<ModelEvent>) -> (Shared<RootModel>, Shared<BackgroundProcessRegistry>) {
+	let background_process_registry = Shared::new(BackgroundProcessRegistry::new());
+	let model = RootModel::new(sender, background_process_registry.clone());
 	if let Some(file_name) = args.value_of("file") {
 		model.get_mut_ref().set_file_name(file_name.to_owned());
 	} else {
@@ -130,10 +133,10 @@ fn create_model(args: &ArgMatches, sender: Sender<ModelEvent>) -> Shared<RootMod
 		// model.set_file_name("/var/log/bootstrap.log".to_owned())
 		model.get_mut_ref().set_file_name("./test.txt".to_owned())
 	}
-	model
+	(model, background_process_registry)
 }
 
-fn run_ui(receiver: Receiver<ModelEvent>, model_ref: Shared<RootModel>) {
+fn run_ui(receiver: Receiver<ModelEvent>, model_ref: Shared<RootModel>, background_process_registry: Shared<BackgroundProcessRegistry>) {
 	let mut app = cursive::default().into_runner();
 	app.clear_global_callbacks(Event::CtrlChar('c')); // Ctrl+C is for copy
 
@@ -149,6 +152,10 @@ fn run_ui(receiver: Receiver<ModelEvent>, model_ref: Shared<RootModel>) {
 	app.refresh();
 	while app.is_running() {
 		app.step();
+
+		background_process_registry.get_mut_ref()
+			.handle_events_from_background(model_ref.clone());
+
         let mut state_changed = false;
         for event in receiver.try_iter() {
             match handle_model_update(&mut app, model_ref.clone(), event) {

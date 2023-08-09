@@ -28,6 +28,7 @@ use crate::actions::shift_down::ShiftDownAction;
 use crate::actions::shift_left::ShiftLeftAction;
 use crate::actions::shift_right::ShiftRightAction;
 use crate::actions::shift_up::ShiftUpAction;
+use crate::actions::test_bgp::TestBGPAction;
 
 pub fn action_registry() -> HashMap<Event, Rc<dyn Action + 'static>> {
     let mut map = HashMap::new();
@@ -75,6 +76,8 @@ fn plain_action_registry() -> Vec<Rc<dyn Action + 'static>> {
         Rc::new(SearchAction::default()),
         Rc::new(SearchNextAction::default()),
         Rc::new(SearchPrevAction::default()),
+
+        Rc::new(TestBGPAction::default()),
 
         Rc::new(QuitAction::new()),
     ]

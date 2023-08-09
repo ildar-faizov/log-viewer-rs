@@ -8,8 +8,13 @@ use num_rational::Ratio;
 use std::cmp::min;
 use std::fs::File;
 use std::option::Option::Some;
+use std::time::Duration;
 use fluent_integer::Integer;
 use num_traits::identities::Zero;
+use crate::background_process::background_process_handler::BackgroundProcessHandler;
+use crate::background_process::background_process_registry::BackgroundProcessRegistry;
+use crate::background_process::run_in_background::RunInBackground;
+use crate::background_process::task_context::TaskContext;
 use crate::selection::Selection;
 use crate::utils;
 use crate::shared::Shared;
@@ -28,6 +33,7 @@ const OFFSET_THRESHOLD: u64 = 8192;
 
 pub struct RootModel {
     model_sender: Sender<ModelEvent>,
+    background_process_registry: Shared<BackgroundProcessRegistry>,
     file_name: Option<String>,
     file_size: Integer,
     data: Option<DataRender>,
@@ -65,10 +71,11 @@ pub struct CursorPosition {
 }
 
 impl RootModel {
-    pub fn new(model_sender: Sender<ModelEvent>) -> Shared<RootModel> {
+    pub fn new(model_sender: Sender<ModelEvent>, background_process_registry: Shared<BackgroundProcessRegistry>) -> Shared<RootModel> {
         let sender = model_sender.clone();
         let root_model = RootModel {
             model_sender,
+            background_process_registry,
             file_name: None,
             file_size: 0.into(),
             data: None,
@@ -765,6 +772,22 @@ impl RootModel {
         }
     }
 
+    pub fn start_test_bgp(&mut self) {
+        self.background_process_builder::<(), _, i32, _>()
+            .with_task(|_ctx| {
+                log::info!("Task started");
+                std::thread::sleep(Duration::from_secs(5));
+                -42
+            })
+            .listener(|_model, r| {
+                match r {
+                    Ok(r) => log::info!("Task returned {}", r),
+                    Err(_) => log::warn!("Unexpected message"),
+                };
+            })
+            .run();
+    }
+
     fn emit_cursor_moved(&self) {
         if let Some(cp) = &self.get_cursor_in_cache() {
             let i = cp.height.as_usize();
@@ -776,5 +799,17 @@ impl RootModel {
             });
             self.model_sender.emit_event(event);
         }
+    }
+}
+
+impl RunInBackground for RootModel {
+    fn run_in_background<M, T, R, L>(&mut self, task: T, listener: L) -> BackgroundProcessHandler
+        where
+            M: Send + 'static,
+            R: Send + 'static,
+            T: FnOnce(&TaskContext<M, R>) -> R,
+            T: Send + 'static, L: FnMut(&mut RootModel, Result<R, M>) + 'static {
+        let mut registry = self.background_process_registry.get_mut_ref();
+        registry.run_in_background(task, listener)
     }
 }
