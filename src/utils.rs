@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use cursive::utils::span::IndexedCow;
+use log::Level;
 use stopwatch::Stopwatch;
 use unicode_segmentation::UnicodeSegmentation;
 use fluent_integer::Integer;
@@ -56,9 +57,16 @@ where T: Copy {
 
 pub fn measure<R, F>(descr: &str, f: F) -> R where
         F: FnOnce() -> R {
+    measure_l(Level::Trace, descr, f)
+}
+
+pub fn measure_l<R, F>(level: Level, descr: &str, f: F) -> R
+    where
+        F: FnOnce() -> R
+{
     let sw = Stopwatch::start_new();
     let result = f();
-    log::trace!("{} {:?}", descr, sw.elapsed());
+    log::log!(level, "{} {:?}", descr, sw.elapsed());
     result
 }
 

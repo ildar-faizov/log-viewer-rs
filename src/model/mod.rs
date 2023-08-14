@@ -6,3 +6,4 @@ pub mod cursor_helper;
 pub mod rendered;
 pub mod search_model;
 pub mod search;
+mod navigable_searcher_constructor;

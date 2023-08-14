@@ -55,7 +55,7 @@ impl RunInBackground for BackgroundProcessRegistry {
     where
         M: Send + 'static,
         R: Send + 'static,
-        T: FnOnce(&TaskContext<M, R>) -> R,
+        T: FnOnce(&mut TaskContext<M, R>) -> R,
         T: Send + 'static,
         L: FnMut(&mut RootModel, Result<R, M>) + 'static,
     {
@@ -66,8 +66,8 @@ impl RunInBackground for BackgroundProcessRegistry {
         self.register(id, bgd);
 
         std::thread::spawn(move || {
-            let task_context = TaskContext::new(sender.clone(), receiver_interrupt);
-            let result = task(&task_context);
+            let mut task_context = TaskContext::new(sender.clone(), receiver_interrupt);
+            let result = task(&mut task_context);
             sender
                 .send(Signal::Complete(result))
                 .expect("Failed to send result");

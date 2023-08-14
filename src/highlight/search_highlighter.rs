@@ -2,6 +2,7 @@ use cursive::theme::{Color, ColorStyle, ColorType, Style};
 use fluent_integer::Integer;
 use crate::highlight::highlight::{Highlight, Highlighter};
 use crate::highlight::style_with_priority::StyleWithPriority;
+use crate::immediate::Immediate;
 use crate::interval::Interval;
 use crate::model::model::RootModel;
 
@@ -25,26 +26,26 @@ impl<T: Clone> Highlighter<T> for SearchHighlighter<T> {
             let viewport = model.data().map(|dr|
                 Interval::closed(dr.start.unwrap(), dr.end.unwrap())
             );
-            let current_occurrence = search.get_current_occurrence(viewport.unwrap());
-            current_occurrence.map(|(occurrences, p)| {
-                occurrences.iter().enumerate().filter_map(|(i, occurrence)| {
-                    if occurrence.end < offset || occurrence.start > offset + str.len() {
-                        None
-                    } else {
-                        let s = (occurrence.start - offset).as_usize();
-                        let e = (occurrence.end - offset).as_usize();
-                        let payload = if Some(i) == p {
-                            self.current_occurrence_style.clone()
+            if let Immediate::Immediate(current_occurrence) = search.get_current_occurrence(viewport.unwrap()) {
+                return current_occurrence.map(|(occurrences, p)| {
+                    occurrences.iter().enumerate().filter_map(|(i, occurrence)| {
+                        if occurrence.end < offset || occurrence.start > offset + str.len() {
+                            None
                         } else {
-                            self.other_occurrence_style.clone()
-                        };
-                        Some(Highlight::new(s, e, payload))
-                    }
-                }).collect()
-            }).unwrap_or_default()
-        } else {
-            vec![]
+                            let s = (occurrence.start - offset).as_usize();
+                            let e = (occurrence.end - offset).as_usize();
+                            let payload = if Some(i) == p {
+                                self.current_occurrence_style.clone()
+                            } else {
+                                self.other_occurrence_style.clone()
+                            };
+                            Some(Highlight::new(s, e, payload))
+                        }
+                    }).collect()
+                }).unwrap_or_default()
+            }
         }
+        vec![]
     }
 }
 

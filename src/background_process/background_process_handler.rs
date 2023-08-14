@@ -1,4 +1,4 @@
-use crossbeam_channel::{SendError, Sender};
+use crossbeam_channel::Sender;
 
 pub struct BackgroundProcessHandler {
     sender_interrupt: Sender<bool>,
@@ -9,7 +9,7 @@ impl BackgroundProcessHandler {
         BackgroundProcessHandler { sender_interrupt }
     }
 
-    pub fn interrupt(self) -> Result<(), SendError<bool>> {
-        self.sender_interrupt.send(true)
+    pub fn interrupt(&self) -> bool {
+        self.sender_interrupt.send(true).is_ok()
     }
 }

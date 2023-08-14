@@ -8,7 +8,7 @@ pub trait RunInBackground: Sized {
     where
         M: Send + 'static,
         R: Send + 'static,
-        T: FnOnce(&TaskContext<M, R>) -> R,
+        T: FnOnce(&mut TaskContext<M, R>) -> R,
         T: Send + 'static,
         L: FnMut(&mut RootModel, Result<R, M>) + 'static;
 
@@ -16,7 +16,7 @@ pub trait RunInBackground: Sized {
         where
             M: Send + 'static,
             R: Send + 'static,
-            T: FnOnce(&TaskContext<M, R>) -> R,
+            T: FnOnce(&mut TaskContext<M, R>) -> R,
             T: Send + 'static,
             L: FnMut(&mut RootModel, Result<R, M>) + 'static {
         BackgroundProcessBuilder::new(self)

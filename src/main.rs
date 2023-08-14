@@ -16,6 +16,7 @@ mod advanced_io;
 mod search;
 mod interval;
 mod background_process;
+mod immediate;
 
 use cursive::{Cursive, CursiveRunnable, CursiveRunner, View};
 use cursive::views::{TextView, ViewRef, Canvas, Checkbox};

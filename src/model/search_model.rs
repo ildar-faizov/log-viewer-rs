@@ -1,16 +1,18 @@
 use std::path::PathBuf;
+use anyhow::anyhow;
 use crossbeam_channel::Sender;
 use fluent_integer::Integer;
-use crate::data_source::{Direction, FileBackend};
+use crate::background_process::background_process_registry::BackgroundProcessRegistry;
+use crate::data_source::Direction;
 use crate::model::model::ModelEvent;
+use crate::model::navigable_searcher_constructor::NavigableSearcherConstructorBuilder;
 use crate::model::search::Search;
-use crate::search::navigable_searcher::NavigableSearcher;
-use crate::search::navigable_searcher_impl::NavigableSearcherImpl;
-use crate::search::searcher::create_searcher;
+use crate::shared::Shared;
 use crate::utils::event_emitter::EventEmitter;
 
 pub struct SearchModel {
     model_sender: Sender<ModelEvent>,
+    background_process_registry: Shared<BackgroundProcessRegistry>,
     file_name: Option<PathBuf>,
     visible: bool,
     pattern: String,
@@ -21,9 +23,10 @@ pub struct SearchModel {
 }
 
 impl SearchModel {
-    pub fn new(model_sender: Sender<ModelEvent>) -> Self {
+    pub fn new(model_sender: Sender<ModelEvent>, background_process_registry: Shared<BackgroundProcessRegistry>) -> Self {
         SearchModel {
             model_sender,
+            background_process_registry,
             file_name: None,
             visible: false,
             pattern: String::new(),
@@ -58,13 +61,24 @@ impl SearchModel {
         self.pattern.as_str()
     }
 
-    pub fn start_search(&mut self) -> Result<Search, SearchModelError> {
-        self.evaluate_searcher().map(|s| {
-            let direction = Direction::from(!self.is_backward);
-            let mut search = Search::new(self.model_sender.clone(), s);
-            search.search(direction);
-            search
-        })
+    pub fn start_search(&mut self) -> anyhow::Result<Search> {
+        let background_process_registry = self.background_process_registry.clone();
+        let constructor = NavigableSearcherConstructorBuilder::default()
+            .file_name(self.file_name.clone())
+            .pattern(self.pattern.clone())
+            .is_regexp(self.is_regexp)
+            .initial_offset(self.cursor_pos.filter(|_| self.is_from_cursor).clone())
+            .is_backward(self.is_backward)
+            .build()
+            .map_err(|e| anyhow!(e.to_string()))?;
+        let direction = Direction::from(!self.is_backward);
+        let mut search = Search::new(
+            self.model_sender.clone(),
+            constructor,
+            &mut *background_process_registry.get_mut_ref()
+        );
+        search.search(direction)?;
+        Ok(search)
     }
 
     pub fn is_from_cursor(&self) -> bool {
@@ -100,40 +114,5 @@ impl SearchModel {
 
     pub fn set_regexp(&mut self, is_regexp: bool) {
         self.is_regexp = is_regexp;
-    }
-
-    fn evaluate_searcher(&mut self) -> Result<Box<dyn NavigableSearcher>, SearchModelError> {
-        if let Some(file_name) = &self.file_name {
-            if !self.pattern.is_empty() {
-                let backend = FileBackend::new(file_name.clone());
-                let searcher = create_searcher(backend, self.pattern.clone(), self.is_regexp);
-                let mut navigable_searcher = NavigableSearcherImpl::new(searcher);
-                if self.is_from_cursor {
-                    let direction = Direction::from(!self.is_backward);
-                    navigable_searcher.set_initial_offset(*&self.cursor_pos.unwrap(), direction);
-                }
-                log::info!("Search: {:?}", self.pattern);
-                return Ok(Box::new(navigable_searcher));
-            } else {
-                Err(SearchModelError::PatternIsEmpty)
-            }
-        } else {
-            Err(SearchModelError::FileNotSet)
-        }
-    }
-}
-
-pub enum SearchModelError {
-    FileNotSet,
-    PatternIsEmpty,
-}
-
-impl ToString for SearchModelError {
-    fn to_string(&self) -> String {
-        let str = match self {
-            SearchModelError::PatternIsEmpty => "Pattern is empty",
-            SearchModelError::FileNotSet => "File (data source) not specified",
-        };
-        str.to_string()
     }
 }

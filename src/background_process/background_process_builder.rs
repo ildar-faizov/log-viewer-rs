@@ -8,7 +8,7 @@ pub struct BackgroundProcessBuilder<'a, M, T, R, L, H>
 where
     M: Send + 'static,
     R: Send + 'static,
-    T: FnOnce(&TaskContext<M, R>) -> R,
+    T: FnOnce(&mut TaskContext<M, R>) -> R,
     T: Send + 'static,
     L: FnMut(&mut RootModel, Result<R, M>) + 'static,
     H: RunInBackground,
@@ -24,7 +24,7 @@ impl<'a, M, T, R, L, H> BackgroundProcessBuilder<'a, M, T, R, L, H>
 where
     M: Send + 'static,
     R: Send + 'static,
-    T: FnOnce(&TaskContext<M, R>) -> R,
+    T: FnOnce(&mut TaskContext<M, R>) -> R,
     T: Send + 'static,
     L: FnMut(&mut RootModel, Result<R, M>) + 'static,
     H: RunInBackground,
@@ -44,7 +44,7 @@ where
         self
     }
 
-    pub fn listener(mut self, listener: L) -> Self {
+    pub fn with_listener(mut self, listener: L) -> Self {
         self.listener.replace(listener);
         self
     }

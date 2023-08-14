@@ -73,6 +73,7 @@ pub struct CursorPosition {
 impl RootModel {
     pub fn new(model_sender: Sender<ModelEvent>, background_process_registry: Shared<BackgroundProcessRegistry>) -> Shared<RootModel> {
         let sender = model_sender.clone();
+        let background_process_registry_copy = background_process_registry.clone();
         let root_model = RootModel {
             model_sender,
             background_process_registry,
@@ -88,7 +89,7 @@ impl RootModel {
             datasource: None,
             error: None,
             show_line_numbers: true,
-            search_model: Shared::new(SearchModel::new(sender)),
+            search_model: Shared::new(SearchModel::new(sender, background_process_registry_copy)),
             current_search: Shared::new(None),
         };
 
@@ -494,6 +495,7 @@ impl RootModel {
     }
 
     pub fn set_error(&mut self, err: Box<dyn ToString>) {
+        self.reset_error();
         let str = err.to_string();
         self.error.replace(err);
         self.model_sender.emit_event(Error(Some(str)));
@@ -779,7 +781,7 @@ impl RootModel {
                 std::thread::sleep(Duration::from_secs(5));
                 -42
             })
-            .listener(|_model, r| {
+            .with_listener(|_model, r| {
                 match r {
                     Ok(r) => log::info!("Task returned {}", r),
                     Err(_) => log::warn!("Unexpected message"),
@@ -807,7 +809,7 @@ impl RunInBackground for RootModel {
         where
             M: Send + 'static,
             R: Send + 'static,
-            T: FnOnce(&TaskContext<M, R>) -> R,
+            T: FnOnce(&mut TaskContext<M, R>) -> R,
             T: Send + 'static, L: FnMut(&mut RootModel, Result<R, M>) + 'static {
         let mut registry = self.background_process_registry.get_mut_ref();
         registry.run_in_background(task, listener)

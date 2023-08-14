@@ -103,7 +103,7 @@ pub struct Data {
     current_line_no: Option<u64>,
 }
 
-#[derive(PartialEq, Eq, Copy, Clone)]
+#[derive(PartialEq, Eq, Copy, Clone, Debug)]
 pub enum Direction {
     Forward, Backward
 }

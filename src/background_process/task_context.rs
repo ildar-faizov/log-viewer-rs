@@ -2,7 +2,7 @@ use crate::background_process::signal::Signal;
 use crossbeam_channel::{Receiver, SendError, Sender};
 
 pub struct TaskContext<M, R> {
-    pub interrupted: bool,
+    interrupted: bool,
     pub sender: Sender<Signal<M, R>>,
     ri: Receiver<bool>,
 }
