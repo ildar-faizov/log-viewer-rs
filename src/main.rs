@@ -1,4 +1,5 @@
 extern crate cursive;
+extern crate cursive_table_view;
 extern crate clap;
 extern crate log4rs;
 extern crate stopwatch;
@@ -43,7 +44,9 @@ use crate::shared::Shared;
 
 use human_bytes::human_bytes;
 use crate::background_process::background_process_registry::BackgroundProcessRegistry;
+use crate::model::help_model::HelpModelEvent;
 use crate::ui::error_dialog::build_error_dialog;
+use crate::ui::help_dialog::HelpDialog;
 use crate::ui::main_ui::build_ui;
 use crate::ui::search_ui::build_search_ui;
 use crate::ui::with_root_model::WithRootModel;
@@ -212,6 +215,20 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<R
 			});
 			Ok(true)
 		},
+		HelpEvent(help_model_event) => {
+			match help_model_event {
+				HelpModelEvent::Show => {
+					let dialog = HelpDialog::build(&mut *model.get_mut_ref().get_help_model());
+					app.add_layer(dialog);
+					Ok(true)
+				},
+				HelpModelEvent::Hide => {
+					app.pop_layer();
+					Ok(true)
+				},
+				HelpModelEvent::ListUpdated => HelpDialog::update(app, &mut *model.get_mut_ref().get_help_model()),
+			}
+		}
 		Hint(hint) => {
 			app.call_on_name(&UIElementName::StatusHint.to_string(), move |txt: &mut TextView| {
 				txt.set_content(hint);

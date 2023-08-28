@@ -7,6 +7,7 @@ pub enum UIElementName {
     SearchFromCursor,
     SearchBackward,
     SearchRegexp,
+    HelpTable,
 }
 
 impl ToString for UIElementName {
@@ -20,6 +21,7 @@ impl ToString for UIElementName {
             UIElementName::SearchFromCursor => "search_from_cursor",
             UIElementName::SearchBackward => "search_backward",
             UIElementName::SearchRegexp => "search_regexp",
+            UIElementName::HelpTable => "help_table",
         };
         str.to_string()
     }

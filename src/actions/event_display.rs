@@ -1,5 +1,5 @@
 use std::fmt::{Display, Formatter};
-use cursive::event::Event;
+use cursive::event::{Event, Key};
 
 pub struct EventDisplay<'a>(&'a Event);
 
@@ -15,7 +15,15 @@ impl Display for EventDisplay<'_> {
             Event::Char(ch) => write!(f, "{}", *ch),
             Event::CtrlChar(ch) => write!(f, "Ctrl+{}", *ch),
             Event::AltChar(ch) => write!(f, "Alt+{}", *ch),
-            _ => todo!(),
+            Event::Key(Key::Up) => write!(f, "↑"),
+            Event::Key(Key::Right) => write!(f, "→"),
+            Event::Key(Key::Down) => write!(f, "↓"),
+            Event::Key(Key::Left) => write!(f, "←"),
+            Event::Key(key) => write!(f, "{:?}", key),
+            Event::Ctrl(key) => write!(f, "Ctrl+{}", EventDisplay(&Event::Key(*key))),
+            Event::Shift(key) => write!(f, "Shift+{}", EventDisplay(&Event::Key(*key))),
+            Event::CtrlShift(key) => write!(f, "Ctrl+Shift+{}", EventDisplay(&Event::Key(*key))),
+            e => todo!("Not implemented for {:?}", e),
         }
     }
 }

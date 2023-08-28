@@ -9,6 +9,7 @@ use crate::actions::cursor_right::CursorRightAction;
 use crate::actions::cursor_up::CursorUpAction;
 use crate::actions::file_end::FileEndAction;
 use crate::actions::file_start::FileStartAction;
+use crate::actions::help::HelpAction;
 use crate::actions::line_end::LineEndAction;
 use crate::actions::line_start::LineStartAction;
 use crate::actions::pgdown::PgDownAction;
@@ -40,7 +41,7 @@ pub fn action_registry() -> HashMap<Event, Rc<dyn Action + 'static>> {
     map
 }
 
-fn plain_action_registry() -> Vec<Rc<dyn Action + 'static>> {
+pub fn plain_action_registry() -> Vec<Rc<dyn Action + 'static>> {
     vec![
         Rc::new(ScrollDownAction::new()),
         Rc::new(ScrollUpAction::new()),
@@ -76,6 +77,8 @@ fn plain_action_registry() -> Vec<Rc<dyn Action + 'static>> {
         Rc::new(SearchAction::default()),
         Rc::new(SearchNextAction::default()),
         Rc::new(SearchPrevAction::default()),
+
+        Rc::new(HelpAction::default()),
 
         Rc::new(TestBGPAction::default()),
 

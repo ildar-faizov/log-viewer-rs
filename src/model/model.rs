@@ -21,6 +21,7 @@ use crate::shared::Shared;
 use crate::model::cursor_helper;
 use crate::model::cursor_shift::CursorShift;
 use crate::model::dimension::Dimension;
+use crate::model::help_model::{HelpModel, HelpModelEvent};
 use crate::model::rendered::{DataRender, LineRender};
 use crate::model::scroll_position::ScrollPosition;
 use crate::model::search_model::SearchModel;
@@ -46,8 +47,11 @@ pub struct RootModel {
     datasource: Option<Shared<Box<dyn LineSource>>>,
     error: Option<Box<dyn ToString>>,
     show_line_numbers: bool,
+    // search
     search_model: Shared<SearchModel>,
     current_search: Shared<Option<Search>>,
+    // help
+    help_model: Shared<HelpModel>,
 }
 
 #[derive(Debug)]
@@ -58,6 +62,7 @@ pub enum ModelEvent {
     SearchOpen(bool),
     Search(SearchResult),
     SearchFromCursor,
+    HelpEvent(HelpModelEvent),
     Hint(String),
     Error(Option<String>),
     Quit,
@@ -73,6 +78,7 @@ pub struct CursorPosition {
 impl RootModel {
     pub fn new(model_sender: Sender<ModelEvent>, background_process_registry: Shared<BackgroundProcessRegistry>) -> Shared<RootModel> {
         let sender = model_sender.clone();
+        let sender2 = model_sender.clone();
         let background_process_registry_copy = background_process_registry.clone();
         let root_model = RootModel {
             model_sender,
@@ -91,6 +97,7 @@ impl RootModel {
             show_line_numbers: true,
             search_model: Shared::new(SearchModel::new(sender, background_process_registry_copy)),
             current_search: Shared::new(None),
+            help_model: Shared::new(HelpModel::new(sender2)),
         };
 
         Shared::new(root_model)
@@ -751,6 +758,10 @@ impl RootModel {
         self.model_sender.emit_event(Hint(hint));
     }
 
+    pub fn get_help_model(&self) -> RefMut<HelpModel> {
+        self.help_model.get_mut_ref()
+    }
+
     pub fn on_esc(&mut self) {
         if self.reset_error() {
             return;
@@ -770,6 +781,13 @@ impl RootModel {
                 drop(current_search);
                 self.set_current_search(None);
                 return;
+            }
+        }
+
+        {
+            let mut help_model = self.help_model.get_mut_ref();
+            if help_model.is_open() {
+                help_model.set_open(false);
             }
         }
     }

@@ -11,6 +11,7 @@ log = "0.4.16"
 log4rs = "1.2.0"
 termion = "1.5.6"
 cursive = "0.17.0"
+cursive_table_view = "0.14"
 clap = "~2.33"
 crossbeam-channel = "0.5.4"
 uuid = { version = "0.8", features = ["v4"] }
