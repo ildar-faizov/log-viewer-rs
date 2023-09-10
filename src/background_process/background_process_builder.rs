@@ -3,6 +3,7 @@ use crate::background_process::run_in_background::RunInBackground;
 use crate::background_process::task_context::TaskContext;
 use crate::model::model::RootModel;
 use std::marker::PhantomData;
+use uuid::Uuid;
 
 pub struct BackgroundProcessBuilder<'a, M, T, R, L, H>
 where
@@ -10,7 +11,7 @@ where
     R: Send + 'static,
     T: FnOnce(&mut TaskContext<M, R>) -> R,
     T: Send + 'static,
-    L: FnMut(&mut RootModel, Result<R, M>) + 'static,
+    L: FnMut(&mut RootModel, Result<R, M>, &Uuid) + 'static,
     H: RunInBackground,
 {
     runner: &'a mut H,
@@ -26,7 +27,7 @@ where
     R: Send + 'static,
     T: FnOnce(&mut TaskContext<M, R>) -> R,
     T: Send + 'static,
-    L: FnMut(&mut RootModel, Result<R, M>) + 'static,
+    L: FnMut(&mut RootModel, Result<R, M>, &Uuid) + 'static,
     H: RunInBackground,
 {
     pub fn new(runner: &'a mut H) -> Self {

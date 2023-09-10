@@ -22,7 +22,6 @@ use std::rc::Rc;
 use uuid::Uuid;
 
 pub struct Search {
-    id: Uuid,
     model_sender: Sender<ModelEvent>,
     occurrences: Option<Rc<Vec<Occurrence>>>,
     last_occurrence: Option<Occurrence>,
@@ -39,7 +38,6 @@ impl Search {
         constructor: NavigableSearcherConstructor,
         registry: &mut BackgroundProcessRegistry,
     ) -> Self {
-        let id = Uuid::new_v4();
         let (search_request_sender, search_request_receiver) =
             crossbeam_channel::unbounded::<SearchRequest>();
         let daemon_handler = registry
@@ -49,10 +47,10 @@ impl Search {
                 measure_l(
                     log::Level::Info,
                     format!("Search daemon {:?}", constructor).as_str(),
-                    move || search_daemon(ctx, constructor, search_request_receiver, id),
+                    move || search_daemon(ctx, constructor, search_request_receiver),
                 )
             })
-            .with_listener(move |root_model, s| match s {
+            .with_listener(move |root_model, s, id| match s {
                 Ok(Ok(())) => log::info!("Search finished"),
                 Ok(Err(DaemonError::SearcherConstruction(e))) => {
                     root_model.set_current_search(None);
@@ -62,7 +60,7 @@ impl Search {
                     let mut current_search = root_model.get_current_search();
                     let mut err = None;
                     if let Some(search) = current_search.as_mut() {
-                        let r = search.accept_search_response(response);
+                        let r = search.accept_search_response(response, id);
                         if let Err(e) = r {
                             err = Some(e);
                         }
@@ -75,7 +73,6 @@ impl Search {
             })
             .run();
         Search {
-            id,
             model_sender,
             occurrences: None,
             last_occurrence: None,
@@ -152,12 +149,12 @@ impl Search {
             })
     }
 
-    fn accept_search_response(&mut self, response: SearchResponse) -> anyhow::Result<()> {
-        if self.id != response.id {
+    fn accept_search_response(&mut self, response: SearchResponse, id: &Uuid) -> anyhow::Result<()> {
+        if *self.daemon_handler.get_id() != *id {
             return Ok(());
         }
-        match response.payload {
-            SearchResponsePayload::Find(search_result) => {
+        match response {
+            SearchResponse::Find(search_result) => {
                 if let Ok(last_occurrence) = &search_result {
                     self.last_occurrence = Some(last_occurrence.clone());
                 }
@@ -165,7 +162,7 @@ impl Search {
                     .emit_event(ModelEvent::Search(search_result));
                 Ok(())
             }
-            SearchResponsePayload::FindAll(viewport, data) => match data {
+            SearchResponse::FindAll(viewport, data) => match data {
                 Ok(occurrences) => {
                     self.last_request = Some(viewport);
                     self.occurrences = Some(Rc::new(occurrences));
@@ -188,7 +185,6 @@ fn search_daemon(
     ctx: &mut TaskContext<SearchResponse, Result<(), DaemonError>>,
     constructor: NavigableSearcherConstructor,
     receiver: Receiver<SearchRequest>,
-    id: Uuid,
 ) -> Result<(), DaemonError> {
     let t = constructor.construct_searcher();
     let mut searcher = match t {
@@ -198,17 +194,16 @@ fn search_daemon(
     while !ctx.interrupted() {
         match receiver.recv() {
             Ok(req) => {
-                let payload = match req {
+                let response = match req {
                     SearchRequest::Find(direction) => {
                         let res = searcher.next_occurrence(direction);
-                        SearchResponsePayload::Find(res)
+                        SearchResponse::Find(res)
                     }
                     SearchRequest::FindAll(range) => {
                         let res = searcher.find_all_in_range(range);
-                        SearchResponsePayload::FindAll(range, res)
+                        SearchResponse::FindAll(range, res)
                     }
                 };
-                let response = SearchResponse::new(id, payload);
                 ctx.send_message(response).expect("Failed to send response");
             }
             Err(_) => break,
@@ -222,18 +217,7 @@ enum SearchRequest {
     FindAll(Interval<Integer>),
 }
 
-struct SearchResponse {
-    id: Uuid,
-    payload: SearchResponsePayload,
-}
-
-impl SearchResponse {
-    pub fn new(id: Uuid, payload: SearchResponsePayload) -> Self {
-        SearchResponse { id, payload }
-    }
-}
-
-enum SearchResponsePayload {
+enum SearchResponse {
     Find(SearchResult),
     FindAll(Interval<Integer>, Result<Vec<Occurrence>, SearchError>),
 }

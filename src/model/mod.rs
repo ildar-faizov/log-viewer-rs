@@ -7,4 +7,5 @@ pub mod rendered;
 pub mod search_model;
 pub mod search;
 pub mod help_model;
+pub mod go_to_line_model;
 mod navigable_searcher_constructor;

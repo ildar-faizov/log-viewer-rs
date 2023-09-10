@@ -29,3 +29,4 @@ pub mod search_next;
 pub mod search_prev;
 mod test_bgp;
 mod help;
+mod go_to_line;

@@ -6,11 +6,13 @@ use crate::data_source::{Data, Direction, FileBackend, LineSource, LineSourceImp
 use std::cell::RefMut;
 use num_rational::Ratio;
 use std::cmp::min;
+use std::fmt::Debug;
 use std::fs::File;
 use std::option::Option::Some;
 use std::time::Duration;
 use fluent_integer::Integer;
 use num_traits::identities::Zero;
+use uuid::Uuid;
 use crate::background_process::background_process_handler::BackgroundProcessHandler;
 use crate::background_process::background_process_registry::BackgroundProcessRegistry;
 use crate::background_process::run_in_background::RunInBackground;
@@ -21,6 +23,7 @@ use crate::shared::Shared;
 use crate::model::cursor_helper;
 use crate::model::cursor_shift::CursorShift;
 use crate::model::dimension::Dimension;
+use crate::model::go_to_line_model::GoToLineModel;
 use crate::model::help_model::{HelpModel, HelpModelEvent};
 use crate::model::rendered::{DataRender, LineRender};
 use crate::model::scroll_position::ScrollPosition;
@@ -50,6 +53,8 @@ pub struct RootModel {
     // search
     search_model: Shared<SearchModel>,
     current_search: Shared<Option<Search>>,
+    // go to line
+    go_to_line_model: Shared<GoToLineModel>,
     // help
     help_model: Shared<HelpModel>,
 }
@@ -62,6 +67,7 @@ pub enum ModelEvent {
     SearchOpen(bool),
     Search(SearchResult),
     SearchFromCursor,
+    GoToOpen(bool),
     HelpEvent(HelpModelEvent),
     Hint(String),
     Error(Option<String>),
@@ -79,7 +85,9 @@ impl RootModel {
     pub fn new(model_sender: Sender<ModelEvent>, background_process_registry: Shared<BackgroundProcessRegistry>) -> Shared<RootModel> {
         let sender = model_sender.clone();
         let sender2 = model_sender.clone();
-        let background_process_registry_copy = background_process_registry.clone();
+        let sender3 = model_sender.clone();
+        let registry = background_process_registry.clone();
+        let registry3 = background_process_registry.clone();
         let root_model = RootModel {
             model_sender,
             background_process_registry,
@@ -95,8 +103,9 @@ impl RootModel {
             datasource: None,
             error: None,
             show_line_numbers: true,
-            search_model: Shared::new(SearchModel::new(sender, background_process_registry_copy)),
+            search_model: Shared::new(SearchModel::new(sender, registry)),
             current_search: Shared::new(None),
+            go_to_line_model: Shared::new(GoToLineModel::new(sender3, registry3)),
             help_model: Shared::new(HelpModel::new(sender2)),
         };
 
@@ -758,6 +767,10 @@ impl RootModel {
         self.model_sender.emit_event(Hint(hint));
     }
 
+    pub fn get_go_to_line_model(&self) -> RefMut<GoToLineModel> {
+        self.go_to_line_model.get_mut_ref()
+    }
+
     pub fn get_help_model(&self) -> RefMut<HelpModel> {
         self.help_model.get_mut_ref()
     }
@@ -790,6 +803,13 @@ impl RootModel {
                 help_model.set_open(false);
             }
         }
+
+        {
+            let mut go_to_model = self.go_to_line_model.get_mut_ref();
+            if go_to_model.is_open() {
+                go_to_model.set_is_open(false);
+            }
+        }
     }
 
     pub fn start_test_bgp(&mut self) {
@@ -799,7 +819,7 @@ impl RootModel {
                 std::thread::sleep(Duration::from_secs(5));
                 -42
             })
-            .with_listener(|_model, r| {
+            .with_listener(|_model, r, _| {
                 match r {
                     Ok(r) => log::info!("Task returned {}", r),
                     Err(_) => log::warn!("Unexpected message"),
@@ -828,7 +848,8 @@ impl RunInBackground for RootModel {
             M: Send + 'static,
             R: Send + 'static,
             T: FnOnce(&mut TaskContext<M, R>) -> R,
-            T: Send + 'static, L: FnMut(&mut RootModel, Result<R, M>) + 'static {
+            T: Send + 'static,
+            L: FnMut(&mut RootModel, Result<R, M>, &Uuid) + 'static {
         let mut registry = self.background_process_registry.get_mut_ref();
         registry.run_in_background(task, listener)
     }

@@ -46,6 +46,7 @@ use human_bytes::human_bytes;
 use crate::background_process::background_process_registry::BackgroundProcessRegistry;
 use crate::model::help_model::HelpModelEvent;
 use crate::ui::error_dialog::build_error_dialog;
+use crate::ui::go_to_dialog::build_go_to_dialog;
 use crate::ui::help_dialog::HelpDialog;
 use crate::ui::main_ui::build_ui;
 use crate::ui::search_ui::build_search_ui;
@@ -215,6 +216,14 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<R
 			});
 			Ok(true)
 		},
+		GoToOpen(open) => {
+			if open {
+				app.add_layer(build_go_to_dialog(&mut *model.get_mut_ref()));
+			} else {
+				app.pop_layer();
+			}
+			Ok(true)
+		}
 		HelpEvent(help_model_event) => {
 			match help_model_event {
 				HelpModelEvent::Show => {
