@@ -4,6 +4,7 @@ pub mod search_ui;
 pub mod error_dialog;
 pub mod help_dialog;
 pub mod go_to_dialog;
+pub mod go_to_date_dialog;
 pub mod with_root_model;
 mod span_producer;
 mod line_drawer;

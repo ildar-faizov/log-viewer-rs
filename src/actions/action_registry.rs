@@ -9,6 +9,7 @@ use crate::actions::cursor_right::CursorRightAction;
 use crate::actions::cursor_up::CursorUpAction;
 use crate::actions::file_end::FileEndAction;
 use crate::actions::file_start::FileStartAction;
+use crate::actions::go_to_date::GoToDateAction;
 use crate::actions::go_to_line::GoToLineAction;
 use crate::actions::help::HelpAction;
 use crate::actions::line_end::LineEndAction;
@@ -80,6 +81,7 @@ pub fn plain_action_registry() -> Vec<Rc<dyn Action + 'static>> {
         Rc::new(SearchPrevAction::default()),
 
         Rc::new(GoToLineAction::default()),
+        Rc::new(GoToDateAction::default()),
 
         Rc::new(HelpAction::default()),
 

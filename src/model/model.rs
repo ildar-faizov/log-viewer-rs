@@ -9,7 +9,8 @@ use std::cmp::min;
 use std::fmt::Debug;
 use std::fs::File;
 use std::option::Option::Some;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
+use chrono::{Datelike, DateTime, Utc};
 use fluent_integer::Integer;
 use num_traits::identities::Zero;
 use uuid::Uuid;
@@ -23,7 +24,9 @@ use crate::shared::Shared;
 use crate::model::cursor_helper;
 use crate::model::cursor_shift::CursorShift;
 use crate::model::dimension::Dimension;
+use crate::model::go_to_date_model::GoToDateModel;
 use crate::model::go_to_line_model::GoToLineModel;
+use crate::model::guess_date_format::{guess_date_format, GuessContext, KnownDateFormat};
 use crate::model::help_model::{HelpModel, HelpModelEvent};
 use crate::model::rendered::{DataRender, LineRender};
 use crate::model::scroll_position::ScrollPosition;
@@ -50,11 +53,13 @@ pub struct RootModel {
     datasource: Option<Shared<Box<dyn LineSource>>>,
     error: Option<Box<dyn ToString>>,
     show_line_numbers: bool,
+    date_format: Option<&'static KnownDateFormat>, // guessed from content
     // search
     search_model: Shared<SearchModel>,
     current_search: Shared<Option<Search>>,
     // go to line
     go_to_line_model: Shared<GoToLineModel>,
+    go_to_date_model: Shared<GoToDateModel>,
     // help
     help_model: Shared<HelpModel>,
 }
@@ -62,12 +67,14 @@ pub struct RootModel {
 #[derive(Debug)]
 pub enum ModelEvent {
     FileName(String, u64),
+    Repaint,
     DataUpdated,
     CursorMoved(CursorPosition),
     SearchOpen(bool),
     Search(SearchResult),
     SearchFromCursor,
     GoToOpen(bool),
+    GoToDateOpen(bool),
     HelpEvent(HelpModelEvent),
     Hint(String),
     Error(Option<String>),
@@ -86,8 +93,10 @@ impl RootModel {
         let sender = model_sender.clone();
         let sender2 = model_sender.clone();
         let sender3 = model_sender.clone();
+        let sender4 = model_sender.clone();
         let registry = background_process_registry.clone();
         let registry3 = background_process_registry.clone();
+        let registry4 = background_process_registry.clone();
         let root_model = RootModel {
             model_sender,
             background_process_registry,
@@ -103,9 +112,11 @@ impl RootModel {
             datasource: None,
             error: None,
             show_line_numbers: true,
+            date_format: None,
             search_model: Shared::new(SearchModel::new(sender, registry)),
             current_search: Shared::new(None),
             go_to_line_model: Shared::new(GoToLineModel::new(sender3, registry3)),
+            go_to_date_model: Shared::new(GoToDateModel::new(sender4, registry4)),
             help_model: Shared::new(HelpModel::new(sender2)),
         };
 
@@ -168,6 +179,7 @@ impl RootModel {
             self.scroll_position = scroll_position;
             log::info!("Scroll position set to {}", scroll_position);
             if !self.update_viewport_content() {
+                log::error!("Failed to set scroll position {}", scroll_position);
                 self.scroll_position = previous_scroll_position;
                 return false;
             }
@@ -529,12 +541,13 @@ impl RootModel {
 
     fn load_file(&mut self) {
         if let Some(path) = self.resolve_file_name() {
-            let mut line_source = LineSourceImpl::<File, FileBackend>::from_file_name(path);
+            let mut line_source = LineSourceImpl::<File, FileBackend>::from_file_name(path.clone());
             if self.show_line_numbers {
                 line_source.track_line_number(true);
             }
             let file_size = line_source.get_length();
             self.datasource = Some(Shared::new(Box::new(line_source)));
+            self.guess_date_format(&path);
             let event = FileName(self.file_name.as_ref().unwrap().to_owned(), file_size.as_u64());
             self.model_sender.emit_event(event);
             self.update_viewport_content();
@@ -741,7 +754,7 @@ impl RootModel {
         let mut new_offset = lines_below.start.unwrap_or(offset);
         if lines_below.lines.len() < h {
             let k = h - lines_below.lines.len();
-            let prev_lines = datasource.read_lines(new_offset, -k);
+            let prev_lines = datasource.read_lines(new_offset - 1, -k);
             if let Some(offset) = prev_lines.start {
                 new_offset = offset;
             }
@@ -771,8 +784,25 @@ impl RootModel {
         self.go_to_line_model.get_mut_ref()
     }
 
+    pub fn get_go_to_date_model(&self) -> RefMut<GoToDateModel> {
+        self.go_to_date_model.get_mut_ref()
+    }
+
     pub fn get_help_model(&self) -> RefMut<HelpModel> {
         self.help_model.get_mut_ref()
+    }
+
+    pub fn get_date_format(&self) -> Option<&'static KnownDateFormat> {
+        self.date_format.clone()
+    }
+
+    pub fn get_date_guess_context(&self) -> GuessContext {
+        let time = self.resolve_file_name()
+            .and_then(|p| std::fs::metadata(p).ok())
+            .and_then(|m| m.created().ok())
+            .unwrap_or(SystemTime::now());
+        let dt: DateTime<Utc> = time.into();
+        GuessContext::with_year(dt.year() as u16)
     }
 
     pub fn on_esc(&mut self) {
@@ -810,6 +840,13 @@ impl RootModel {
                 go_to_model.set_is_open(false);
             }
         }
+
+        {
+            let mut go_to_date_model = self.go_to_date_model.get_mut_ref();
+            if go_to_date_model.is_open() {
+                go_to_date_model.set_is_open(false);
+            }
+        }
     }
 
     pub fn start_test_bgp(&mut self) {
@@ -839,6 +876,27 @@ impl RootModel {
             });
             self.model_sender.emit_event(event);
         }
+    }
+
+    fn guess_date_format(&mut self, path: &PathBuf) {
+        let path = path.clone();
+        let path2 = path.clone();
+        self.run_in_background::<(), _, _, _>(move |_| {
+            guess_date_format(path)
+        }, move |model, result, _| {
+            match result {
+                Ok(s) => {
+                    if let Some(pattern) = s {
+                        log::info!("DateTime format has been recognized as {:?} for {:?}", pattern, path2);
+                    } else {
+                        log::info!("DateTime format has not been recognized for {:?}", path2);
+                    }
+                    model.date_format = s;
+                    model.model_sender.emit_event(Repaint);
+                }
+                Err(_) => {}
+            }
+        });
     }
 }
 

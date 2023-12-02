@@ -46,6 +46,7 @@ use human_bytes::human_bytes;
 use crate::background_process::background_process_registry::BackgroundProcessRegistry;
 use crate::model::help_model::HelpModelEvent;
 use crate::ui::error_dialog::build_error_dialog;
+use crate::ui::go_to_date_dialog::build_go_to_date_dialog;
 use crate::ui::go_to_dialog::build_go_to_dialog;
 use crate::ui::help_dialog::HelpDialog;
 use crate::ui::main_ui::build_ui;
@@ -182,6 +183,7 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<R
 			v.set_content(format!("{} {}", file_name, human_bytes(file_size as f64)));
 			Ok(true)
 		},
+		Repaint => Ok(true),
 		DataUpdated => {
 			let mut v: ViewRef<Canvas<Shared<RootModel>>> = app.find_name(&UIElementName::MainContent.to_string()).unwrap();
 			v.take_focus(Direction::none());
@@ -224,6 +226,14 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<R
 			}
 			Ok(true)
 		}
+		GoToDateOpen(open) => {
+			if open {
+				app.add_layer(build_go_to_date_dialog(&mut *model.get_mut_ref())); // TODO: handle Esc
+			} else {
+				app.pop_layer();
+			}
+			Ok(true)
+		},
 		HelpEvent(help_model_event) => {
 			match help_model_event {
 				HelpModelEvent::Show => {

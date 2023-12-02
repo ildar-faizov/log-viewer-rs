@@ -8,6 +8,7 @@ pub enum UIElementName {
     SearchBackward,
     SearchRegexp,
     GoToValue,
+    GoToDateValue,
     HelpTable,
 }
 
@@ -23,6 +24,7 @@ impl ToString for UIElementName {
             UIElementName::SearchBackward => "search_backward",
             UIElementName::SearchRegexp => "search_regexp",
             UIElementName::GoToValue => "go_to_value",
+            UIElementName::GoToDateValue => "go_to_date_value",
             UIElementName::HelpTable => "help_table",
         };
         str.to_string()

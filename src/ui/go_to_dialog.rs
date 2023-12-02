@@ -17,7 +17,8 @@ pub fn build_go_to_dialog(root_model: &mut RootModel) -> Box<dyn View> {
         .title("Go to")
         .padding_lrtb(1, 1, 1, 1)
         .content(value_input)
-        .button("Go", submit);
+        .button("Go", submit)
+        .button("Cancel", cancel);
     Box::new(d)
 }
 
@@ -47,4 +48,10 @@ fn try_submit(app: &mut Cursive) -> anyhow::Result<()> {
     let go_to_model = &mut *root_model.get_go_to_line_model();
     go_to_model.set_value(&content);
     go_to_model.submit(&file_name)
+}
+
+fn cancel(app: &mut Cursive) {
+    let mut root_model = &mut *app.get_root_model();
+    let mut go_to_line_model = &mut *root_model.get_go_to_line_model();
+    go_to_line_model.set_is_open(false);
 }

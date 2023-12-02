@@ -1,28 +1,30 @@
 use cursive::theme::{Color, ColorStyle, ColorType, Style};
 use fluent_integer::Integer;
 use crate::highlight::highlight::{Highlight, Highlighter};
-use crate::highlight::pattern_based_highlighter::PatternBasedHighlighter;
 use crate::highlight::style_with_priority::StyleWithPriority;
 use crate::model::model::RootModel;
 
 pub struct DateHighlighter<T> {
-    pattern_based_highlighter: PatternBasedHighlighter<T>
+    payload: T,
 }
 
 impl <T> DateHighlighter<T> {
-    pub fn new(t: T) -> Self {
-        let patterns = vec![
-            r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}"
-        ];
+    pub fn new(payload: T) -> Self {
         DateHighlighter {
-            pattern_based_highlighter: PatternBasedHighlighter::new(patterns, t)
+            payload
         }
     }
 }
 
 impl <T> Highlighter<T> for DateHighlighter<T> where T: Clone {
-    fn process(&self, str: &str, offset: Integer, model: &RootModel) -> Vec<Highlight<T>> {
-        self.pattern_based_highlighter.process(str, offset, model)
+    fn process(&self, str: &str, _offset: Integer, model: &RootModel) -> Vec<Highlight<T>> {
+        if let Some(kdf) = model.get_date_format() {
+            let ctx = model.get_date_guess_context();
+            if let Some((_, m)) = kdf.parse_and_match(str, &ctx) {
+                return vec![Highlight::new(m.start(), m.end(), self.payload.clone())];
+            }
+        }
+        vec![]
     }
 }
 
