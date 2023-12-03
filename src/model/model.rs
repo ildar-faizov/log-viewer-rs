@@ -132,6 +132,7 @@ impl RootModel {
             log::info!("File name set to {}", value);
             self.file_name = Some(value.clone());
             self.search_model.get_mut_ref().set_file_name(value.clone());
+            self.go_to_date_model.get_mut_ref().set_value("");
             self.load_file();
         }
     }
