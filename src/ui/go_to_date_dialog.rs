@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use anyhow::anyhow;
 use cursive::{Cursive, View};
 use cursive::view::Nameable;
@@ -13,6 +14,39 @@ pub fn build_go_to_date_dialog(root_model: &mut RootModel) -> Box<dyn View> {
     layout.add_child(TextView::new("Enter date (dd-MMM-yyyy HH:mm:ss):"));
     layout.add_child(EditView::new()
         .content(go_to_date_model.get_value())
+        .on_edit(|app, value, cursor| {
+            // Simulation of "insert" mode
+            // A better approach is to create a convenient date/time input
+
+            let mut new_value = None;
+            {
+                let root_model = &mut *app.get_root_model();
+                let mut go_to_date_model = &mut *root_model.get_go_to_date_model();
+                if cursor > 0 {
+                    let expected_prev_value = format!("{}{}", &value[0..cursor - 1], &value[cursor..]);
+                    let prev_value = go_to_date_model.get_value();
+                    if expected_prev_value == prev_value {
+                        let s = if cursor < value.len() {
+                            Cow::Owned(format!("{}{}", &value[0..cursor], &value[cursor + 1..]))
+                        } else {
+                            Cow::Borrowed(&value[0..cursor])
+                        };
+                        go_to_date_model.set_value(&s);
+                        new_value = Some((s, cursor));
+                    }
+                }
+            }
+            if let Some((s, cursor)) = new_value {
+                app.call_on_name(&UIElementName::GoToDateValue.to_string(), |edit: &mut EditView| {
+                    edit.set_content(s);
+                    edit.set_cursor(cursor);
+                });
+            } else {
+                let root_model = &mut *app.get_root_model();
+                let mut go_to_date_model = &mut *root_model.get_go_to_date_model();
+                go_to_date_model.set_value(value);
+            }
+        })
         .on_submit(|app, _value| submit(app))
         .with_name(&UIElementName::GoToDateValue.to_string())
     );
