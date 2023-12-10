@@ -31,3 +31,4 @@ mod test_bgp;
 mod help;
 mod go_to_line;
 mod go_to_date;
+mod open_file;

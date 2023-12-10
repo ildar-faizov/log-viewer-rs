@@ -31,6 +31,7 @@ thiserror = "1.0.48"
 chrono = "0.4.31"
 phf = { version = "0.11.2", features = ["macros"] }
 lazy_static = { version = "1.4.0", features = [] }
+itertools = "0.12.0"
 
 #[dependencies.cursive]
 #version = "*"

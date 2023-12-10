@@ -50,6 +50,7 @@ use crate::ui::go_to_date_dialog::build_go_to_date_dialog;
 use crate::ui::go_to_dialog::build_go_to_dialog;
 use crate::ui::help_dialog::HelpDialog;
 use crate::ui::main_ui::build_ui;
+use crate::ui::open_file_dialog::{build_open_file_dialog, handle_open_file_model_event};
 use crate::ui::search_ui::build_search_ui;
 use crate::ui::with_root_model::WithRootModel;
 use crate::ui::ui_elements::UIElementName;
@@ -178,6 +179,30 @@ fn run_ui(receiver: Receiver<ModelEvent>, model_ref: Shared<RootModel>, backgrou
 
 fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<RootModel>, event: ModelEvent) -> Result<bool, &'static str> {
 	match event {
+		OpenFileDialog(show) => {
+			if show {
+				let root_model = model.get_mut_ref();
+				let open_file_model = &mut *root_model.get_open_file_model();
+				let dialog = build_open_file_dialog(open_file_model);
+				app.add_layer(dialog);
+			} else {
+				app.pop_layer();
+			}
+			Ok(true)
+		},
+		OpenFileModelEventWrapper(evt) => {
+			let callback = {
+				let root_model = model.get_mut_ref();
+				let open_file_model = &mut *root_model.get_open_file_model();
+				handle_open_file_model_event(open_file_model, evt)
+			};
+			callback(app);
+			Ok(true)
+		},
+		OpenFile(file_name) => {
+			model.get_mut_ref().set_file_name(file_name);
+			Ok(true)
+		},
 		FileName(file_name, file_size) => {
 			let mut v: ViewRef<TextView> = app.find_name(&UIElementName::StatusFile.to_string()).unwrap();
 			v.set_content(format!("{} {}", file_name, human_bytes(file_size as f64)));

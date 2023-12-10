@@ -14,6 +14,7 @@ use crate::actions::go_to_line::GoToLineAction;
 use crate::actions::help::HelpAction;
 use crate::actions::line_end::LineEndAction;
 use crate::actions::line_start::LineStartAction;
+use crate::actions::open_file::OpenFileAction;
 use crate::actions::pgdown::PgDownAction;
 use crate::actions::pgup::PgUpAction;
 use crate::actions::quit::QuitAction;
@@ -45,6 +46,8 @@ pub fn action_registry() -> HashMap<Event, Rc<dyn Action + 'static>> {
 
 pub fn plain_action_registry() -> Vec<Rc<dyn Action + 'static>> {
     vec![
+        Rc::new(OpenFileAction::new()),
+
         Rc::new(ScrollDownAction::new()),
         Rc::new(ScrollUpAction::new()),
         Rc::new(WordBackwardAction::new()),

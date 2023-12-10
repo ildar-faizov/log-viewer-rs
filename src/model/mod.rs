@@ -9,6 +9,7 @@ pub mod search;
 pub mod help_model;
 pub mod go_to_line_model;
 pub mod go_to_date_model;
+pub mod open_file_model;
 mod navigable_searcher_constructor;
 mod abstract_go_to_model;
 mod guess_date_format;
