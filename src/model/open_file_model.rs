@@ -81,6 +81,10 @@ impl OpenFileModel {
         &self.files[..]
     }
 
+    pub fn get_current_file(&self) -> Option<&str> {
+        self.current_file.as_ref().map(|s| s.as_str())
+    }
+
     pub fn set_current_file(&mut self, current_file: Option<&str>) {
         self.current_file = current_file.map(|s| String::from(s));
         self.update_entry_info();
@@ -157,6 +161,7 @@ impl OpenFileModel {
 
     fn path_to_file(&self) -> Option<PathBuf> {
         self.current_file.as_ref()
+            .filter(|file_name| **file_name != *GO_UP)
             .map(|file_name| {
                 let mut p = self.current_location.clone();
                 p.push(file_name);

@@ -564,11 +564,10 @@ impl RootModel {
             let event = FileName(self.file_name.as_ref().unwrap().to_owned(), file_size.as_u64());
             self.model_sender.emit_event(event);
             self.update_viewport_content();
-            self.open_file_model.get_mut_ref().set_current_location(path.parent().unwrap().to_path_buf());
         }
     }
 
-    fn resolve_file_name(&self) -> Option<PathBuf> {
+    pub fn resolve_file_name(&self) -> Option<PathBuf> {
         self.file_name.as_ref().map(|fname| {
             let p = Path::new(fname);
             if !p.is_absolute() {

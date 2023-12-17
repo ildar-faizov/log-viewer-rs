@@ -184,7 +184,8 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<R
 				let root_model = model.get_mut_ref();
 				let open_file_model = &mut *root_model.get_open_file_model();
 				let dialog = build_open_file_dialog(open_file_model);
-				app.add_layer(dialog);
+				app.add_layer(dialog.view);
+				(dialog.callback)(app);
 			} else {
 				app.pop_layer();
 			}

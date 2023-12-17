@@ -11,6 +11,7 @@ mod span_producer;
 mod line_drawer;
 mod canvas;
 mod status_panel;
+mod view_with_callback;
 
 
 
