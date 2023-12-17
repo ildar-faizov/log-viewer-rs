@@ -32,7 +32,7 @@ impl Action for OpenFileAction {
             open_file_model.set_current_file(file_name);
         } else {
             log::warn!("Could not resolve current file name");
-            // TODO: choose some initial directory
+            open_file_model.set_current_location(std::env::current_dir().expect("Current dir not set"));
             open_file_model.set_current_file(None);
         }
         EventResult::Consumed(None)

@@ -37,8 +37,8 @@ impl SearchModel {
         }
     }
 
-    pub fn set_file_name(&mut self, file_name: String) {
-        self.file_name = Some(PathBuf::from(file_name));
+    pub fn set_file_name(&mut self, file_name: Option<&str>) {
+        self.file_name = file_name.map(|s| PathBuf::from(s));
     }
 
     pub fn set_visible(&mut self, visible: bool) {

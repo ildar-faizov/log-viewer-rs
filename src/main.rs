@@ -18,6 +18,7 @@ mod search;
 mod interval;
 mod background_process;
 mod immediate;
+mod welcome;
 
 use cursive::{Cursive, CursiveRunnable, CursiveRunner, View};
 use cursive::views::{TextView, ViewRef, Canvas, Checkbox};
@@ -133,13 +134,7 @@ fn parse_args<'a>() -> ArgMatches<'a> {
 fn create_model(args: &ArgMatches, sender: Sender<ModelEvent>) -> (Shared<RootModel>, Shared<BackgroundProcessRegistry>) {
 	let background_process_registry = Shared::new(BackgroundProcessRegistry::new());
 	let model = RootModel::new(sender, background_process_registry.clone());
-	if let Some(file_name) = args.value_of("file") {
-		model.get_mut_ref().set_file_name(file_name.to_owned());
-	} else {
-		// TODO: sample only
-		// model.set_file_name("/var/log/bootstrap.log".to_owned())
-		model.get_mut_ref().set_file_name("./test.txt".to_owned())
-	}
+	model.get_mut_ref().set_file_name(args.value_of("file"));
 	(model, background_process_registry)
 }
 
@@ -201,7 +196,7 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<R
 			Ok(true)
 		},
 		OpenFile(file_name) => {
-			model.get_mut_ref().set_file_name(file_name);
+			model.get_mut_ref().set_file_name(Some(&file_name));
 			Ok(true)
 		},
 		FileName(file_name, file_size) => {

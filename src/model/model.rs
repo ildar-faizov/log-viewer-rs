@@ -2,12 +2,13 @@ use crossbeam_channel::Sender;
 use std::path::{Path, PathBuf};
 use std::env::current_dir;
 use ModelEvent::*;
-use crate::data_source::{Data, Direction, FileBackend, LineSource, LineSourceImpl};
+use crate::data_source::{Data, Direction, FileBackend, LineSource, LineSourceImpl, StrBackend};
 use std::cell::RefMut;
 use num_rational::Ratio;
 use std::cmp::min;
 use std::fmt::Debug;
 use std::fs::File;
+use std::io::Cursor;
 use std::option::Option::Some;
 use std::time::{Duration, SystemTime};
 use chrono::{Datelike, DateTime, Utc};
@@ -44,6 +45,7 @@ pub struct RootModel {
     background_process_registry: Shared<BackgroundProcessRegistry>,
     open_file_model: Shared<OpenFileModel>,
     file_name: Option<String>,
+    is_file_loaded: bool,
     file_size: Integer,
     data: Option<DataRender>,
     viewport_height: Integer,
@@ -108,6 +110,7 @@ impl RootModel {
             background_process_registry,
             open_file_model: Shared::new(OpenFileModel::new(sender5)),
             file_name: None,
+            is_file_loaded: false,
             file_size: 0.into(),
             data: None,
             viewport_height: 0.into(),
@@ -138,13 +141,14 @@ impl RootModel {
         self.file_name.as_ref().map(|s| &s[..])
     }
 
-    pub fn set_file_name(&mut self, value: String) {
-        if self.file_name.as_ref().map(|file_name| *file_name != value).unwrap_or(true) {
-            log::info!("File name set to {}", value);
-            self.file_name = Some(value.clone());
-            self.search_model.get_mut_ref().set_file_name(value.clone());
+    pub fn set_file_name(&mut self, value: Option<&str>) {
+        if self.file_name.as_ref().map(|s| s.as_str()).ne(&value) || !self.is_file_loaded {
+            log::info!("File name set to {:?}", value);
+            self.file_name = value.map(|s| String::from(s));
+            self.search_model.get_mut_ref().set_file_name(value);
             self.go_to_date_model.get_mut_ref().set_value("");
             self.load_file();
+            self.is_file_loaded = true;
         }
     }
 
@@ -552,19 +556,24 @@ impl RootModel {
     }
 
     fn load_file(&mut self) {
-        if let Some(path) = self.resolve_file_name() {
-            self.reset();
-            let mut line_source = LineSourceImpl::<File, FileBackend>::from_file_name(path.clone());
-            if self.show_line_numbers {
-                line_source.track_line_number(true);
-            }
-            let file_size = line_source.get_length();
-            self.datasource = Some(Shared::new(Box::new(line_source)));
+        self.reset();
+        let (mut line_source, file_name): (Box<dyn LineSource>, String) = if let Some(path) = self.resolve_file_name() {
+            let line_source = LineSourceImpl::<File, FileBackend>::from_file_name(path.clone());
             self.guess_date_format(&path);
-            let event = FileName(self.file_name.as_ref().unwrap().to_owned(), file_size.as_u64());
-            self.model_sender.emit_event(event);
-            self.update_viewport_content();
+            (Box::new(line_source), self.file_name.as_ref().unwrap().to_string())
+        } else {
+            let welcome: &'static str = &crate::welcome::WELCOME;
+            let line_source = LineSourceImpl::<Cursor<&'_ [u8]>, StrBackend<'_>>::from_str(welcome);
+            (Box::new(line_source), String::from("welcome"))
+        };
+        if self.show_line_numbers {
+            line_source.track_line_number(true);
         }
+        let file_size = line_source.get_length();
+        self.datasource = Some(Shared::new(line_source));
+        let event = FileName(file_name, file_size.as_u64());
+        self.model_sender.emit_event(event);
+        self.update_viewport_content();
     }
 
     pub fn resolve_file_name(&self) -> Option<PathBuf> {

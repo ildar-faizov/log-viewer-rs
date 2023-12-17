@@ -1,0 +1,10 @@
+== Welcome to LogViewer ==
+
+This program is intended to view and analyse (potentially large) log files.
+
+A few actions to start using this program:
+- '?' to see help
+- Ctrl+o to open file
+- 'q' to quit
+
+{{BUILD_INFO}}
