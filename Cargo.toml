@@ -10,16 +10,16 @@ edition = "2021"
 [dependencies]
 log = "0.4.16"
 log4rs = "1.2.0"
-termion = "1.5.6"
-cursive = "0.17.0"
+termion = "2.0.3"
+cursive = "0.20.0"
 cursive_table_view = "0.14"
 clap = "~2.33"
 crossbeam-channel = "0.5.4"
-uuid = { version = "0.8", features = ["v4"] }
+uuid = { version = "1.6.1", features = ["v4"] }
 num-rational = "*"
 fluent-integer = { path = "../fluent-integer"}
 num-traits = "0.2.14" # TODO transitive dependencies?
-terminal-clipboard = "0.3.1"
+terminal-clipboard = "0.4.1"
 regex = "1.5"
 stopwatch = "0.0.7"
 spectral = "0.6.0"
