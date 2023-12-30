@@ -29,7 +29,7 @@ impl ApplicationRecorder {
     fn describe_metrics(&self, metric_type: MetricType, key: KeyName, unit: Option<Unit>, description: SharedString) {
         log::info!("Registering {:?} {:?} {:?} {:?}", metric_type, &key, unit, description);
         let descriptions = &mut *self.descriptions.get_mut_ref();
-        descriptions.insert(key.clone(), Description::new(MetricType::Histogram, key.clone(), unit, description));
+        descriptions.insert(key.clone(), Description::new(MetricType::Histogram, key, unit, description));
     }
 }
 

@@ -27,7 +27,7 @@ impl NavigableSearcherConstructor {
                     navigable_searcher.set_initial_offset(*initial_offset, direction);
                 }
                 log::info!("Search: {:?}", self.pattern);
-                return Ok(Box::new(navigable_searcher));
+                Ok(Box::new(navigable_searcher))
             } else {
                 Err(NavigableSearcherConstructorError::PatternIsEmpty)
             }

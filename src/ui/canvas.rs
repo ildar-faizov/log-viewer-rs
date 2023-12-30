@@ -34,7 +34,7 @@ pub fn build_canvas(model: Shared<RootModel>) -> NamedView<Canvas<Shared<RootMod
         color: ColorStyle::new(palette[Primary], palette[HighlightText]),
         effects: EnumSet::only(Effect::Italic)
     }, 1, 0xff);
-    Canvas::new(model.clone())
+    Canvas::new(model)
         .with_draw(move |state, printer| stat(METRIC_DRAW, &Unit::Milliseconds, || {
             let mut state = state.get_mut_ref();
 

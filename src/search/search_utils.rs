@@ -17,7 +17,7 @@ pub fn calculate_offset_and_boundary<S: Seek + SeekTo>(reader: &mut S, direction
         Direction::Forward => (range.left_bound, range.right_bound, Integer::from(1)),
         Direction::Backward => (range.right_bound, range.left_bound, Integer::from(-1)),
     };
-    let len = reader.seek(SeekFrom::End(0)).map(Integer::from).map_err(|e| IO(e))?; // trick to evaluate length
+    let len = reader.seek(SeekFrom::End(0)).map(Integer::from).map_err(IO)?; // trick to evaluate length
     let offset = match bound {
         IntervalBound::PositiveInfinity => {
             match direction {
@@ -37,7 +37,7 @@ pub fn calculate_offset_and_boundary<S: Seek + SeekTo>(reader: &mut S, direction
 
     let offset = min(max(offset, 0.into()), len); // ensure offset in reader
 
-    reader.seek_to(offset).map_err(|e| IO(e))?;
+    reader.seek_to(offset).map_err(IO)?;
 
     let offset_boundary = match bound2 {
         IntervalBound::PositiveInfinity => {
@@ -57,7 +57,7 @@ pub fn calculate_offset_and_boundary<S: Seek + SeekTo>(reader: &mut S, direction
     };
 
     Ok(OffsetAndBoundary {
-        offset: offset.into(),
+        offset,
         offset_boundary
     })
 }

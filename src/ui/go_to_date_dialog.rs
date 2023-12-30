@@ -21,7 +21,7 @@ pub fn build_go_to_date_dialog(root_model: &mut RootModel) -> Box<dyn View> {
             let mut new_value = None;
             {
                 let root_model = &mut *app.get_root_model();
-                let mut go_to_date_model = &mut *root_model.get_go_to_date_model();
+                let go_to_date_model = &mut *root_model.get_go_to_date_model();
                 if cursor > 0 {
                     let expected_prev_value = format!("{}{}", &value[0..cursor - 1], &value[cursor..]);
                     let prev_value = go_to_date_model.get_value();
@@ -43,12 +43,12 @@ pub fn build_go_to_date_dialog(root_model: &mut RootModel) -> Box<dyn View> {
                 });
             } else {
                 let root_model = &mut *app.get_root_model();
-                let mut go_to_date_model = &mut *root_model.get_go_to_date_model();
+                let go_to_date_model = &mut *root_model.get_go_to_date_model();
                 go_to_date_model.set_value(value);
             }
         })
         .on_submit(|app, _value| submit(app))
-        .with_name(&UIElementName::GoToDateValue.to_string())
+        .with_name(UIElementName::GoToDateValue.to_string())
     );
 
     let d = Dialog::new()
@@ -92,7 +92,7 @@ fn try_submit(app: &mut Cursive) -> anyhow::Result<()> {
 }
 
 fn cancel(app: &mut Cursive) {
-    let mut root_model = &mut *app.get_root_model();
-    let mut go_to_date_model = &mut *root_model.get_go_to_date_model();
+    let root_model = &mut *app.get_root_model();
+    let go_to_date_model = &mut *root_model.get_go_to_date_model();
     go_to_date_model.set_is_open(false);
 }

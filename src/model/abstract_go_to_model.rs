@@ -61,7 +61,7 @@ impl AbstractGoToModel
             .background_process_builder::<(), _, Result<Integer, GoToError>, _>()
             .with_task(task)
             .with_listener(move |model, msg, id| {
-                let handle_result = result_handler(&mut *model, id.clone(), msg);
+                let handle_result = result_handler(&mut *model, *id, msg);
                 if let Err(err) = handle_result {
                     model.set_error(Box::new(err))
                 }

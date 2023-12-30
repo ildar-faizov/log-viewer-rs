@@ -80,7 +80,7 @@ impl HelpModel {
         let filter = self.create_filter();
         self.filtered_actions = self.actions
             .iter()
-            .filter(|a| filter(*a))
+            .filter(|a| filter(a))
             .map(Clone::clone)
             .collect();
     }
@@ -88,7 +88,7 @@ impl HelpModel {
     fn create_filter(&self) -> Box<Predicate<ActionDescription>> {
         let f = self.filter.trim().to_string().to_lowercase();
         if f.is_empty() {
-            Box::new(|a: &ActionDescription| true)
+            Box::new(|_a: &ActionDescription| true)
         } else {
             Box::new(move |a: &ActionDescription| a.description.to_lowercase().contains(f.as_str()))
         }

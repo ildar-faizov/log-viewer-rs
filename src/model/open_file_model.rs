@@ -82,11 +82,11 @@ impl OpenFileModel {
     }
 
     pub fn get_current_file(&self) -> Option<&str> {
-        self.current_file.as_ref().map(|s| s.as_str())
+        self.current_file.as_deref()
     }
 
     pub fn set_current_file(&mut self, current_file: Option<&str>) {
-        self.current_file = current_file.map(|s| String::from(s));
+        self.current_file = current_file.map(String::from);
         self.update_entry_info();
     }
 
@@ -174,7 +174,7 @@ impl OpenFileModel {
     }
 
     fn list_files(location: &PathBuf) -> io::Result<Vec<DirEntry0>> {
-        std::fs::read_dir(&location).map(|read_dir| {
+        std::fs::read_dir(location).map(|read_dir| {
             let mut files: Vec<DirEntry0> = vec![];
             if location.as_path().parent().is_some() {
                 files.push(DirEntry0::Up);

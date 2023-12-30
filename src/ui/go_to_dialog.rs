@@ -51,7 +51,7 @@ fn try_submit(app: &mut Cursive) -> anyhow::Result<()> {
 }
 
 fn cancel(app: &mut Cursive) {
-    let mut root_model = &mut *app.get_root_model();
-    let mut go_to_line_model = &mut *root_model.get_go_to_line_model();
+    let root_model = &mut *app.get_root_model();
+    let go_to_line_model = &mut *root_model.get_go_to_line_model();
     go_to_line_model.set_is_open(false);
 }

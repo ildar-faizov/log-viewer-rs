@@ -14,7 +14,7 @@ impl Action for HelpAction {
         vec![Event::Char('?')]
     }
 
-    fn perform_action(&self, model: &mut RootModel, event: &Event) -> EventResult {
+    fn perform_action(&self, model: &mut RootModel, _event: &Event) -> EventResult {
         model.get_help_model().set_open(true);
         EventResult::Ignored
     }

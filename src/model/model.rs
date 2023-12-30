@@ -152,9 +152,9 @@ impl RootModel {
     }
 
     pub fn set_file_name(&mut self, value: Option<&str>) {
-        if self.file_name.as_ref().map(|s| s.as_str()).ne(&value) || !self.is_file_loaded {
+        if self.file_name.as_deref().ne(&value) || !self.is_file_loaded {
             log::info!("File name set to {:?}", value);
-            self.file_name = value.map(|s| String::from(s));
+            self.file_name = value.map(String::from);
             self.search_model.get_mut_ref().set_file_name(value);
             self.go_to_date_model.get_mut_ref().set_value("");
             self.load_file();
@@ -211,7 +211,7 @@ impl RootModel {
             }
             // TODO: emit update
         }
-        return true
+        true
     }
 
     pub fn scroll(&mut self, num_of_lines: Integer) -> bool {
@@ -263,7 +263,7 @@ impl RootModel {
         } else {
             log::warn!("No data, cannot move down for {}", num_of_lines);
         }
-        return false
+        false
     }
 
     pub fn set_horizontal_scroll(&mut self, horizontal_scroll: Integer) -> bool {
@@ -378,7 +378,7 @@ impl RootModel {
                     calc_offset_in_line(&line)
                 } else {
                     new_lines.pop()
-                        .map(|x| LineRender::new(x))
+                        .map(LineRender::new)
                         .as_ref()
                         .or_else(|| data.lines.last())
                         .map(calc_offset_in_line)
@@ -837,7 +837,7 @@ impl RootModel {
     }
 
     pub fn get_date_format(&self) -> Option<&'static KnownDateFormat> {
-        self.date_format.clone()
+        self.date_format
     }
 
     pub fn get_date_guess_context(&self) -> GuessContext {

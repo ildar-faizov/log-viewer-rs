@@ -46,7 +46,7 @@ impl<R> Searcher for SearcherImpl<R>
 impl<R> SearcherImpl<R> where R: Read + Seek {
 
     fn scan(&mut self, offset_boundary: Option<Integer>) -> SearchResult {
-        let mut offset: Integer = self.f.stream_position().map_err(|e| IO(e))?.into();
+        let mut offset: Integer = self.f.stream_position().map_err(IO)?.into();
         self.buffer.clear();
         loop {
             self.fill_buffer()?;
@@ -72,7 +72,7 @@ impl<R> SearcherImpl<R> where R: Read + Seek {
                 for ch in chunk {
                     self.buffer.push_back(*ch);
                 }
-            }).map_err(|e| IO(e))?;
+            }).map_err(IO)?;
         }
         if self.buffer.len() < n {
             return Err(NotFound);
@@ -89,7 +89,7 @@ impl<R> SearcherImpl<R> where R: Read + Seek {
     }
 
     fn scan_backward(&mut self, offset_boundary: Option<Integer>) -> SearchResult {
-        let mut offset: Integer = self.f.stream_position().map_err(|e| IO(e))?.into();
+        let mut offset: Integer = self.f.stream_position().map_err(IO)?.into();
         let pattern_len = self.pattern.as_bytes().len();
         self.buffer.clear();
         loop {
@@ -111,11 +111,11 @@ impl<R> SearcherImpl<R> where R: Read + Seek {
         let m = self.buffer.len();
         let n = self.pattern.as_bytes().len();
         if m < n {
-            self.f.read_fluently((n - m) as i64 * -1, |chunk| {
+            self.f.read_fluently(-((n - m) as i64), |chunk| {
                 for ch in chunk {
                     self.buffer.push_front(*ch);
                 }
-            }).map_err(|e| IO(e))?;
+            }).map_err(IO)?;
             Ok(())
         } else {
             Err(NotFound)

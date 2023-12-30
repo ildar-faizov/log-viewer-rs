@@ -99,7 +99,7 @@ impl Search {
             })
             .map(Clone::clone);
         if let Some(last_occurrence) = next_occurrence {
-            self.last_occurrence = Some(last_occurrence.clone());
+            self.last_occurrence = Some(last_occurrence);
             self.model_sender
                 .emit_event(ModelEvent::Search(Ok(last_occurrence)));
             Ok(())
@@ -156,7 +156,7 @@ impl Search {
         match response {
             SearchResponse::Find(search_result) => {
                 if let Ok(last_occurrence) = &search_result {
-                    self.last_occurrence = Some(last_occurrence.clone());
+                    self.last_occurrence = Some(*last_occurrence);
                 }
                 self.model_sender
                     .emit_event(ModelEvent::Search(search_result));

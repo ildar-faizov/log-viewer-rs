@@ -277,7 +277,7 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<R
 		},
 		GoToOpen(open) => {
 			if open {
-				app.add_layer(build_go_to_dialog(&mut *model.get_mut_ref()));
+				app.add_layer(build_go_to_dialog(&mut model.get_mut_ref()));
 			} else {
 				app.pop_layer();
 			}
@@ -285,7 +285,7 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<R
 		}
 		GoToDateOpen(open) => {
 			if open {
-				app.add_layer(build_go_to_date_dialog(&mut *model.get_mut_ref())); // TODO: handle Esc
+				app.add_layer(build_go_to_date_dialog(&mut model.get_mut_ref())); // TODO: handle Esc
 			} else {
 				app.pop_layer();
 			}
@@ -294,7 +294,7 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<R
 		HelpEvent(help_model_event) => {
 			match help_model_event {
 				HelpModelEvent::Show => {
-					let dialog = HelpDialog::build(&mut *model.get_mut_ref().get_help_model());
+					let dialog = HelpDialog::build(&mut model.get_mut_ref().get_help_model());
 					app.add_layer(dialog);
 					Ok(true)
 				},
@@ -302,7 +302,7 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<R
 					app.pop_layer();
 					Ok(true)
 				},
-				HelpModelEvent::ListUpdated => HelpDialog::update(app, &mut *model.get_mut_ref().get_help_model()),
+				HelpModelEvent::ListUpdated => HelpDialog::update(app, &mut model.get_mut_ref().get_help_model()),
 			}
 		},
 		MetricsEvent(evt) => {

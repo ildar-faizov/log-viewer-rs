@@ -28,7 +28,7 @@ impl BackgroundProcessRegistry {
         for (id, b) in self.processes.iter_mut() {
             let finished = b.handle_signals(root_model.clone(), id);
             if finished {
-                finished_ids.push(id.clone());
+                finished_ids.push(*id);
             }
         }
         for id in finished_ids {
@@ -108,10 +108,10 @@ where
         let listener = &mut self.listener;
         for signal in self.receiver.try_iter() {
             match signal {
-                Signal::Progress(p) => (),
-                Signal::Custom(msg) => listener(&mut *root_model.get_mut_ref(), Err(msg), id),
+                Signal::Progress(_p) => (),
+                Signal::Custom(msg) => listener(&mut root_model.get_mut_ref(), Err(msg), id),
                 Signal::Complete(result) => {
-                    listener(&mut *root_model.get_mut_ref(), Ok(result), id);
+                    listener(&mut root_model.get_mut_ref(), Ok(result), id);
                     return true;
                 }
             }

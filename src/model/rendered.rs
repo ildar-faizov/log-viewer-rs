@@ -104,7 +104,7 @@ pub struct DataRender {
 impl DataRender {
     pub fn new(raw_data: Data) -> Self {
         DataRender {
-            lines: raw_data.lines.into_iter().map(|line| LineRender::new(line)).collect(),
+            lines: raw_data.lines.into_iter().map(LineRender::new).collect(),
             start: raw_data.start,
             end: raw_data.end,
         }

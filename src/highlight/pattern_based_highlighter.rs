@@ -25,7 +25,7 @@ impl <T> Highlighter<T> for PatternBasedHighlighter<T> where T: Clone {
                 regex.captures_iter(str)
                     .flat_map(|caps| {
                         caps.iter()
-                            .filter_map(|m| m)
+                            .flatten()
                             .map(|c| Highlight::new(c.start(), c.end(), self.t.clone()))
                             .collect::<Vec<Highlight<T>>>()
                     })

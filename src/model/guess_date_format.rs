@@ -195,7 +195,7 @@ impl KnownDateFormat {
         let pattern = PATTERN_PART_REGEX.replace_all(date_format, |cpt: &Captures| {
             let m = cpt.get(0).unwrap().as_str();
             let pattern = FORMAT_TO_PATTERN.get(m)
-                .expect(format!("Unknown part: {}", m).as_str());
+                .unwrap_or_else(|| panic!("Unknown part: {}", m));
             format!("({})", pattern)
         });
         Regex::new(&pattern).unwrap()

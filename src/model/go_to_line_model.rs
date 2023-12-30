@@ -1,5 +1,4 @@
 use crate::background_process::background_process_registry::BackgroundProcessRegistry;
-use crate::background_process::run_in_background::RunInBackground;
 use crate::data_source::BUFFER_SIZE;
 use crate::model::model::{ModelEvent, RootModel};
 use crate::shared::Shared;
@@ -26,7 +25,7 @@ impl GoToLineModel {
         let go_to_model = AbstractGoToModel::new(
             model_sender,
             background_process_registry,
-            Box::new(|b| ModelEvent::GoToOpen(b)),
+            Box::new(ModelEvent::GoToOpen),
         );
         GoToLineModel {
             go_to_model,
@@ -86,7 +85,7 @@ impl GoToLineModel {
                             return Err(GoToError::Cancelled);
                         }
 
-                        if *ch == '\n' as u8 {
+                        if *ch == b'\n' {
                             line -= 1;
                         }
                         offset += 1;

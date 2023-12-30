@@ -38,7 +38,7 @@ impl SearchModel {
     }
 
     pub fn set_file_name(&mut self, file_name: Option<&str>) {
-        self.file_name = file_name.map(|s| PathBuf::from(s));
+        self.file_name = file_name.map(PathBuf::from);
     }
 
     pub fn set_visible(&mut self, visible: bool) {
@@ -67,7 +67,7 @@ impl SearchModel {
             .file_name(self.file_name.clone())
             .pattern(self.pattern.clone())
             .is_regexp(self.is_regexp)
-            .initial_offset(self.cursor_pos.filter(|_| self.is_from_cursor).clone())
+            .initial_offset(self.cursor_pos.filter(|_| self.is_from_cursor))
             .is_backward(self.is_backward)
             .build()
             .map_err(|e| anyhow!(e.to_string()))?;
@@ -75,7 +75,7 @@ impl SearchModel {
         let mut search = Search::new(
             self.model_sender.clone(),
             constructor,
-            &mut *background_process_registry.get_mut_ref()
+            &mut background_process_registry.get_mut_ref()
         );
         search.search(direction)?;
         Ok(search)

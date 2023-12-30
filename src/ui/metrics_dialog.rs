@@ -16,7 +16,7 @@ pub fn handle_metrics_model_event(app: &mut Cursive, evt: MetricsModelEvent) {
                 let dialog = {
                     let root_model = app.get_root_model();
                     let metrics_model = root_model.get_metrics_model();
-                    build_metrics_dialog(&*metrics_model)
+                    build_metrics_dialog(&metrics_model)
                 };
                 app.add_layer(dialog);
             } else {

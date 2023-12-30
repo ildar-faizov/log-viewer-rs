@@ -341,7 +341,7 @@ pub mod event_emitter {
         fn emit_event(&self, evt: T) {
             let msg = format!("Failed to send event: {:?}", evt);
             self.send(evt)
-                .expect(msg.as_str());
+                .unwrap_or_else(|_| { panic!("{}", msg) });
         }
     }
 }

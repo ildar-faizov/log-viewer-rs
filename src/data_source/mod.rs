@@ -89,7 +89,7 @@ impl LineBuilder {
         let content = self.content.unwrap();
         let start = self.start.unwrap();
         let end = self.end.unwrap();
-        let line_no = self.line_no.clone();
+        let line_no = self.line_no;
         Line {
             content,
             start,
@@ -196,7 +196,7 @@ pub fn read_delimited<R, F>(
                         stack.push(ch.get_char());
                         start = start.or(Some(ch.get_offset()));
                     } else {
-                        let line_no = current_no.clone();
+                        let line_no = current_no;
                         current_no = current_no.map(|n| n + 1);
                         if !stack.is_empty() || allow_empty_segments {
                             let (content, bytes_trimmed) = flush(&mut stack);
@@ -221,7 +221,7 @@ pub fn read_delimited<R, F>(
                             .with_content(content)
                             .with_start(start.unwrap())
                             .with_end(f.stream_position()? - bytes_trimmed)
-                            .with_line_no(current_no.clone())
+                            .with_line_no(current_no)
                             .build();
                         data.push(line);
                     }
@@ -247,7 +247,7 @@ pub fn read_delimited<R, F>(
                         stack.push(ch.get_char());
                         end = end.or(Some(ch.get_end()));
                     } else {
-                        let line_no = current_no.clone();
+                        let line_no = current_no;
                         current_no = current_no.map(|n| n.saturating_sub(1));
                         if !stack.is_empty() || allow_empty_segments {
                             stack.reverse();
@@ -274,7 +274,7 @@ pub fn read_delimited<R, F>(
                             .with_content(content)
                             .with_start(0)
                             .with_end(end.unwrap() - bytes_trimmed)
-                            .with_line_no(current_no.clone())
+                            .with_line_no(current_no)
                             .build();
                         data.push(line);
                     }
@@ -463,7 +463,7 @@ impl<R, B> LineSourceImpl<R, B> where R: Read + Seek, B: LineSourceBackend<R> {
                         Ok(0) => break,
                         Ok(b) => {
                             bytes_read += b;
-                            number_of_lines += buf.iter().filter(|ch| **ch == '\n' as u8).count() as u64
+                            number_of_lines += buf.iter().filter(|ch| **ch == b'\n').count() as u64
                         },
                     }
                 }
@@ -509,7 +509,7 @@ impl<R, B> LineSource for LineSourceImpl<R, B> where R: Read + Seek, B: LineSour
         log::trace!("Result: {:?}", result);
 
         if self.track_line_no {
-            if let Some(current_line_no) = result.current_line_no.clone() {
+            if let Some(current_line_no) = result.current_line_no {
                 self.current_line_no.replace(current_line_no);
             } else {
                 log::warn!("Current line no has not been calculated in read_lines(offset={}, number_of_lines={})", offset, number_of_lines);

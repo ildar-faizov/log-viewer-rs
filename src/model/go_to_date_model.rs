@@ -6,7 +6,7 @@ use crate::model::abstract_go_to_model::{AbstractGoToModel, GoToError, GoToResul
 use crate::model::model::{ModelEvent, RootModel};
 use crate::shared::Shared;
 use chrono::prelude::*;
-use log::{Level, log};
+use log::{Level};
 use uuid::Uuid;
 use fluent_integer::Integer;
 use crate::background_process::task_context::TaskContext;
@@ -14,7 +14,7 @@ use crate::data_source::{Direction, FileBackend, Line, LineSource, LineSourceImp
 use crate::model::guess_date_format::{GuessContext, KnownDateFormat};
 use crate::utils::measure_l;
 
-pub const DATE_FORMAT: &'static str = "%d-%b-%Y %T";
+pub const DATE_FORMAT: &str = "%d-%b-%Y %T";
 
 pub struct GoToDateModel {
     go_to_model: AbstractGoToModel,
@@ -29,7 +29,7 @@ impl GoToDateModel {
         let go_to_model = AbstractGoToModel::new(
             model_sender,
             background_process_registry,
-            Box::new(|b| ModelEvent::GoToDateOpen(b)),
+            Box::new(ModelEvent::GoToDateOpen),
         );
         Self {
             go_to_model,
@@ -92,7 +92,7 @@ impl GoToDateModel {
         ctx: &mut TaskContext<(), GoToResult>,
     ) -> GoToResult {
         let total = reader.get_length();
-        let mut progress = 0_u8;
+        let _progress = 0_u8;
         let (mut line1, mut dt1) = Self::take_line(
             reader,
             0,

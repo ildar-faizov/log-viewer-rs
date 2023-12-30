@@ -50,7 +50,7 @@ pub fn build_open_file_dialog(model: &mut OpenFileModel) -> ViewWithCallback {
 
 pub fn handle_open_file_model_event(model: &mut OpenFileModel, evt: OpenFileModelEvent) -> ViewUpdateCallback {
     if !model.is_open() {
-        return Box::new(|app| {});
+        return Box::new(|_app| {});
     }
     match evt {
         OpenFileModelEvent::LocationUpdated => {
@@ -125,7 +125,7 @@ fn build_file_selector(model: &mut OpenFileModel) -> Box<dyn View> {
     let mut scroll_view = SelectView::<String>::new()
         .on_select(|app, item| {
             let root_model = app.get_root_model();
-            let mut open_file_model = &mut *root_model.get_open_file_model();
+            let open_file_model = &mut *root_model.get_open_file_model();
             open_file_model.set_current_file(Some(item));
         })
         .on_submit(select_file)
@@ -166,7 +166,7 @@ fn populate_file_selector(model: &OpenFileModel) -> Box<dyn FnOnce(&mut ScrollVi
 
 fn select_file(app: &mut Cursive, item: &str) {
     let root_model = app.get_root_model();
-    let mut open_file_model = &mut *root_model.get_open_file_model();
+    let open_file_model = &mut *root_model.get_open_file_model();
     open_file_model.set_current_file(Some(item));
     open_file_model.submit_current_file();
 }
@@ -235,8 +235,8 @@ fn print_date(time: SystemTime) -> String {
 }
 
 fn close(app: &mut Cursive) {
-    let mut root_model = &mut *app.get_root_model();
-    let mut open_file_model = &mut *root_model.get_open_file_model();
+    let root_model = &mut *app.get_root_model();
+    let open_file_model = &mut *root_model.get_open_file_model();
     open_file_model.set_open(false);
 }
 
