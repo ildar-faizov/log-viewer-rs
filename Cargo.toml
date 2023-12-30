@@ -32,6 +32,10 @@ chrono = "0.4.31"
 phf = { version = "0.11.2", features = ["macros"] }
 lazy_static = { version = "1.4.0", features = [] }
 itertools = "0.12.0"
+metrics = "0.22.0"
+metrics-util = "0.16.0"
+kolmogorov_smirnov = "1.1.0"
+ordered-float = "4.2.0"
 
 #[dependencies.cursive]
 #version = "*"

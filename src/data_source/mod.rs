@@ -3,6 +3,7 @@ use std::io::{Read, Seek, BufReader, SeekFrom, Cursor};
 use std::fs::File;
 use std::cmp::{min, Ordering};
 use std::cell::RefMut;
+use metrics::{describe_histogram, Unit};
 use fluent_integer::Integer;
 use crate::advanced_io::advanced_buf_reader::BidirectionalBufRead;
 use crate::advanced_io::seek_to::SeekTo;
@@ -10,8 +11,11 @@ use crate::shared::Shared;
 use crate::utils;
 use crate::utils::utf8::UtfChar;
 use crate::data_source::char_navigation::{next_char, peek_next_char, peek_prev_char, prev_char};
+use crate::utils::stat;
 
 pub const BUFFER_SIZE: usize = 8192;
+
+const METRIC_READ_DELIMITED: &str = "read_delimited";
 
 #[derive(Debug, Default, Clone, Eq, PartialEq)]
 pub struct Line {
@@ -419,6 +423,7 @@ impl<R, B> LineSourceImpl<R, B> where R: Read + Seek, B: LineSourceBackend<R> {
     }
 
     pub fn new(backend: B) -> LineSourceImpl<R, B> {
+        describe_histogram!(METRIC_READ_DELIMITED, Unit::Microseconds, "Reading from file");
         LineSourceImpl {
             backend,
             file_reader: None,
@@ -496,7 +501,9 @@ impl<R, B> LineSource for LineSourceImpl<R, B> where R: Read + Seek, B: LineSour
         let current_no = self.current_line_no;
         let result = self.with_reader(|mut f| {
             log::trace!("read_lines number_of_lines = {}, offset = {}", number_of_lines, offset);
-            read_delimited(&mut f, offset, number_of_lines, true, current_no, |c| *c == '\n')
+            stat(METRIC_READ_DELIMITED, &Unit::Microseconds, || {
+                read_delimited(&mut f, offset, number_of_lines, true, current_no, |c| *c == '\n')
+            })
         }).unwrap_or(Data::default());
 
         log::trace!("Result: {:?}", result);

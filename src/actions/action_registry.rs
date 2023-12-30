@@ -33,6 +33,7 @@ use crate::actions::shift_left::ShiftLeftAction;
 use crate::actions::shift_right::ShiftRightAction;
 use crate::actions::shift_up::ShiftUpAction;
 use crate::actions::test_bgp::TestBGPAction;
+use crate::actions::application_metrics::ApplicationMetricsAction;
 
 pub fn action_registry() -> HashMap<Event, Rc<dyn Action + 'static>> {
     let mut map = HashMap::new();
@@ -87,6 +88,7 @@ pub fn plain_action_registry() -> Vec<Rc<dyn Action + 'static>> {
         Rc::new(GoToDateAction::default()),
 
         Rc::new(HelpAction::default()),
+        Rc::new(ApplicationMetricsAction::default()),
 
         Rc::new(TestBGPAction::default()),
 

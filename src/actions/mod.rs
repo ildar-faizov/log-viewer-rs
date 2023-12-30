@@ -32,3 +32,4 @@ mod help;
 mod go_to_line;
 mod go_to_date;
 mod open_file;
+mod application_metrics;

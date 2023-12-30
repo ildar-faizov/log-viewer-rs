@@ -5,6 +5,8 @@ use cursive::theme::PaletteColor::{Background, HighlightText, Primary};
 use cursive::utils::span::SpannedStr;
 use cursive::view::Nameable;
 use cursive::views::{Canvas, NamedView};
+use log::Level;
+use metrics::{describe_histogram, Unit};
 use crate::actions::action_registry::action_registry;
 use crate::highlight::highlighter_registry::cursive_highlighters;
 use crate::highlight::style_with_priority::StyleWithPriority;
@@ -12,9 +14,15 @@ use crate::model::model::RootModel;
 use crate::shared::Shared;
 use crate::ui::line_drawer::LineDrawer;
 use crate::ui::ui_elements::UIElementName;
-use crate::utils::measure;
+use crate::utils::{stat, stat_l};
+
+const METRIC_DRAW: &str = "draw";
+const METRIC_ACTION: &str = "action";
 
 pub fn build_canvas(model: Shared<RootModel>) -> NamedView<Canvas<Shared<RootModel>>> {
+    describe_histogram!(METRIC_DRAW, Unit::Microseconds, "Time to draw canvas");
+    describe_histogram!(METRIC_ACTION, Unit::Microseconds, "UI action");
+
     let actions = action_registry();
 
     let palette = Theme::default().palette;
@@ -27,7 +35,7 @@ pub fn build_canvas(model: Shared<RootModel>) -> NamedView<Canvas<Shared<RootMod
         effects: EnumSet::only(Effect::Italic)
     }, 1, 0xff);
     Canvas::new(model.clone())
-        .with_draw(move |state, printer| measure("draw",  || {
+        .with_draw(move |state, printer| stat(METRIC_DRAW, &Unit::Milliseconds, || {
             let mut state = state.get_mut_ref();
 
             state.set_viewport_height(printer.size.y); // fetches data
@@ -70,10 +78,10 @@ pub fn build_canvas(model: Shared<RootModel>) -> NamedView<Canvas<Shared<RootMod
         .with_on_event(move |state, event| {
             match actions.get(&event) {
                 Some(action) => {
-                    log::info!("Event {:?} occurred, action {} will be invoked", event, action.description());
-                    let result = action.perform_action(&mut state.get_mut_ref(), &event);
-                    log::info!("Event {:?} handled, action {} finished", event, action.description());
-                    result
+                    let state = &mut state.get_mut_ref();
+                    stat_l(Level::Info, METRIC_ACTION, &Unit::Microseconds, move ||
+                        action.perform_action(state, &event)
+                    )
                 },
                 None => EventResult::Ignored
             }

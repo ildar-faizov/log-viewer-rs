@@ -1,6 +1,8 @@
 use std::borrow::Cow;
+use std::time::Duration;
 use cursive::utils::span::IndexedCow;
 use log::Level;
+use metrics::{histogram, Unit};
 use stopwatch::Stopwatch;
 use unicode_segmentation::UnicodeSegmentation;
 use fluent_integer::Integer;
@@ -64,10 +66,47 @@ pub fn measure_l<R, F>(level: Level, descr: &str, f: F) -> R
     where
         F: FnOnce() -> R
 {
-    let sw = Stopwatch::start_new();
-    let result = f();
-    log::log!(level, "{} {:?}", descr, sw.elapsed());
+    let (result, duration) = measuring_func(f)();
+    log::log!(level, "{} {:?}", descr, duration);
     result
+}
+
+pub fn stat<R, F>(descr: &'static str, unit: &Unit, f: F) -> R
+    where F: FnOnce() -> R {
+    stat_l(Level::Trace, descr, unit, f)
+}
+
+pub fn stat_l<R, F>(level: Level, descr: &'static str, unit: &Unit, f: F) -> R
+    where F: FnOnce() -> R {
+    let (result, duration) = measuring_func(f)();
+    log::log!(level, "{} {:?}", descr, duration);
+    histogram!(descr).record(duration.to_unit(unit));
+    result
+}
+
+fn measuring_func<'a, R, F>(f: F) -> Box<dyn FnOnce() -> (R, Duration) + 'a>
+where F: FnOnce() -> R + 'a {
+    Box::new(|| {
+        let sw = Stopwatch::start_new();
+        let result = f();
+        (result, sw.elapsed())
+    })
+}
+
+trait ToUnit {
+    fn to_unit(&self, unit: &Unit) -> f64;
+}
+
+impl ToUnit for Duration {
+    fn to_unit(&self, unit: &Unit) -> f64 {
+        match unit {
+            Unit::Seconds => self.as_secs_f64(),
+            Unit::Milliseconds => self.as_millis() as f64,
+            Unit::Microseconds => self.as_micros() as f64,
+            Unit::Nanoseconds => self.as_nanos() as f64,
+            _ => panic!("")
+        }
+    }
 }
 
 pub mod utf8 {

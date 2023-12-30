@@ -29,6 +29,7 @@ use crate::model::go_to_date_model::GoToDateModel;
 use crate::model::go_to_line_model::GoToLineModel;
 use crate::model::guess_date_format::{guess_date_format, GuessContext, KnownDateFormat};
 use crate::model::help_model::{HelpModel, HelpModelEvent};
+use crate::model::metrics_model::{MetricsHolder, MetricsModel, MetricsModelEvent};
 use crate::model::open_file_model::{OpenFileModel, OpenFileModelEvent};
 use crate::model::rendered::{DataRender, LineRender};
 use crate::model::scroll_position::ScrollPosition;
@@ -66,6 +67,8 @@ pub struct RootModel {
     go_to_date_model: Shared<GoToDateModel>,
     // help
     help_model: Shared<HelpModel>,
+    // metrics
+    metrics_model: Shared<MetricsModel>,
 }
 
 #[derive(Debug)]
@@ -83,6 +86,7 @@ pub enum ModelEvent {
     GoToOpen(bool),
     GoToDateOpen(bool),
     HelpEvent(HelpModelEvent),
+    MetricsEvent(MetricsModelEvent),
     Hint(String),
     Error(Option<String>),
     Quit,
@@ -96,12 +100,17 @@ pub struct CursorPosition {
 }
 
 impl RootModel {
-    pub fn new(model_sender: Sender<ModelEvent>, background_process_registry: Shared<BackgroundProcessRegistry>) -> Shared<RootModel> {
+    pub fn new(
+        model_sender: Sender<ModelEvent>,
+        background_process_registry: Shared<BackgroundProcessRegistry>,
+        metrics_holder: MetricsHolder,
+    ) -> Shared<RootModel> {
         let sender = model_sender.clone();
         let sender2 = model_sender.clone();
         let sender3 = model_sender.clone();
         let sender4 = model_sender.clone();
         let sender5 = model_sender.clone();
+        let sender6 = model_sender.clone();
         let registry = background_process_registry.clone();
         let registry3 = background_process_registry.clone();
         let registry4 = background_process_registry.clone();
@@ -128,6 +137,7 @@ impl RootModel {
             go_to_line_model: Shared::new(GoToLineModel::new(sender3, registry3)),
             go_to_date_model: Shared::new(GoToDateModel::new(sender4, registry4)),
             help_model: Shared::new(HelpModel::new(sender2)),
+            metrics_model: Shared::new(MetricsModel::new(sender6, metrics_holder)),
         };
 
         Shared::new(root_model)
@@ -822,6 +832,10 @@ impl RootModel {
         self.help_model.get_mut_ref()
     }
 
+    pub fn get_metrics_model(&self) -> RefMut<MetricsModel> {
+        self.metrics_model.get_mut_ref()
+    }
+
     pub fn get_date_format(&self) -> Option<&'static KnownDateFormat> {
         self.date_format.clone()
     }
@@ -869,6 +883,13 @@ impl RootModel {
             let mut help_model = self.help_model.get_mut_ref();
             if help_model.is_open() {
                 help_model.set_open(false);
+            }
+        }
+
+        {
+            let mut metrics_model = self.metrics_model.get_mut_ref();
+            if metrics_model.is_open() {
+                metrics_model.set_open(false);
             }
         }
 
