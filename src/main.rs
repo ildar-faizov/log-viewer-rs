@@ -69,6 +69,7 @@ use crate::ui::search_ui::build_search_ui;
 use crate::ui::with_root_model::WithRootModel;
 use crate::ui::ui_elements::UIElementName;
 use crate::utils::stat;
+use crate::welcome::{CARGO_PKG_AUTHORS, CARGO_PKG_DESCRIPTION, CARGO_PKG_VERSION};
 
 const METRIC_APP_CYCLE: &str = "app_cycle";
 
@@ -144,9 +145,9 @@ fn init_metrics() -> anyhow::Result<(Rc<Registry<metrics::Key, AtomicStorage>>, 
 
 fn parse_args<'a>() -> ArgMatches<'a> {
 	App::new("Log Viewer")
-		.version("0.1")
-		.author("Ildar Faizov")
-		.about("Log viewer")
+		.version(CARGO_PKG_VERSION)
+		.author(CARGO_PKG_AUTHORS)
+		.about(CARGO_PKG_DESCRIPTION)
 		.arg(Arg::with_name("file")
 			.short("f")
 			.value_name("FILE")

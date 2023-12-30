@@ -1,7 +1,10 @@
 use lazy_static::lazy_static;
 
-const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
-const CARGO_PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
+pub const CARGO_PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const CARGO_PKG_AUTHORS: &str = env!("CARGO_PKG_AUTHORS");
+pub const CARGO_PKG_DESCRIPTION: &str = env!("CARGO_PKG_DESCRIPTION");
+
 
 lazy_static! {
     pub static ref WELCOME: String = {
