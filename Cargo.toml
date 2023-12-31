@@ -13,7 +13,7 @@ log4rs = "1.2.0"
 termion = "2.0.3"
 cursive = "0.20.0"
 cursive_table_view = "0.14"
-clap = "~2.33"
+clap = { version = "4.4.12", features = ["derive"] }
 crossbeam-channel = "0.5.4"
 uuid = { version = "1.6.1", features = ["v4"] }
 num-rational = "*"

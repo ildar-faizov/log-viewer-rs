@@ -24,12 +24,13 @@ mod background_process;
 mod immediate;
 mod welcome;
 mod application_metrics;
+mod args;
 
 use std::collections::HashMap;
 use cursive::{Cursive, CursiveRunnable, CursiveRunner, View};
 use cursive::views::{TextView, ViewRef, Canvas, Checkbox};
 
-use clap::{Arg, App, ArgMatches};
+use clap::Parser;
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use crate::model::model::{ModelEvent, RootModel};
@@ -55,6 +56,7 @@ use human_bytes::human_bytes;
 use metrics::{describe_histogram, KeyName, Unit};
 use metrics_util::registry::{AtomicStorage, Registry};
 use crate::application_metrics::{ApplicationRecorder, Description};
+use crate::args::Args;
 use crate::background_process::background_process_registry::BackgroundProcessRegistry;
 use crate::model::help_model::HelpModelEvent;
 use crate::model::metrics_model::MetricsHolder;
@@ -69,12 +71,11 @@ use crate::ui::search_ui::build_search_ui;
 use crate::ui::with_root_model::WithRootModel;
 use crate::ui::ui_elements::UIElementName;
 use crate::utils::stat;
-use crate::welcome::{CARGO_PKG_AUTHORS, CARGO_PKG_DESCRIPTION, CARGO_PKG_VERSION};
 
 const METRIC_APP_CYCLE: &str = "app_cycle";
 
 fn main() -> std::io::Result<()> {
-	let args = parse_args();
+	let args = Args::parse();
 
 	init_logging(&args)?;
 	init_panic_hook();
@@ -87,7 +88,7 @@ fn main() -> std::io::Result<()> {
 	Ok(())
 }
 
-fn init_logging(args: &ArgMatches) -> std::io::Result<()> {
+fn init_logging(args: &Args) -> std::io::Result<()> {
 	let file = OpenOptions::new().write(true).open("./logv.log");
 	if let Ok(file) = file {
 		file.set_len(0)?;
@@ -98,8 +99,8 @@ fn init_logging(args: &ArgMatches) -> std::io::Result<()> {
 		.build("./logv.log")
 		.unwrap();
 
-	let level = match args.value_of("loglevel") {
-		Some(loglevel) => LevelFilter::from_str(loglevel).unwrap_or(LevelFilter::Info),
+	let level = match args.log_level.as_ref() {
+		Some(loglevel) => loglevel.clone(),
 		None => LevelFilter::Info
 	};
 
@@ -143,31 +144,10 @@ fn init_metrics() -> anyhow::Result<(Rc<Registry<metrics::Key, AtomicStorage>>, 
 		})
 }
 
-fn parse_args<'a>() -> ArgMatches<'a> {
-	App::new("Log Viewer")
-		.version(CARGO_PKG_VERSION)
-		.author(CARGO_PKG_AUTHORS)
-		.about(CARGO_PKG_DESCRIPTION)
-		.arg(Arg::with_name("file")
-			.short("f")
-			.value_name("FILE")
-			.help("Log file")
-			.takes_value(true)
-		)
-		.arg(Arg::with_name("loglevel")
-			.short("L")
-			.value_name("LOGLEVEL")
-			.help("Logging level")
-			.default_value("info")
-			.takes_value(true)
-		)
-		.get_matches()
-}
-
-fn create_model(args: &ArgMatches, sender: Sender<ModelEvent>, metrics_holder: MetricsHolder) -> (Shared<RootModel>, Shared<BackgroundProcessRegistry>) {
+fn create_model(args: &Args, sender: Sender<ModelEvent>, metrics_holder: MetricsHolder) -> (Shared<RootModel>, Shared<BackgroundProcessRegistry>) {
 	let background_process_registry = Shared::new(BackgroundProcessRegistry::new());
 	let model = RootModel::new(sender, background_process_registry.clone(), metrics_holder);
-	model.get_mut_ref().set_file_name(args.value_of("file"));
+	model.get_mut_ref().set_file_name(args.file.as_ref().map(|s| s.as_str()));
 	(model, background_process_registry)
 }
 
