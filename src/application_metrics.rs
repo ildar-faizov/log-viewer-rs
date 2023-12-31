@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
-use metrics::{Counter, Gauge, Histogram, HistogramFn, Key, KeyName, Metadata, Recorder, SharedString, Unit};
+use std::sync::Arc;
+use metrics::{Counter, Gauge, Histogram, Key, KeyName, Metadata, Recorder, SharedString, Unit};
 use metrics_util::registry::{AtomicStorage, Registry};
 use crate::shared::Shared;
 
@@ -62,28 +62,6 @@ impl Recorder for ApplicationRecorder {
         self.registry.get_or_create_histogram(key, |v| {
             Histogram::from_arc(Arc::clone(v))
         })
-    }
-}
-
-struct HistogramWrapper(Mutex<metrics_util::Histogram>);
-
-impl HistogramWrapper {
-    fn new(h: metrics_util::Histogram) -> Self {
-        Self(Mutex::new(h))
-    }
-}
-
-impl HistogramFn for HistogramWrapper {
-    fn record(&self, value: f64) {
-        let result = self.0.lock();
-        match result {
-            Ok(mut h) => {
-                h.record(value);
-            }
-            Err(err) => {
-                log::error!("Failed to acquire lock. {:?}", err)
-            }
-        }
     }
 }
 
