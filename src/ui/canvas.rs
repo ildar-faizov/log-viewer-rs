@@ -79,9 +79,10 @@ pub fn build_canvas(model: Shared<RootModel>) -> NamedView<Canvas<Shared<RootMod
             match actions.get(&event) {
                 Some(action) => {
                     let state = &mut state.get_mut_ref();
-                    stat_l(Level::Info, METRIC_ACTION, &Unit::Microseconds, move ||
+                    stat_l(Level::Info, METRIC_ACTION, &Unit::Microseconds, move || {
+                        profiling::scope!("ui action", action.description());
                         action.perform_action(state, &event)
-                    )
+                    })
                 },
                 None => EventResult::Ignored
             }

@@ -7,6 +7,9 @@ extern crate metrics;
 extern crate metrics_util;
 extern crate kolmogorov_smirnov;
 extern crate ordered_float;
+extern crate puffin;
+extern crate puffin_http;
+extern crate profiling;
 
 mod model;
 mod ui;
@@ -40,6 +43,7 @@ use std::fs::OpenOptions;
 use std::panic;
 use std::rc::Rc;
 use std::str::FromStr;
+use std::time::Duration;
 use anyhow::anyhow;
 use cursive::event::Event;
 use cursive::event::Event::Key;
@@ -73,6 +77,7 @@ use crate::ui::ui_elements::UIElementName;
 use crate::utils::stat;
 
 const METRIC_APP_CYCLE: &str = "app_cycle";
+const PROFILER_FLUSH_PERIOD: Duration = Duration::from_secs(5);
 
 fn main() -> std::io::Result<()> {
 	let args = Args::parse();
@@ -80,6 +85,7 @@ fn main() -> std::io::Result<()> {
 	init_logging(&args)?;
 	init_panic_hook();
 	let metrics = init_metrics();
+	init_profiler(&args);
 
 	let (sender, receiver) = unbounded();
 	let (model, background_process_registry) = create_model(&args, sender, metrics.ok());
@@ -144,6 +150,16 @@ fn init_metrics() -> anyhow::Result<(Rc<Registry<metrics::Key, AtomicStorage>>, 
 		})
 }
 
+fn init_profiler(args: &Args) {
+	if let Some(port) = args.profiler_port.as_ref() {
+		let server_addr = format!("127.0.0.1:{}", port);
+		let puffin_server = puffin_http::Server::new(&server_addr).unwrap();
+		Box::leak(Box::new(puffin_server));
+		puffin::set_scopes_on(true);
+		log::info!("Profiler (Puffin) is on at {}", &server_addr);
+	}
+}
+
 fn create_model(args: &Args, sender: Sender<ModelEvent>, metrics_holder: MetricsHolder) -> (Shared<RootModel>, Shared<BackgroundProcessRegistry>) {
 	let background_process_registry = Shared::new(BackgroundProcessRegistry::new());
 	let model = RootModel::new(sender, background_process_registry.clone(), metrics_holder);
@@ -165,10 +181,13 @@ fn run_ui(receiver: Receiver<ModelEvent>, model_ref: Shared<RootModel>, backgrou
 	app.add_fullscreen_layer(build_ui(model_ref.clone()));
 	app.set_user_data(model_ref.clone());
 
+	let mut profiler_period = std::time::Instant::now();
+
 	// cursive event loop
 	app.refresh();
 	while app.is_running() {
 		stat(METRIC_APP_CYCLE, &Unit::Milliseconds, || {
+			profiling::scope!("App cycle");
 			app.step();
 
 			background_process_registry.get_mut_ref()
@@ -185,10 +204,17 @@ fn run_ui(receiver: Receiver<ModelEvent>, model_ref: Shared<RootModel>, backgrou
 			if state_changed {
 				app.refresh();
 			}
+
+			if puffin::are_scopes_on() && profiler_period.elapsed() > PROFILER_FLUSH_PERIOD {
+				profiling::finish_frame!();
+				// puffin::GlobalProfiler::lock().new_frame();
+				profiler_period = std::time::Instant::now();
+			}
 		})
 	}
 }
 
+#[profiling::function]
 fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<RootModel>, event: ModelEvent) -> Result<bool, &'static str> {
 	match event {
 		OpenFileDialog(show) => {

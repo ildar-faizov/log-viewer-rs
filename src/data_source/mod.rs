@@ -128,6 +128,7 @@ impl From<bool> for Direction {
 /// Char `ch` is considered to be a delimiter if and only of `is_delimiter(&ch) == true`.
 ///
 /// If `n == 0`, the method returns empty Data with no segments.
+#[profiling::function]
 pub fn read_delimited<R, F>(
     f: &mut BufReader<R>,
     offset: Integer,
@@ -145,6 +146,7 @@ pub fn read_delimited<R, F>(
     let shift = (offset - actual_offset).as_i64();
     let mut current_no = match current_no {
         Some(n) => {
+            profiling::scope!("Seek to offset with line counting");
             let mut number_of_lines = 0_u64;
             let line_counter = |chunk: &[u8]|
                 number_of_lines += chunk.iter().filter(|b| char::from(**b) == '\n').count() as u64;

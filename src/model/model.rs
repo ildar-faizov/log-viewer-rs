@@ -214,6 +214,7 @@ impl RootModel {
         true
     }
 
+    #[profiling::function]
     pub fn scroll(&mut self, num_of_lines: Integer) -> bool {
         if num_of_lines == 0 {
             return true;
@@ -305,6 +306,7 @@ impl RootModel {
         }
     }
 
+    #[profiling::function]
     pub fn move_cursor(&mut self, delta: CursorShift, adjust_selection: bool) {
         log::trace!("move_cursor: delta = {:?}", delta);
         let current_pos = self.get_cursor_in_cache(); // TODO
@@ -609,6 +611,7 @@ impl RootModel {
         self.date_format = None;
     }
 
+    #[profiling::function]
     fn update_viewport_content(&mut self) -> bool {
         if self.viewport_height == 0 {
             return true;
@@ -672,6 +675,7 @@ impl RootModel {
     }
 
     /// Makes `offset` visible, adjusting vertical and horizontal scroll if necessary
+    #[profiling::function]
     fn bring_into_view(&mut self, offset: Integer) -> bool {
         log::trace!("bring_into_view(offset={})", offset);
         // if let Some(mut datasource) = self.get_datasource_ref() {
@@ -787,6 +791,7 @@ impl RootModel {
         self.datasource.as_ref().map(|ds| ds.get_mut_ref())
     }
 
+    #[profiling::function]
     fn scroll_forcibly(&mut self, offset: Integer) -> bool {
         let mut datasource = self.get_datasource_ref().unwrap();
         let h = self.viewport_height;
