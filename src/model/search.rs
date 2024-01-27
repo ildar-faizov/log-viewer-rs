@@ -20,6 +20,7 @@ use crossbeam_channel::{Receiver, Sender};
 use fluent_integer::Integer;
 use std::rc::Rc;
 use uuid::Uuid;
+use crate::background_process::signal::Signal;
 
 pub struct Search {
     model_sender: Sender<ModelEvent>,
@@ -51,12 +52,12 @@ impl Search {
                 )
             })
             .with_listener(move |root_model, s, id| match s {
-                Ok(Ok(())) => log::info!("Search finished"),
-                Ok(Err(DaemonError::SearcherConstruction(e))) => {
+                Signal::Complete(Ok(())) => log::info!("Search finished"),
+                Signal::Complete(Err(DaemonError::SearcherConstruction(e))) => {
                     root_model.set_current_search(None);
                     root_model.set_error(Box::new(e));
                 },
-                Err(response) => {
+                Signal::Custom(response) => {
                     let mut current_search = root_model.get_current_search();
                     let mut err = None;
                     if let Some(search) = current_search.as_mut() {
@@ -69,7 +70,8 @@ impl Search {
                     if let Some(err) = err {
                         root_model.set_error(Box::new(err));
                     }
-                }
+                },
+                Signal::Progress(_) => (),
             })
             .run();
         Search {

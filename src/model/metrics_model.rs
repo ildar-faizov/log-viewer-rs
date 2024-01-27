@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use crossbeam_channel::Sender;
 use metrics::{Key, KeyName};
 use metrics_util::AtomicBucket;
@@ -63,17 +64,24 @@ impl MetricsModel {
 
     pub fn get_data(&self) -> Vec<SingleMetrics> {
         self.registry.as_ref().zip(self.descriptions.as_ref()).map(|(r, d)| {
+            let gauges = r.get_gauge_handles();
             let histograms = r.get_histogram_handles();
             d.get_ref().iter().map(|(key, descr)| {
                 match descr.get_metric_type() {
                     MetricType::Counter => todo!(),
-                    MetricType::Gauge => todo!(),
+                    MetricType::Gauge => {
+                        let g = gauges.get(&Key::from_name(key.clone()));
+                        SingleMetrics::from_gauge(descr, g)
+                    },
                     MetricType::Histogram => {
                         let h = histograms.get(&Key::from_name(key.clone()));
                         SingleMetrics::from_hist(descr, h)
                     }
                 }
-            }).collect()
+            }).collect::<Vec<SingleMetrics>>()
+        }).map(|mut v| {
+            v.sort();
+            v
         }).unwrap_or_default()
     }
 
@@ -83,6 +91,18 @@ impl MetricsModel {
 }
 
 impl SingleMetrics {
+    fn from_gauge(description: &Description, value: Option<&Arc<AtomicU64>>) -> Self {
+        SingleMetrics {
+            description: description.get_description().to_string(),
+            unit: description.get_unit().map(|unit| unit.as_canonical_label()),
+            count: value.map(|a| a.load(Ordering::Relaxed)).unwrap_or_default() as usize,
+            p50: None,
+            p90: None,
+            p99: None,
+            max: None,
+        }
+    }
+
     fn from_hist(description: &Description, bucket: Option<&Arc<AtomicBucket<f64>>>) -> Self {
         let mut percentiles = HashMap::new();
         let mut count = 0;
@@ -108,5 +128,25 @@ impl SingleMetrics {
             p99: percentiles.get(&PERCENTILES[2]).map(|v| v.0),
             max: percentiles.get(&PERCENTILES[3]).map(|v| v.0),
         }
+    }
+}
+
+impl PartialEq for SingleMetrics {
+    fn eq(&self, other: &Self) -> bool {
+        self.description.eq(&other.description)
+    }
+}
+
+impl PartialOrd for SingleMetrics {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.description.partial_cmp(&other.description)
+    }
+}
+
+impl Eq for SingleMetrics {}
+
+impl Ord for SingleMetrics {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.description.cmp(&other.description)
     }
 }

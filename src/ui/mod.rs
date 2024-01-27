@@ -8,6 +8,8 @@ pub mod go_to_date_dialog;
 pub mod open_file_dialog;
 pub mod with_root_model;
 pub mod metrics_dialog;
+pub mod progress_dialog;
+pub mod ui_utils;
 mod span_producer;
 mod line_drawer;
 mod canvas;

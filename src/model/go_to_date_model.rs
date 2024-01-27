@@ -9,6 +9,7 @@ use chrono::prelude::*;
 use log::{Level};
 use uuid::Uuid;
 use fluent_integer::Integer;
+use crate::background_process::signal::Signal;
 use crate::background_process::task_context::TaskContext;
 use crate::data_source::{Direction, FileBackend, Line, LineSource, LineSourceImpl};
 use crate::model::guess_date_format::{GuessContext, KnownDateFormat};
@@ -74,7 +75,7 @@ impl GoToDateModel {
         Ok(())
     }
 
-    fn handle_result(root_model: &mut RootModel, pid: Uuid, msg: Result<Result<Integer, GoToError>, ()>) -> Result<(), GoToError> {
+    fn handle_result(root_model: &mut RootModel, pid: Uuid, msg: Signal<(), Result<Integer, GoToError>>) -> Result<(), GoToError> {
         let m = &mut root_model.get_go_to_date_model().go_to_model;
         m.handle_result(pid, msg)
     }

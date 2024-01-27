@@ -19,4 +19,11 @@ Profiling is implemented using [profiling](https://crates.io/crates/profiling) a
 - run logv with `-p <PORT>`
 - run puffin viewer with `--url http://localhost:PORT`
 
-By default it's convenient to use 8585, as puffin viewer uses this port by default.
+By default, it's convenient to use 8585, as puffin viewer uses this port by default.
+
+## Developer's Notes
+
+Print offsets of new lines in a file:
+```shell
+grep -obazP '\n' test.txt
+```

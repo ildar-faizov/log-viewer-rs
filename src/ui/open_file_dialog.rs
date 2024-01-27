@@ -8,7 +8,7 @@ use cursive::view::IntoBoxedView;
 use cursive::views::{Button, Dialog, LinearLayout, NamedView, PaddedView, ScrollView, SelectView, TextContent, TextView};
 use human_bytes::human_bytes;
 use crate::model::open_file_model::{DirEntry0, OpenFileModel, OpenFileModelEvent};
-use crate::ui::view_with_callback::ViewWithCallback;
+use crate::ui::view_with_callback::{ViewUpdateCallback, ViewWithCallback};
 use crate::ui::with_root_model::WithRootModel;
 
 const BREADCRUMBS_LABEL: &str = "Breadcrumbs";
@@ -25,8 +25,6 @@ const PADDING: usize = 1;
 const DIALOG_WIDTH: usize = PADDING + FILE_LIST_SIZE.0 + PADDING + FILE_INFO_PANEL_SIZE.0 + PADDING;
 
 const DATE_FORMAT: &str = "%d %b %y %T";
-
-type ViewUpdateCallback = Box<dyn FnOnce(&mut Cursive)>;
 
 pub fn build_open_file_dialog(model: &mut OpenFileModel) -> ViewWithCallback {
     let mut content = LinearLayout::vertical();

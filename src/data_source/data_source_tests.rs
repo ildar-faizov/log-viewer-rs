@@ -478,10 +478,11 @@ mod test_read_delimited {
 mod test_read_lines {
     extern crate spectral;
 
-    use std::io::Cursor;
+    use std::io::{BufReader, Cursor};
     use crate::data_source::{Line, LineSource, StrBackend};
     use crate::data_source::LineSourceImpl;
     use spectral::prelude::*;
+    use crate::data_source::line_registry::LineRegistry;
     use crate::test_extensions::*;
 
     const LINES_UNIX: &'static str = "AAA\nBBB\nCCC\nDDD";
@@ -558,8 +559,19 @@ mod test_read_lines {
     fn test(s: &str, offset: u64, n: i32) -> Vec<Line> {
         let mut line_source = LineSourceImpl::<Cursor<&'static [u8]>, StrBackend<'static>>::from_str(s);
         line_source.track_line_number(true);
+        build_line_registry(&mut line_source, s);
         let data = line_source.read_lines(offset.into(), n.into());
         data.lines
+    }
+
+    fn build_line_registry<T>(line_source: &mut T, s: &str)
+        where
+            T : LineSource
+    {
+        let line_registry = line_source.get_line_registry();
+        let mut reader = BufReader::new(Cursor::new(s));
+        let result = line_registry.build(&mut reader, || false, |b| {});
+        assert_that!(&result).is_ok();
     }
 }
 

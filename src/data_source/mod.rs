@@ -1,9 +1,12 @@
 use std::path::PathBuf;
 use std::io::{Read, Seek, BufReader, SeekFrom, Cursor};
 use std::fs::File;
-use std::cmp::{min, Ordering};
+use std::cmp::Ordering;
 use std::cell::RefMut;
+use std::ops::Deref;
+use std::sync::Arc;
 use metrics::{describe_histogram, Unit};
+use num_traits::ToPrimitive;
 use fluent_integer::Integer;
 use crate::advanced_io::advanced_buf_reader::BidirectionalBufRead;
 use crate::advanced_io::seek_to::SeekTo;
@@ -11,9 +14,11 @@ use crate::shared::Shared;
 use crate::utils;
 use crate::utils::utf8::UtfChar;
 use crate::data_source::char_navigation::{next_char, peek_next_char, peek_prev_char, prev_char};
+use crate::data_source::line_registry::{LineRegistry, LineRegistryImpl};
+use crate::interval::Interval;
 use crate::utils::stat;
 
-pub const BUFFER_SIZE: usize = 8192;
+pub const BUFFER_SIZE: usize = 1024 * 1024; // 1MB
 
 const METRIC_READ_DELIMITED: &str = "read_delimited";
 
@@ -104,7 +109,6 @@ pub struct Data {
     pub lines: Vec<Line>,
     pub start: Option<Integer>,
     pub end: Option<Integer>,
-    current_line_no: Option<u64>,
 }
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
@@ -134,7 +138,7 @@ pub fn read_delimited<R, F>(
     offset: Integer,
     n: Integer,
     allow_empty_segments: bool,
-    current_no: Option<u64>,
+    line_registry: Option<Arc<LineRegistryImpl>>,
     is_delimiter: F) -> std::io::Result<Data>
     where R: Read + Seek, F: Fn(&char) -> bool
 {
@@ -142,33 +146,29 @@ pub fn read_delimited<R, F>(
         return Ok(Data::default());
     }
 
-    let actual_offset: Integer = f.stream_position()?.into();
-    let shift = (offset - actual_offset).as_i64();
-    let mut current_no = match current_no {
-        Some(n) => {
-            profiling::scope!("Seek to offset with line counting");
-            let mut number_of_lines = 0_u64;
-            let line_counter = |chunk: &[u8]|
-                number_of_lines += chunk.iter().filter(|b| char::from(**b) == '\n').count() as u64;
-            f.read_fluently(shift, line_counter)?;
-            Some(if shift > 0 { n + number_of_lines } else { n - number_of_lines })
-        },
-        None => {
-            f.seek_relative(shift)?;
-            None
-        }
-    };
-
     let direction = match n.cmp(&0.into()) {
         Ordering::Equal => return Ok(Data {
             lines: vec![],
             start: None,
             end: None,
-            current_line_no: current_no,
         }),
         Ordering::Greater => Direction::Forward,
         Ordering::Less => Direction::Backward
     };
+
+    let actual_offset: Integer = f.stream_position()?.into();
+    let shift = (offset - actual_offset).as_i64();
+    f.seek_relative(shift)?;
+    let mut current_no = line_registry
+        .zip(Some(&direction))
+        .and_then(move |(r, direction)| {
+            let interval = match direction {
+                Direction::Forward => Interval::closed(0.into(), offset),
+                Direction::Backward => Interval::closed_open(0.into(), offset),
+            };
+            r.count(&interval).ok()
+        })
+        .map(|n| n as u64);
 
     let mut data = vec![];
     let mut stack = vec![];
@@ -295,13 +295,10 @@ pub fn read_delimited<R, F>(
         lines: data,
         start: s,
         end: e,
-        current_line_no: current_no
     })
 }
 
 /// Represents source of lines.
-/// Keeps offset always at the beginning of the line (or at EOF).
-/// The underlying DataSource is kept open, implementation is stateful
 pub trait LineSource {
 
     /// Returns length
@@ -359,6 +356,8 @@ pub trait LineSource {
     /// Skips token starting from offset +/- 1 (depending on `direction`). A token is a
     /// group of either non-delimiters or delimiters.
     fn skip_token(&mut self, offset: Integer, direction: Direction) -> Result<Integer, ()>;
+
+    fn get_line_registry(&self) -> Arc<LineRegistryImpl>;
 }
 
 pub trait LineSourceBackend<R: Read> {
@@ -412,7 +411,7 @@ pub struct LineSourceImpl<R, B> where R: Read, B: LineSourceBackend<R> {
     backend: B,
     file_reader: Option<Shared<BufReader<R>>>,
     track_line_no: bool,
-    current_line_no: Option<u64>
+    line_registry: Arc<LineRegistryImpl>,
 }
 
 impl<R, B> LineSourceImpl<R, B> where R: Read + Seek, B: LineSourceBackend<R> {
@@ -430,7 +429,7 @@ impl<R, B> LineSourceImpl<R, B> where R: Read + Seek, B: LineSourceBackend<R> {
             backend,
             file_reader: None,
             track_line_no: false,
-            current_line_no: None
+            line_registry: Arc::new(LineRegistryImpl::new()),
         }
     }
 
@@ -447,36 +446,6 @@ impl<R, B> LineSourceImpl<R, B> where R: Read + Seek, B: LineSourceBackend<R> {
     {
         let file_reader = self.reader();
         f(file_reader)
-    }
-
-    fn restore_current_line_no(&mut self) {
-        let current_line_no = if self.track_line_no {
-            let mut reader = self.reader();
-            let stream_position = reader.stream_position();
-            if let Ok(p) = stream_position {
-                reader.seek(SeekFrom::Start(0)).unwrap();
-                let mut buf = [0_u8; BUFFER_SIZE];
-                let mut number_of_lines = 0_u64;
-                let mut bytes_read = 0_usize;
-                loop {
-                    let n = min(p as usize - bytes_read, buf.len());
-                    match reader.read(&mut buf[0..n]) {
-                        Err(e) => panic!("{}", e.to_string().as_str()),
-                        Ok(0) => break,
-                        Ok(b) => {
-                            bytes_read += b;
-                            number_of_lines += buf.iter().filter(|ch| **ch == b'\n').count() as u64
-                        },
-                    }
-                }
-                Some(number_of_lines)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-        self.current_line_no = current_line_no;
     }
 }
 
@@ -500,32 +469,25 @@ impl<R, B> LineSource for LineSourceImpl<R, B> where R: Read + Seek, B: LineSour
     }
 
     fn read_lines(&mut self, offset: Integer, number_of_lines: Integer) -> Data {
-        let current_no = self.current_line_no;
+        let line_registry = if self.track_line_no {
+            Some(Arc::clone(&self.line_registry))
+        } else {
+            None
+        };
         let result = self.with_reader(|mut f| {
             log::trace!("read_lines number_of_lines = {}, offset = {}", number_of_lines, offset);
             stat(METRIC_READ_DELIMITED, &Unit::Microseconds, || {
-                read_delimited(&mut f, offset, number_of_lines, true, current_no, |c| *c == '\n')
+                read_delimited(&mut f, offset, number_of_lines, true, line_registry, |c| *c == '\n')
             })
         }).unwrap_or(Data::default());
 
         log::trace!("Result: {:?}", result);
 
-        if self.track_line_no {
-            if let Some(current_line_no) = result.current_line_no {
-                self.current_line_no.replace(current_line_no);
-            } else {
-                log::warn!("Current line no has not been calculated in read_lines(offset={}, number_of_lines={})", offset, number_of_lines);
-                self.restore_current_line_no();
-            }
-        }
         result
     }
 
     fn track_line_number(&mut self, track: bool) {
-        if self.track_line_no != track {
-            self.track_line_no = track;
-            self.restore_current_line_no();
-        }
+        self.track_line_no = track;
     }
 
     fn read_raw(&self, start: Integer, end: Integer) -> Result<String, ()> {
@@ -599,6 +561,10 @@ impl<R, B> LineSource for LineSourceImpl<R, B> where R: Read + Seek, B: LineSour
             Ok(offset)
         }
     }
+
+    fn get_line_registry(&self) -> Arc<LineRegistryImpl> {
+        Arc::clone(&self.line_registry)
+    }
 }
 
 mod char_navigation {
@@ -641,3 +607,5 @@ mod char_navigation {
 #[cfg(test)]
 #[path = "./data_source_tests.rs"]
 mod data_source_tests;
+
+pub mod line_registry;

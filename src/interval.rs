@@ -173,6 +173,19 @@ impl<T> Interval<T> where T: Ord, T: Eq, T: Copy {
             }
         }
     }
+
+    pub fn map<U, F>(&self, f: F) -> Interval<U>
+        where
+            U: Ord + Eq + Copy,
+            F: Fn(&T) -> U,
+            F: Copy,
+    {
+        let f = &f;
+        Interval {
+            left_bound: self.left_bound.map(f),
+            right_bound: self.right_bound.map(f),
+        }
+    }
 }
 
 impl<T> PartialEq<Self> for Interval<T> where T: Copy + Eq + Ord {
@@ -194,6 +207,21 @@ enum BoundSide {
 }
 
 impl<T> IntervalBound<T> where T: Ord {
+    pub fn map<U, F>(&self, f: F) -> IntervalBound<U>
+    where
+        U: Ord,
+        F: FnOnce(&T) -> U
+    {
+        match &self {
+            IntervalBound::Fixed { value, is_included } => IntervalBound::Fixed {
+                value: f(value),
+                is_included: *is_included,
+            },
+            IntervalBound::NegativeInfinity => IntervalBound::NegativeInfinity,
+            IntervalBound::PositiveInfinity => IntervalBound::PositiveInfinity,
+        }
+    }
+
     fn cmp(&self, other: &IntervalBound<T>, side: BoundSide) -> Ordering {
         match &self {
             IntervalBound::NegativeInfinity => {

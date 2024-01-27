@@ -10,6 +10,7 @@ use std::io::{BufReader, Read};
 use std::path::PathBuf;
 use std::str::FromStr;
 use uuid::Uuid;
+use crate::background_process::signal::Signal;
 use crate::model::abstract_go_to_model::{AbstractGoToModel, GoToError};
 
 pub struct GoToLineModel {
@@ -56,7 +57,7 @@ impl GoToLineModel {
         }
         let file = PathBuf::from_str(file_name)?;
         self.go_to_model.submit(
-            |root_model: &mut RootModel, pid: Uuid, msg: Result<Result<Integer, GoToError>, ()>| {
+            |root_model: &mut RootModel, pid: Uuid, msg: Signal<(), Result<Integer, GoToError>>| {
                 let m = &mut root_model.get_go_to_line_model().go_to_model;
                 m.handle_result(pid, msg)
             },

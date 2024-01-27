@@ -40,7 +40,7 @@ impl BackgroundProcessRegistry {
     where
         M: Send + 'static,
         R: Send + 'static,
-        L: FnMut(&mut RootModel, Result<R, M>, &Uuid) + 'static,
+        L: FnMut(&mut RootModel, Signal<M, R>, &Uuid) + 'static,
     {
         self.processes.insert(id, Box::new(bgp));
     }
@@ -57,7 +57,7 @@ impl RunInBackground for BackgroundProcessRegistry {
         R: Send + 'static,
         T: FnOnce(&mut TaskContext<M, R>) -> R,
         T: Send + 'static,
-        L: FnMut(&mut RootModel, Result<R, M>, &Uuid) + 'static,
+        L: FnMut(&mut RootModel, Signal<M, R>, &Uuid) + 'static,
     {
         let id = Uuid::new_v4();
         let (sender, receiver) = crossbeam_channel::unbounded();
@@ -81,7 +81,7 @@ pub struct BackgroundProcessData<M, R, L>
 where
     M: Send + 'static,
     R: Send + 'static,
-    L: FnMut(&mut RootModel, Result<R, M>, &Uuid) + 'static,
+    L: FnMut(&mut RootModel, Signal<M, R>, &Uuid) + 'static,
 {
     receiver: Receiver<Signal<M, R>>,
     listener: L,
@@ -91,7 +91,7 @@ impl<M, R, L> BackgroundProcessData<M, R, L>
 where
     M: Send + 'static,
     R: Send + 'static,
-    L: FnMut(&mut RootModel, Result<R, M>, &Uuid) + 'static,
+    L: FnMut(&mut RootModel, Signal<M, R>, &Uuid) + 'static,
 {
     pub fn new(receiver: Receiver<Signal<M, R>>, listener: L) -> Self {
         BackgroundProcessData { receiver, listener }
@@ -102,20 +102,29 @@ impl<M, R, L> HandleSignals for BackgroundProcessData<M, R, L>
 where
     M: Send + 'static,
     R: Send + 'static,
-    L: FnMut(&mut RootModel, Result<R, M>, &Uuid) + 'static,
+    L: FnMut(&mut RootModel, Signal<M, R>, &Uuid) + 'static,
 {
     fn handle_signals(&mut self, root_model: Shared<RootModel>, id: &Uuid) -> bool {
         let listener = &mut self.listener;
         for signal in self.receiver.try_iter() {
-            match signal {
-                Signal::Progress(_p) => (),
-                Signal::Custom(msg) => listener(&mut root_model.get_mut_ref(), Err(msg), id),
-                Signal::Complete(result) => {
-                    listener(&mut root_model.get_mut_ref(), Ok(result), id);
-                    return true;
-                }
+            let complete = is_complete(&signal);
+            listener(&mut root_model.get_mut_ref(), signal, id);
+            if complete {
+                return true;
             }
         }
         false
+    }
+}
+
+fn is_complete<M, R>(signal: &Signal<M, R>) -> bool
+    where
+        M: Send + 'static,
+        R: Send + 'static,
+{
+    match signal {
+        Signal::Custom(_) => false,
+        Signal::Progress(_) => false,
+        Signal::Complete(_) => true,
     }
 }

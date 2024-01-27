@@ -93,7 +93,7 @@ where F: FnOnce() -> R + 'a {
     })
 }
 
-trait ToUnit {
+pub trait ToUnit {
     fn to_unit(&self, unit: &Unit) -> f64;
 }
 

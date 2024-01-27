@@ -4,6 +4,7 @@ use fluent_integer::Integer;
 use crate::background_process::background_process_handler::BackgroundProcessHandler;
 use crate::background_process::background_process_registry::BackgroundProcessRegistry;
 use crate::background_process::run_in_background::RunInBackground;
+use crate::background_process::signal::Signal;
 use crate::background_process::task_context::TaskContext;
 use crate::model::model::{ModelEvent, RootModel};
 use crate::search::searcher::Occurrence;
@@ -51,7 +52,7 @@ impl AbstractGoToModel
         where
             F: FnOnce(&mut TaskContext<(), GoToResult>) -> GoToResult,
             F: Send + 'static,
-            G: Fn(&mut RootModel, Uuid, Result<GoToResult, ()>) -> Result<(), GoToError>,
+            G: Fn(&mut RootModel, Uuid, Signal<(), GoToResult>) -> Result<(), GoToError>,
             G: Send + 'static,
     {
         self.set_is_open(false);
@@ -79,22 +80,22 @@ impl AbstractGoToModel
     pub fn handle_result(
         &mut self,
         pid: Uuid,
-        msg: Result<GoToResult, ()>,
+        msg: Signal<(), GoToResult>,
     ) -> Result<(), GoToError> {
         let h = self.current_process.take();
         if let Some(h) = h {
             if *h.get_id() == pid {
                 match msg {
-                    Ok(Ok(p)) => self
+                    Signal::Complete(Ok(p)) => self
                         .model_sender
                         .emit_event(ModelEvent::Search(Ok(Occurrence::new(p, p)))),
-                    Ok(Err(GoToError::Cancelled)) => {
+                    Signal::Complete(Err(GoToError::Cancelled)) => {
                         log::info!("{:?}", GoToError::Cancelled)
                     }
-                    Ok(Err(err)) => {
+                    Signal::Complete(Err(err)) => {
                         return Err(err);
                     }
-                    Err(_) => (), // TODO: show progress
+                    _ => (), // TODO: show progress
                 };
             } else {
                 log::trace!("Result of GoToLine {} has been ignored, because different process {} is started", pid, h.get_id());

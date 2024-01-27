@@ -2,13 +2,13 @@ use crossbeam_channel::Sender;
 use std::path::{Path, PathBuf};
 use std::env::current_dir;
 use ModelEvent::*;
-use crate::data_source::{Data, Direction, FileBackend, LineSource, LineSourceImpl, StrBackend};
+use crate::data_source::{Data, Direction, FileBackend, LineSource, LineSourceBackend, LineSourceImpl, StrBackend};
 use std::cell::RefMut;
 use num_rational::Ratio;
 use std::cmp::min;
 use std::fmt::Debug;
 use std::fs::File;
-use std::io::Cursor;
+use std::io::{Cursor, Read, Seek};
 use std::option::Option::Some;
 use std::time::{Duration, SystemTime};
 use chrono::{Datelike, DateTime, Utc};
@@ -18,7 +18,9 @@ use uuid::Uuid;
 use crate::background_process::background_process_handler::BackgroundProcessHandler;
 use crate::background_process::background_process_registry::BackgroundProcessRegistry;
 use crate::background_process::run_in_background::RunInBackground;
+use crate::background_process::signal::Signal;
 use crate::background_process::task_context::TaskContext;
+use crate::data_source::line_registry::LineRegistry;
 use crate::selection::Selection;
 use crate::utils;
 use crate::shared::Shared;
@@ -31,6 +33,7 @@ use crate::model::guess_date_format::{guess_date_format, GuessContext, KnownDate
 use crate::model::help_model::{HelpModel, HelpModelEvent};
 use crate::model::metrics_model::{MetricsHolder, MetricsModel, MetricsModelEvent};
 use crate::model::open_file_model::{OpenFileModel, OpenFileModelEvent};
+use crate::model::progress_model::{ProgressModel, ProgressModelEvent};
 use crate::model::rendered::{DataRender, LineRender};
 use crate::model::scroll_position::ScrollPosition;
 use crate::model::search_model::SearchModel;
@@ -69,6 +72,8 @@ pub struct RootModel {
     help_model: Shared<HelpModel>,
     // metrics
     metrics_model: Shared<MetricsModel>,
+    // modal progress dialog
+    progress_model: Shared<ProgressModel>,
 }
 
 #[derive(Debug)]
@@ -87,6 +92,7 @@ pub enum ModelEvent {
     GoToDateOpen(bool),
     HelpEvent(HelpModelEvent),
     MetricsEvent(MetricsModelEvent),
+    ProgressEvent(ProgressModelEvent),
     Hint(String),
     Error(Option<String>),
     Quit,
@@ -94,7 +100,7 @@ pub enum ModelEvent {
 
 #[derive(Debug)]
 pub struct CursorPosition {
-    pub line_no: u64,
+    pub line_no: Option<u64>,
     pub position_in_line: u64,
     pub offset: u64,
 }
@@ -111,9 +117,11 @@ impl RootModel {
         let sender4 = model_sender.clone();
         let sender5 = model_sender.clone();
         let sender6 = model_sender.clone();
+        let sender7 = model_sender.clone();
         let registry = background_process_registry.clone();
         let registry3 = background_process_registry.clone();
         let registry4 = background_process_registry.clone();
+        let registry5 = background_process_registry.clone();
         let root_model = RootModel {
             model_sender,
             background_process_registry,
@@ -138,6 +146,7 @@ impl RootModel {
             go_to_date_model: Shared::new(GoToDateModel::new(sender4, registry4)),
             help_model: Shared::new(HelpModel::new(sender2)),
             metrics_model: Shared::new(MetricsModel::new(sender6, metrics_holder)),
+            progress_model: Shared::new(ProgressModel::new(sender7, registry5)),
         };
 
         Shared::new(root_model)
@@ -569,20 +578,33 @@ impl RootModel {
 
     fn load_file(&mut self) {
         self.reset();
-        let (mut line_source, file_name): (Box<dyn LineSource>, String) = if let Some(path) = self.resolve_file_name() {
+        if let Some(path) = self.resolve_file_name() {
             let line_source = LineSourceImpl::<File, FileBackend>::from_file_name(path.clone());
+            let backend = FileBackend::new(path.clone());
             self.guess_date_format(&path);
-            (Box::new(line_source), self.file_name.as_ref().unwrap().to_string())
+            self.do_load_file(Box::new(line_source), backend, self.file_name.as_ref().unwrap().to_string())
         } else {
             let welcome: &'static str = &crate::welcome::WELCOME;
             let line_source = LineSourceImpl::<Cursor<&'_ [u8]>, StrBackend<'_>>::from_str(welcome);
-            (Box::new(line_source), String::from("welcome"))
+            let backend = StrBackend::new(welcome);
+            self.do_load_file(Box::new(line_source), backend, String::from("welcome"))
         };
+
+    }
+
+    fn do_load_file<R: Read + Seek + 'static, B: LineSourceBackend<R> + Send + 'static>(
+        &mut self,
+        mut line_source: Box<dyn LineSource>,
+        backend: B,
+        file_name: String)
+    {
         if self.show_line_numbers {
-            line_source.track_line_number(true);
+            (&mut line_source).track_line_number(true);
         }
         let file_size = line_source.get_length();
         self.datasource = Some(Shared::new(line_source));
+        self.build_line_registry(backend, file_size);
+
         let event = FileName(file_name, file_size.as_u64());
         self.model_sender.emit_event(event);
         self.update_viewport_content();
@@ -841,6 +863,10 @@ impl RootModel {
         self.metrics_model.get_mut_ref()
     }
 
+    pub fn get_progress_model(&self) -> RefMut<ProgressModel> {
+        self.progress_model.get_mut_ref()
+    }
+
     pub fn get_date_format(&self) -> Option<&'static KnownDateFormat> {
         self.date_format
     }
@@ -915,26 +941,72 @@ impl RootModel {
 
     pub fn start_test_bgp(&mut self) {
         self.background_process_builder::<(), _, i32, _>()
-            .with_task(|_ctx| {
+            .with_task(|ctx| {
                 log::info!("Task started");
-                std::thread::sleep(Duration::from_secs(5));
+                for i in 0..5 {
+                    ctx.update_progress(i * 20);
+                    std::thread::sleep(Duration::from_secs(1));
+                }
                 -42
             })
             .with_listener(|_model, r, _| {
                 match r {
-                    Ok(r) => log::info!("Task returned {}", r),
-                    Err(_) => log::warn!("Unexpected message"),
-                };
+                    Signal::Custom(_) => log::warn!("Unexpected message"),
+                    Signal::Progress(p) => log::info!("Task progress {}", p),
+                    Signal::Complete(r) => log::info!("Task returned {}", r),
+                }
             })
             .run();
+    }
+
+    fn build_line_registry<R: Read + Seek + 'static, B: LineSourceBackend<R> + Send + 'static>(
+        &mut self,
+        backend: B,
+        file_size: Integer
+    ) {
+        if !self.show_line_numbers {
+            return;
+        }
+
+        let Some(ds) = &self.datasource else { return; };
+        let ds = ds.get_mut_ref();
+
+        struct BytesRead(usize);
+
+        let line_registry = ds.get_line_registry();
+        drop(ds);
+        let progress_model = &mut *self.progress_model.get_mut_ref();
+        progress_model.run::<BytesRead, _, _, _, _, _>(
+            "Indexing",
+            format!("Build internal registries for {:?}", self.file_name),
+            move |ctx| {
+                let is_interrupted = || ctx.interrupted();
+                let mut reader = backend.new_reader();
+                line_registry.build(&mut reader, is_interrupted, |b| {
+                    ctx.send_message(BytesRead(b)).expect("Failed to send update");
+                    let progress = (Ratio::new(b, file_size.as_usize()) * 100).to_integer() as u8;
+                    ctx.update_progress(progress);
+                })
+            }, |model, signal, id| {
+                match signal {
+                    Signal::Custom(BytesRead(b)) => {
+                        log::trace!("LineRegistry bytes read: {}", b);
+                        // TODO update lines without number
+                    }
+                    Signal::Progress(_p) => {}
+                    Signal::Complete(_res) => {}
+                }
+            }
+        );
     }
 
     fn emit_cursor_moved(&self) {
         if let Some(cp) = &self.get_cursor_in_cache() {
             let i = cp.height.as_usize();
-            let option = self.data.as_ref().and_then(|render| render.lines.get(i).and_then(|line| line.line_no));
+            let line_no = self.data.as_ref()
+                .and_then(|render| render.lines.get(i).and_then(|line| line.line_no));
             let event = CursorMoved(CursorPosition {
-                line_no: option.unwrap(),
+                line_no,
                 position_in_line: cp.width.as_u64(),
                 offset: self.cursor.as_u64(),
             });
@@ -947,9 +1019,11 @@ impl RootModel {
         let path2 = path.clone();
         self.run_in_background::<(), _, _, _>(move |_| {
             guess_date_format(path)
-        }, move |model, result, _| {
-            match result {
-                Ok(s) => {
+        }, move |model, signal, _| {
+            match signal {
+                Signal::Custom(_) => {}
+                Signal::Progress(_) => {}
+                Signal::Complete(s) => {
                     if let Some(pattern) = s {
                         log::info!("DateTime format has been recognized as {:?} for {:?}", pattern, path2);
                     } else {
@@ -958,7 +1032,6 @@ impl RootModel {
                     model.date_format = s;
                     model.model_sender.emit_event(Repaint);
                 }
-                Err(_) => {}
             }
         });
     }
@@ -971,7 +1044,7 @@ impl RunInBackground for RootModel {
             R: Send + 'static,
             T: FnOnce(&mut TaskContext<M, R>) -> R,
             T: Send + 'static,
-            L: FnMut(&mut RootModel, Result<R, M>, &Uuid) + 'static {
+            L: FnMut(&mut RootModel, Signal<M, R>, &Uuid) + 'static {
         let mut registry = self.background_process_registry.get_mut_ref();
         registry.run_in_background(task, listener)
     }

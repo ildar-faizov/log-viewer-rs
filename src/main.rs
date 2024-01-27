@@ -71,6 +71,7 @@ use crate::ui::help_dialog::HelpDialog;
 use crate::ui::main_ui::build_ui;
 use crate::ui::metrics_dialog::handle_metrics_model_event;
 use crate::ui::open_file_dialog::{build_open_file_dialog, handle_open_file_model_event};
+use crate::ui::progress_dialog::handle_progress_model_event;
 use crate::ui::search_ui::build_search_ui;
 use crate::ui::with_root_model::WithRootModel;
 use crate::ui::ui_elements::UIElementName;
@@ -316,6 +317,15 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<R
 			handle_metrics_model_event(app, evt);
 			Ok(true)
 		},
+		ProgressEvent(evt) => {
+			let callback = {
+				let root_model = model.get_mut_ref();
+				let progress_model = &mut *root_model.get_progress_model();
+				handle_progress_model_event(progress_model, evt)
+			};
+			callback(app);
+			Ok(true)
+		},
 		Hint(hint) => {
 			app.call_on_name(&UIElementName::StatusHint.to_string(), move |txt: &mut TextView| {
 				txt.set_content(hint);
@@ -334,7 +344,11 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<R
 		}
 		CursorMoved(cursor_position) => {
 			let mut v: ViewRef<TextView> = app.find_name(&UIElementName::StatusPosition.to_string()).unwrap();
-			v.set_content(format!("L {}, C {}, O {}", cursor_position.line_no + 1, cursor_position.position_in_line + 1, cursor_position.offset));
+			v.set_content(format!(
+				"L {}, C {}, O {}",
+				cursor_position.line_no.map(|n| n + 1).map(|n| n.to_string()).unwrap_or(String::from("-")),
+				cursor_position.position_in_line + 1,
+				cursor_position.offset));
 			Ok(true)
 		},
 		Quit => {
