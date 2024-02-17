@@ -1,5 +1,4 @@
 use lazy_static::lazy_static;
-use super::GoToDateModel;
 use crate::model::guess_date_format::KnownDateFormat;
 
 const TEXT: &str = r#"2022 Feb 12 11:00:00 line1
@@ -22,9 +21,9 @@ lazy_static! {
 
 mod test_take_line {
     use chrono::NaiveDateTime;
-    use super::GoToDateModel;
     use spectral::prelude::*;
     use crate::data_source::{Direction, LineSourceImpl, StrBackend};
+    use crate::model::go_to_date_model::take_line;
     use super::{TEXT, DATE_FORMAT};
     use crate::model::guess_date_format::GuessContext;
 
@@ -32,7 +31,7 @@ mod test_take_line {
     fn from_start_forward() {
         let mut src = LineSourceImpl::new(StrBackend::new(TEXT));
         let guess_ctx = GuessContext::with_year(2023);
-        let actual = GoToDateModel::take_line(
+        let actual = take_line(
             &mut src,
             0,
             TEXT.len(),
@@ -59,7 +58,7 @@ mod test_take_line {
     fn with_offset_forward() {
         let mut src = LineSourceImpl::new(StrBackend::new(TEXT));
         let guess_ctx = GuessContext::with_year(2023);
-        let actual = GoToDateModel::take_line(
+        let actual = take_line(
             &mut src,
             27, // length of 1st line + 1
             TEXT.len(),
@@ -86,7 +85,7 @@ mod test_take_line {
     fn skip_forward() {
         let mut src = LineSourceImpl::new(StrBackend::new(TEXT));
         let guess_ctx = GuessContext::with_year(2023);
-        let actual = GoToDateModel::take_line(
+        let actual = take_line(
             &mut src,
             56, // first 2 lines
             TEXT.len(),
@@ -113,7 +112,7 @@ mod test_take_line {
     fn from_start_backward() {
         let mut src = LineSourceImpl::new(StrBackend::new(TEXT));
         let guess_ctx = GuessContext::with_year(2023);
-        let actual = GoToDateModel::take_line(
+        let actual = take_line(
             &mut src,
             1,
             0,
@@ -140,7 +139,7 @@ mod test_take_line {
     fn empty_forward() {
         let mut src = LineSourceImpl::new(StrBackend::new(""));
         let guess_ctx = GuessContext::with_year(2023);
-        let actual = GoToDateModel::take_line(
+        let actual = take_line(
             &mut src,
             0,
             0,
@@ -157,7 +156,7 @@ mod test_take_line {
     fn empty_backward() {
         let mut src = LineSourceImpl::new(StrBackend::new(""));
         let guess_ctx = GuessContext::with_year(2023);
-        let actual = GoToDateModel::take_line(
+        let actual = take_line(
             &mut src,
             0,
             0,
@@ -180,7 +179,7 @@ mod test_bin_search {
     use crate::model::abstract_go_to_model::GoToResult;
     use crate::model::go_to_date_model::go_to_date_model_tests::TEXT2;
     use super::{TEXT, DATE_FORMAT};
-    use crate::model::go_to_date_model::GoToDateModel;
+    use crate::model::go_to_date_model::bin_search;
     use crate::model::guess_date_format::GuessContext;
 
     #[test]
@@ -228,7 +227,7 @@ mod test_bin_search {
         let guess_ctx = GuessContext::with_year(2023);
         let mut ctx = create_task_ctx();
         let target_date = NaiveDateTime::parse_from_str(date, "%Y-%m-%d %H:%M:%S").unwrap();
-        GoToDateModel::bin_search(
+        bin_search(
             target_date,
             &mut src,
             &DATE_FORMAT,
