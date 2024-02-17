@@ -1,7 +1,6 @@
 use std::cmp::Ordering;
 use std::path::PathBuf;
 use crossbeam_channel::Sender;
-use crate::background_process::background_process_registry::BackgroundProcessRegistry;
 use crate::model::abstract_go_to_model::{AbstractGoToModel, GoToError, GoToResult};
 use crate::model::model::{ModelEvent, RootModel};
 use crate::shared::Shared;
@@ -9,6 +8,7 @@ use chrono::prelude::*;
 use log::{Level};
 use uuid::Uuid;
 use fluent_integer::Integer;
+use crate::background_process::run_in_background::RunInBackground;
 use crate::background_process::signal::Signal;
 use crate::background_process::task_context::TaskContext;
 use crate::data_source::{Direction, FileBackend, Line, LineSource, LineSourceImpl};
@@ -17,15 +17,15 @@ use crate::utils::measure_l;
 
 pub const DATE_FORMAT: &str = "%d-%b-%Y %T";
 
-pub struct GoToDateModel {
-    go_to_model: AbstractGoToModel,
+pub struct GoToDateModel<R: RunInBackground> {
+    go_to_model: AbstractGoToModel<R>,
     value: String,
 }
 
-impl GoToDateModel {
+impl<R: RunInBackground + 'static> GoToDateModel<R> {
     pub fn new(
         model_sender: Sender<ModelEvent>,
-        background_process_registry: Shared<BackgroundProcessRegistry>,
+        background_process_registry: Shared<R>,
     ) -> Self {
         let go_to_model = AbstractGoToModel::new(
             model_sender,

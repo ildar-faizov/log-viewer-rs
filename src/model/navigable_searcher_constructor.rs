@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use derive_builder::Builder;
 use fluent_integer::Integer;
@@ -42,12 +43,27 @@ pub enum NavigableSearcherConstructorError {
     PatternIsEmpty,
 }
 
-impl ToString for NavigableSearcherConstructorError {
-    fn to_string(&self) -> String {
+impl Display for NavigableSearcherConstructorError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let str = match self {
             NavigableSearcherConstructorError::PatternIsEmpty => "Pattern is empty",
             NavigableSearcherConstructorError::FileNotSet => "File (data source) not specified",
         };
-        str.to_string()
+        write!(f, "{}", str.to_string())
+    }
+}
+
+impl Display for NavigableSearcherConstructor {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let as_regexp = if self.is_regexp {
+            " (regexp)"
+        } else {
+            ""
+        };
+        write!(f, "'{}' {}", self.pattern, as_regexp)?;
+        if let Some(path) = self.file_name.as_ref() {
+            write!(f, " in {:?}", path)?;
+        }
+        Ok(())
     }
 }

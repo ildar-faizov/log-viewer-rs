@@ -109,6 +109,25 @@ impl ToUnit for Duration {
     }
 }
 
+pub trait NumberOfDecimalDigits {
+    fn number_of_decimal_digits(&self) -> usize;
+}
+
+macro_rules! number_of_decimal_digits_impl_unsigned {
+    ( $($t: ty)* ) => {
+        $(
+            impl NumberOfDecimalDigits for $t {
+                #[inline]
+                fn number_of_decimal_digits(&self) -> usize {
+                    (self.checked_ilog10().unwrap_or_default() + 1) as usize
+                }
+            }
+        )*
+    };
+}
+
+number_of_decimal_digits_impl_unsigned!(u64 u32 u16 u8);
+
 pub mod utf8 {
     use std::io::{BufReader, ErrorKind, Read, Seek};
     use unicode_segmentation::UnicodeSegmentation;

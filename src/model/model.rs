@@ -10,7 +10,7 @@ use std::fmt::Debug;
 use std::fs::File;
 use std::io::{Cursor, Read, Seek};
 use std::option::Option::Some;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 use chrono::{Datelike, DateTime, Utc};
 use fluent_integer::Integer;
 use num_traits::identities::Zero;
@@ -20,7 +20,9 @@ use crate::background_process::background_process_registry::BackgroundProcessReg
 use crate::background_process::run_in_background::RunInBackground;
 use crate::background_process::signal::Signal;
 use crate::background_process::task_context::TaskContext;
-use crate::data_source::line_registry::LineRegistry;
+use crate::data_source::line_registry::{LineRegistry, LineRegistryError};
+use crate::interval::Interval;
+use crate::model::bgp_model::{BGPModel, BGPModelEvent};
 use crate::selection::Selection;
 use crate::utils;
 use crate::shared::Shared;
@@ -34,7 +36,7 @@ use crate::model::help_model::{HelpModel, HelpModelEvent};
 use crate::model::metrics_model::{MetricsHolder, MetricsModel, MetricsModelEvent};
 use crate::model::open_file_model::{OpenFileModel, OpenFileModelEvent};
 use crate::model::progress_model::{ProgressModel, ProgressModelEvent};
-use crate::model::rendered::{DataRender, LineRender};
+use crate::model::rendered::{DataRender, LineNumberMissingReason, LineNumberResult, LineRender};
 use crate::model::scroll_position::ScrollPosition;
 use crate::model::search_model::SearchModel;
 use crate::search::searcher::SearchResult;
@@ -63,17 +65,18 @@ pub struct RootModel {
     show_line_numbers: bool,
     date_format: Option<&'static KnownDateFormat>, // guessed from content
     // search
-    search_model: Shared<SearchModel>,
+    search_model: Shared<SearchModel<BGPModel>>,
     current_search: Shared<Option<Search>>,
     // go to line
-    go_to_line_model: Shared<GoToLineModel>,
-    go_to_date_model: Shared<GoToDateModel>,
+    go_to_line_model: Shared<GoToLineModel<BGPModel>>,
+    go_to_date_model: Shared<GoToDateModel<BGPModel>>,
     // help
     help_model: Shared<HelpModel>,
     // metrics
     metrics_model: Shared<MetricsModel>,
     // modal progress dialog
     progress_model: Shared<ProgressModel>,
+    bgp_model: Shared<BGPModel>,
 }
 
 #[derive(Debug)]
@@ -93,6 +96,7 @@ pub enum ModelEvent {
     HelpEvent(HelpModelEvent),
     MetricsEvent(MetricsModelEvent),
     ProgressEvent(ProgressModelEvent),
+    BGPEvent(BGPModelEvent),
     Hint(String),
     Error(Option<String>),
     Quit,
@@ -100,7 +104,7 @@ pub enum ModelEvent {
 
 #[derive(Debug)]
 pub struct CursorPosition {
-    pub line_no: Option<u64>,
+    pub line_no: LineNumberResult,
     pub position_in_line: u64,
     pub offset: u64,
 }
@@ -118,10 +122,10 @@ impl RootModel {
         let sender5 = model_sender.clone();
         let sender6 = model_sender.clone();
         let sender7 = model_sender.clone();
-        let registry = background_process_registry.clone();
-        let registry3 = background_process_registry.clone();
-        let registry4 = background_process_registry.clone();
+        let sender8 = model_sender.clone();
         let registry5 = background_process_registry.clone();
+        let registry6 = background_process_registry.clone();
+        let bgp_model = Shared::new(BGPModel::new(sender8, registry6));
         let root_model = RootModel {
             model_sender,
             background_process_registry,
@@ -140,13 +144,14 @@ impl RootModel {
             error: None,
             show_line_numbers: true,
             date_format: None,
-            search_model: Shared::new(SearchModel::new(sender, registry)),
+            search_model: Shared::new(SearchModel::new(sender, bgp_model.clone())),
             current_search: Shared::new(None),
-            go_to_line_model: Shared::new(GoToLineModel::new(sender3, registry3)),
-            go_to_date_model: Shared::new(GoToDateModel::new(sender4, registry4)),
+            go_to_line_model: Shared::new(GoToLineModel::new(sender3, bgp_model.clone())),
+            go_to_date_model: Shared::new(GoToDateModel::new(sender4, bgp_model.clone())),
             help_model: Shared::new(HelpModel::new(sender2)),
             metrics_model: Shared::new(MetricsModel::new(sender6, metrics_holder)),
             progress_model: Shared::new(ProgressModel::new(sender7, registry5)),
+            bgp_model,
         };
 
         Shared::new(root_model)
@@ -831,7 +836,7 @@ impl RootModel {
         self.set_scroll_position(ScrollPosition::new(scroll_starting_point, 0.into()))
     }
 
-    pub fn get_search_model(&self) -> RefMut<SearchModel> {
+    pub fn get_search_model(&self) -> RefMut<SearchModel<BGPModel>> {
         self.search_model.get_mut_ref()
     }
 
@@ -847,11 +852,11 @@ impl RootModel {
         self.model_sender.emit_event(Hint(hint));
     }
 
-    pub fn get_go_to_line_model(&self) -> RefMut<GoToLineModel> {
+    pub fn get_go_to_line_model(&self) -> RefMut<GoToLineModel<BGPModel>> {
         self.go_to_line_model.get_mut_ref()
     }
 
-    pub fn get_go_to_date_model(&self) -> RefMut<GoToDateModel> {
+    pub fn get_go_to_date_model(&self) -> RefMut<GoToDateModel<BGPModel>> {
         self.go_to_date_model.get_mut_ref()
     }
 
@@ -865,6 +870,10 @@ impl RootModel {
 
     pub fn get_progress_model(&self) -> RefMut<ProgressModel> {
         self.progress_model.get_mut_ref()
+    }
+
+    pub fn get_bgp_model(&self) -> RefMut<BGPModel> {
+        self.bgp_model.get_mut_ref()
     }
 
     pub fn get_date_format(&self) -> Option<&'static KnownDateFormat> {
@@ -939,26 +948,6 @@ impl RootModel {
         }
     }
 
-    pub fn start_test_bgp(&mut self) {
-        self.background_process_builder::<(), _, i32, _>()
-            .with_task(|ctx| {
-                log::info!("Task started");
-                for i in 0..5 {
-                    ctx.update_progress(i * 20);
-                    std::thread::sleep(Duration::from_secs(1));
-                }
-                -42
-            })
-            .with_listener(|_model, r, _| {
-                match r {
-                    Signal::Custom(_) => log::warn!("Unexpected message"),
-                    Signal::Progress(p) => log::info!("Task progress {}", p),
-                    Signal::Complete(r) => log::info!("Task returned {}", r),
-                }
-            })
-            .run();
-    }
-
     fn build_line_registry<R: Read + Seek + 'static, B: LineSourceBackend<R> + Send + 'static>(
         &mut self,
         backend: B,
@@ -975,11 +964,11 @@ impl RootModel {
 
         let line_registry = ds.get_line_registry();
         drop(ds);
-        let progress_model = &mut *self.progress_model.get_mut_ref();
-        progress_model.run::<BytesRead, _, _, _, _, _>(
-            "Indexing",
-            format!("Build internal registries for {:?}", self.file_name),
-            move |ctx| {
+        let bgp_model = &mut *self.bgp_model.get_mut_ref();
+        bgp_model.background_process_builder()
+            .with_title("Indexing")
+            .with_description(format!("Build internal registries for {:?}", self.file_name))
+            .with_task(move |ctx| {
                 let is_interrupted = || ctx.interrupted();
                 let mut reader = backend.new_reader();
                 line_registry.build(&mut reader, is_interrupted, |b| {
@@ -987,24 +976,38 @@ impl RootModel {
                     let progress = (Ratio::new(b, file_size.as_usize()) * 100).to_integer() as u8;
                     ctx.update_progress(progress);
                 })
-            }, |model, signal, id| {
-                match signal {
-                    Signal::Custom(BytesRead(b)) => {
-                        log::trace!("LineRegistry bytes read: {}", b);
-                        // TODO update lines without number
-                    }
-                    Signal::Progress(_p) => {}
-                    Signal::Complete(_res) => {}
+            })
+            .with_listener(|model, signal, _id| {
+                let Signal::Custom(BytesRead(b)) = signal
+                    else { return; };
+                let Some(rendered_interval) = model.data.as_ref()
+                    .filter(|data| data.lines.iter()
+                        .any(|line| line.line_no
+                            .as_ref()
+                            .is_err_and(|err|
+                                matches!(err, LineNumberMissingReason::Delegate(LineRegistryError::NotReachedYet {..}))
+                            )
+                        )
+                    )
+                    .and_then(|data| data.start.zip(data.end))
+                    .map(|(s, e)| Interval::closed(s, e))
+                    else { return; };
+                if !rendered_interval.intersect(&Interval::closed(0.into(), b.into())).is_empty() {
+                    model.update_viewport_content();
+                    model.model_sender.emit_event(Repaint);
                 }
-            }
-        );
+            })
+            .run();
     }
 
     fn emit_cursor_moved(&self) {
         if let Some(cp) = &self.get_cursor_in_cache() {
             let i = cp.height.as_usize();
             let line_no = self.data.as_ref()
-                .and_then(|render| render.lines.get(i).and_then(|line| line.line_no));
+                .and_then(|render| render.lines.get(i))
+                .map(|line_render| line_render.line_no.clone())
+                .ok_or(LineNumberMissingReason::MissingData)
+                .unwrap_or_else(|err| Err(err));
             let event = CursorMoved(CursorPosition {
                 line_no,
                 position_in_line: cp.width.as_u64(),
@@ -1017,35 +1020,42 @@ impl RootModel {
     fn guess_date_format(&mut self, path: &PathBuf) {
         let path = path.clone();
         let path2 = path.clone();
-        self.run_in_background::<(), _, _, _>(move |_| {
-            guess_date_format(path)
-        }, move |model, signal, _| {
-            match signal {
-                Signal::Custom(_) => {}
-                Signal::Progress(_) => {}
-                Signal::Complete(s) => {
-                    if let Some(pattern) = s {
-                        log::info!("DateTime format has been recognized as {:?} for {:?}", pattern, path2);
-                    } else {
-                        log::info!("DateTime format has not been recognized for {:?}", path2);
+        self.background_process_builder::<(), _, _, _>()
+            .with_title("Guess date format")
+            .with_description(format!("Guess date format for {:?}", &path))
+            .with_task(move |_| {
+                guess_date_format(path)
+            })
+            .with_listener(move |model, signal, _| {
+                match signal {
+                    Signal::Custom(_) => {}
+                    Signal::Progress(_) => {}
+                    Signal::Complete(s) => {
+                        if let Some(pattern) = s {
+                            log::info!("DateTime format has been recognized as {:?} for {:?}", pattern, path2);
+                        } else {
+                            log::info!("DateTime format has not been recognized for {:?}", path2);
+                        }
+                        model.date_format = s;
+                        model.model_sender.emit_event(Repaint);
                     }
-                    model.date_format = s;
-                    model.model_sender.emit_event(Repaint);
                 }
-            }
-        });
+            })
+            .run();
     }
 }
 
 impl RunInBackground for RootModel {
-    fn run_in_background<M, T, R, L>(&mut self, task: T, listener: L) -> BackgroundProcessHandler
+    fn run_in_background<T1, T2, M, T, R, L>(&mut self, title: T1, description: T2, task: T, listener: L) -> BackgroundProcessHandler
         where
+            T1: ToString,
+            T2: ToString,
             M: Send + 'static,
             R: Send + 'static,
             T: FnOnce(&mut TaskContext<M, R>) -> R,
             T: Send + 'static,
             L: FnMut(&mut RootModel, Signal<M, R>, &Uuid) + 'static {
         let mut registry = self.background_process_registry.get_mut_ref();
-        registry.run_in_background(task, listener)
+        registry.run_in_background(title, description, task, listener)
     }
 }

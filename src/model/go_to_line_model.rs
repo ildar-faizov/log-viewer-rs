@@ -1,4 +1,3 @@
-use crate::background_process::background_process_registry::BackgroundProcessRegistry;
 use crate::data_source::BUFFER_SIZE;
 use crate::model::model::{ModelEvent, RootModel};
 use crate::shared::Shared;
@@ -10,18 +9,19 @@ use std::io::{BufReader, Read};
 use std::path::PathBuf;
 use std::str::FromStr;
 use uuid::Uuid;
+use crate::background_process::run_in_background::RunInBackground;
 use crate::background_process::signal::Signal;
 use crate::model::abstract_go_to_model::{AbstractGoToModel, GoToError};
 
-pub struct GoToLineModel {
-    go_to_model: AbstractGoToModel,
+pub struct GoToLineModel<R: RunInBackground> {
+    go_to_model: AbstractGoToModel<R>,
     value: String,
 }
 
-impl GoToLineModel {
+impl<R: RunInBackground> GoToLineModel<R> {
     pub fn new(
         model_sender: Sender<ModelEvent>,
-        background_process_registry: Shared<BackgroundProcessRegistry>,
+        background_process_registry: Shared<R>,
     ) -> Self {
         let go_to_model = AbstractGoToModel::new(
             model_sender,

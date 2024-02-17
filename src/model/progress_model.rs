@@ -108,11 +108,12 @@ impl ProgressModel {
             }
             listener(root_model, signal, id);
         };
+        let descr = description.clone();
         let task_wrapper = move |ctx: &mut TaskContext<M, R>| {
-            measure_l(Level::Info, description.as_str(), move || task(ctx))
+            measure_l(Level::Info, descr.as_str(), move || task(ctx))
         };
         let registry = &mut *self.background_process_registry.get_mut_ref();
-        let handle = registry.run_in_background(task_wrapper, listener_wrapper);
+        let _handle = registry.run_in_background(title.to_string(), description.to_string(), task_wrapper, listener_wrapper);
         // TODO: capture handle and allow to cancel process
 
 

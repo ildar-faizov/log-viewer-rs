@@ -27,7 +27,6 @@ mod select_word_backward;
 mod search;
 pub mod search_next;
 pub mod search_prev;
-mod test_bgp;
 mod help;
 mod go_to_line;
 mod go_to_date;

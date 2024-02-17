@@ -14,7 +14,7 @@ use crate::model::model::RootModel;
 use crate::shared::Shared;
 use crate::ui::line_drawer::LineDrawer;
 use crate::ui::ui_elements::UIElementName;
-use crate::utils::{stat, stat_l};
+use crate::utils::{stat, stat_l, NumberOfDecimalDigits};
 
 const METRIC_DRAW: &str = "draw";
 const METRIC_ACTION: &str = "action";
@@ -44,9 +44,11 @@ pub fn build_canvas(model: Shared<RootModel>) -> NamedView<Canvas<Shared<RootMod
             let mut effective_viewport_width = printer.size.x;
             if state.is_show_line_numbers() {
                 if let Some(data) = state.data() {
-                    max_line_number = data.lines.iter().flat_map(|line| line.line_no).max();
+                    max_line_number = data.lines.iter()
+                        .map(|line| line.line_no.as_ref().unwrap_or(&0).clone())
+                        .max();
                     if let Some(max_line_number) = max_line_number {
-                        let max_line_number_len = format!("{} | ", max_line_number).len();
+                        let max_line_number_len = max_line_number.number_of_decimal_digits();
                         effective_viewport_width -= max_line_number_len;
                     }
                 }
@@ -66,8 +68,8 @@ pub fn build_canvas(model: Shared<RootModel>) -> NamedView<Canvas<Shared<RootMod
                     .with_max_line_number(max_line_number.unwrap_or(0));
                 data.lines.iter()
                     .take(printer.size.y)
+                    .map(|line| line_drawer.draw(line))
                     .enumerate()
-                    .map(|(i, line)| (i, line_drawer.draw(i, line)))
                     .for_each(|(i, ss)|
                         printer.print_styled((0, i), SpannedStr::from(&ss))
                     );

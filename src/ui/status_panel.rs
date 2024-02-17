@@ -1,6 +1,6 @@
 use cursive::View;
 use cursive::view::{Nameable, Resizable};
-use cursive::views::{LinearLayout, TextView, DummyView};
+use cursive::views::{LinearLayout, TextView, DummyView, ProgressBar};
 use crate::ui::ui_elements::UIElementName;
 
 pub fn build_status_panel() -> Box<dyn View> {
@@ -9,6 +9,8 @@ pub fn build_status_panel() -> Box<dyn View> {
     layout.add_child(TextView::empty().no_wrap().with_name(UIElementName::StatusFile));
     layout.add_child(DummyView{}.fixed_width(3));
     layout.add_child(TextView::empty().no_wrap().with_name(UIElementName::StatusHint).full_width());
+    layout.add_child(DummyView{}.fixed_width(1));
+    layout.add_child(ProgressBar::new().with_name(UIElementName::StatusProgress).full_width());
     layout.add_child(DummyView{}.fixed_width(3));
     layout.add_child(TextView::empty().no_wrap().with_name(UIElementName::StatusPosition));
 

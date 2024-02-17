@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use anyhow::anyhow;
 use crossbeam_channel::Sender;
 use fluent_integer::Integer;
-use crate::background_process::background_process_registry::BackgroundProcessRegistry;
+use crate::background_process::run_in_background::RunInBackground;
 use crate::data_source::Direction;
 use crate::model::model::ModelEvent;
 use crate::model::navigable_searcher_constructor::NavigableSearcherConstructorBuilder;
@@ -10,9 +10,9 @@ use crate::model::search::Search;
 use crate::shared::Shared;
 use crate::utils::event_emitter::EventEmitter;
 
-pub struct SearchModel {
+pub struct SearchModel<R: RunInBackground> {
     model_sender: Sender<ModelEvent>,
-    background_process_registry: Shared<BackgroundProcessRegistry>,
+    runner: Shared<R>,
     file_name: Option<PathBuf>,
     visible: bool,
     pattern: String,
@@ -22,11 +22,11 @@ pub struct SearchModel {
     is_regexp: bool,
 }
 
-impl SearchModel {
-    pub fn new(model_sender: Sender<ModelEvent>, background_process_registry: Shared<BackgroundProcessRegistry>) -> Self {
+impl<R: RunInBackground + 'static> SearchModel<R> {
+    pub fn new(model_sender: Sender<ModelEvent>, runner: Shared<R>) -> Self {
         SearchModel {
             model_sender,
-            background_process_registry,
+            runner,
             file_name: None,
             visible: false,
             pattern: String::new(),
@@ -62,7 +62,8 @@ impl SearchModel {
     }
 
     pub fn start_search(&mut self) -> anyhow::Result<Search> {
-        let background_process_registry = self.background_process_registry.clone();
+        let background_process_registry = self.runner.clone();
+        let background_process_registry = &mut *background_process_registry.get_mut_ref();
         let constructor = NavigableSearcherConstructorBuilder::default()
             .file_name(self.file_name.clone())
             .pattern(self.pattern.clone())
@@ -75,7 +76,7 @@ impl SearchModel {
         let mut search = Search::new(
             self.model_sender.clone(),
             constructor,
-            &mut background_process_registry.get_mut_ref()
+            background_process_registry
         );
         search.search(direction)?;
         Ok(search)

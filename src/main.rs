@@ -31,7 +31,7 @@ mod args;
 
 use std::collections::HashMap;
 use cursive::{Cursive, CursiveRunnable, CursiveRunner, View};
-use cursive::views::{TextView, ViewRef, Canvas, Checkbox};
+use cursive::views::{TextView, ViewRef, Canvas, Checkbox, ProgressBar};
 
 use clap::Parser;
 
@@ -42,7 +42,6 @@ use cursive::direction::Direction;
 use std::fs::OpenOptions;
 use std::panic;
 use std::rc::Rc;
-use std::str::FromStr;
 use std::time::Duration;
 use anyhow::anyhow;
 use cursive::event::Event;
@@ -324,6 +323,16 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<R
 				handle_progress_model_event(progress_model, evt)
 			};
 			callback(app);
+			Ok(true)
+		},
+		BGPEvent(evt) => {
+			let root_model = model.get_mut_ref();
+			let bgp_model = &mut *root_model.get_bgp_model();
+			let progress_visible = bgp_model.get_number() > 0;
+			let overall_progress = bgp_model.get_overall_progress();
+			app.call_on_name(&UIElementName::StatusProgress.to_string(), |progress_bar: &mut ProgressBar| {
+				progress_bar.set_value(overall_progress as usize); // TODO hide when there are no processes
+			});
 			Ok(true)
 		},
 		Hint(hint) => {

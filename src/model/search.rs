@@ -2,7 +2,6 @@ use crate::actions::action::Action;
 use crate::actions::search_next::SearchNextAction;
 use crate::actions::search_prev::SearchPrevAction;
 use crate::background_process::background_process_handler::BackgroundProcessHandler;
-use crate::background_process::background_process_registry::BackgroundProcessRegistry;
 use crate::background_process::run_in_background::RunInBackground;
 use crate::background_process::task_context::TaskContext;
 use crate::data_source::Direction;
@@ -34,15 +33,17 @@ pub struct Search {
 pub type CurrentOccurrenceResult = Result<(Rc<Vec<Occurrence>>, Option<usize>), SearchError>;
 
 impl Search {
-    pub fn new(
+    pub fn new<R: RunInBackground + 'static>(
         model_sender: Sender<ModelEvent>,
         constructor: NavigableSearcherConstructor,
-        registry: &mut BackgroundProcessRegistry,
+        registry: &mut R,
     ) -> Self {
         let (search_request_sender, search_request_receiver) =
             crossbeam_channel::unbounded::<SearchRequest>();
         let daemon_handler = registry
             .background_process_builder::<SearchResponse, _, Result<(), DaemonError>, _>()
+            .with_title("Search")
+            .with_description(format!("Search for {}", &constructor))
             .with_task(move |ctx| {
                 log::info!("Search daemon started: {:?}", constructor);
                 measure_l(

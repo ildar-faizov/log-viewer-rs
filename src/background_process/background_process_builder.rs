@@ -16,6 +16,8 @@ where
     H: RunInBackground,
 {
     runner: &'a mut H,
+    title: Option<String>,
+    description: Option<String>,
     task: Option<T>,
     listener: Option<L>,
     phantom_message: PhantomData<M>,
@@ -34,11 +36,23 @@ where
     pub fn new(runner: &'a mut H) -> Self {
         BackgroundProcessBuilder {
             runner,
+            title: None,
+            description: None,
             task: None,
             listener: None,
             phantom_message: PhantomData::default(),
             phantom_result: PhantomData::default(),
         }
+    }
+
+    pub fn with_title<S: ToString>(mut self, title: S) -> Self {
+        self.title.replace(title.to_string());
+        self
+    }
+
+    pub fn with_description<S: ToString>(mut self, description: S) -> Self {
+        self.description.replace(description.to_string());
+        self
     }
 
     pub fn with_task(mut self, task: T) -> Self {
@@ -52,8 +66,10 @@ where
     }
 
     pub fn run(self) -> BackgroundProcessHandler {
+        let title = self.title.expect("Title is missing");
+        let description = self.description.expect("Description is missing");
         let task = self.task.expect("");
         let listener = self.listener.expect("");
-        self.runner.run_in_background(task, listener)
+        self.runner.run_in_background(title, description, task, listener)
     }
 }

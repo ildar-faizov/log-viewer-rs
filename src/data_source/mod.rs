@@ -3,10 +3,8 @@ use std::io::{Read, Seek, BufReader, SeekFrom, Cursor};
 use std::fs::File;
 use std::cmp::Ordering;
 use std::cell::RefMut;
-use std::ops::Deref;
 use std::sync::Arc;
 use metrics::{describe_histogram, Unit};
-use num_traits::ToPrimitive;
 use fluent_integer::Integer;
 use crate::advanced_io::advanced_buf_reader::BidirectionalBufRead;
 use crate::advanced_io::seek_to::SeekTo;
@@ -16,18 +14,19 @@ use crate::utils::utf8::UtfChar;
 use crate::data_source::char_navigation::{next_char, peek_next_char, peek_prev_char, prev_char};
 use crate::data_source::line_registry::{LineRegistry, LineRegistryImpl};
 use crate::interval::Interval;
+use crate::model::rendered::{LineNumberMissingReason, LineNumberResult};
 use crate::utils::stat;
 
 pub const BUFFER_SIZE: usize = 1024 * 1024; // 1MB
 
 const METRIC_READ_DELIMITED: &str = "read_delimited";
 
-#[derive(Debug, Default, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Line {
     pub content: String, // TODO use appropriate type
     pub start: Integer, // offset of the first symbol in line
     pub end: Integer, // offset of the first symbol of the next line
-    pub line_no: Option<u64>,
+    pub line_no: LineNumberResult,
 }
 
 impl Line {
@@ -38,7 +37,7 @@ impl Line {
             content: content.to_string(),
             start: start.into(),
             end: end.into(),
-            line_no: None,
+            line_no: Err(LineNumberMissingReason::LineNumberingTurnedOff),
         }
     }
 
@@ -49,7 +48,7 @@ impl Line {
             content: content.to_string(),
             start: start.into(),
             end: end.into(),
-            line_no: Some(line_no),
+            line_no: Ok(line_no),
         }
     }
 
@@ -63,7 +62,7 @@ pub struct LineBuilder {
     content: Option<String>,
     start: Option<Integer>,
     end: Option<Integer>,
-    line_no: Option<u64>,
+    line_no: Option<LineNumberResult>,
 }
 
 impl LineBuilder {
@@ -83,10 +82,8 @@ impl LineBuilder {
         self
     }
 
-    pub fn with_line_no(mut self, n: Option<u64>) -> Self {
-        if let Some(n) = n {
-            self.line_no.replace(n);
-        }
+    pub fn with_line_no(mut self, n: LineNumberResult) -> Self {
+        self.line_no.replace(n);
         self
     }
 
@@ -94,7 +91,7 @@ impl LineBuilder {
         let content = self.content.unwrap();
         let start = self.start.unwrap();
         let end = self.end.unwrap();
-        let line_no = self.line_no;
+        let line_no = self.line_no.unwrap();
         Line {
             content,
             start,
@@ -161,12 +158,13 @@ pub fn read_delimited<R, F>(
     f.seek_relative(shift)?;
     let mut current_no = line_registry
         .zip(Some(&direction))
+        .ok_or(LineNumberMissingReason::LineNumberingTurnedOff)
         .and_then(move |(r, direction)| {
             let interval = match direction {
                 Direction::Forward => Interval::closed(0.into(), offset),
                 Direction::Backward => Interval::closed_open(0.into(), offset),
             };
-            r.count(&interval).ok()
+            r.count(&interval).map_err(|err| LineNumberMissingReason::Delegate(err))
         })
         .map(|n| n as u64);
 
@@ -198,7 +196,7 @@ pub fn read_delimited<R, F>(
                         stack.push(ch.get_char());
                         start = start.or(Some(ch.get_offset()));
                     } else {
-                        let line_no = current_no;
+                        let line_no = current_no.clone();
                         current_no = current_no.map(|n| n + 1);
                         if !stack.is_empty() || allow_empty_segments {
                             let (content, bytes_trimmed) = flush(&mut stack);
@@ -223,7 +221,7 @@ pub fn read_delimited<R, F>(
                             .with_content(content)
                             .with_start(start.unwrap())
                             .with_end(f.stream_position()? - bytes_trimmed)
-                            .with_line_no(current_no)
+                            .with_line_no(current_no.clone())
                             .build();
                         data.push(line);
                     }
@@ -249,7 +247,7 @@ pub fn read_delimited<R, F>(
                         stack.push(ch.get_char());
                         end = end.or(Some(ch.get_end()));
                     } else {
-                        let line_no = current_no;
+                        let line_no = current_no.clone();
                         current_no = current_no.map(|n| n.saturating_sub(1));
                         if !stack.is_empty() || allow_empty_segments {
                             stack.reverse();
@@ -276,7 +274,7 @@ pub fn read_delimited<R, F>(
                             .with_content(content)
                             .with_start(0)
                             .with_end(end.unwrap() - bytes_trimmed)
-                            .with_line_no(current_no)
+                            .with_line_no(current_no.clone())
                             .build();
                         data.push(line);
                     }
@@ -287,7 +285,7 @@ pub fn read_delimited<R, F>(
         },
     }
 
-    log::trace!("current_no = {:?}, offset = {:?}", current_no, f.stream_position());
+    log::trace!("current_no = {:?}, offset = {:?}", &current_no, f.stream_position());
 
     let s = data.first().map(|segment| segment.start);
     let e = data.last().map(|segment| segment.end);

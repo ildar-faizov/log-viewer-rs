@@ -51,8 +51,16 @@ impl BackgroundProcessRegistry {
 }
 
 impl RunInBackground for BackgroundProcessRegistry {
-    fn run_in_background<M, T, R, L>(&mut self, task: T, listener: L) -> BackgroundProcessHandler
+    fn run_in_background<T1, T2, M, T, R, L>(
+        &mut self,
+        title: T1,
+        description: T2,
+        task: T,
+        listener: L
+    ) -> BackgroundProcessHandler
     where
+        T1: ToString,
+        T2: ToString,
         M: Send + 'static,
         R: Send + 'static,
         T: FnOnce(&mut TaskContext<M, R>) -> R,
@@ -73,7 +81,7 @@ impl RunInBackground for BackgroundProcessRegistry {
                 .expect("Failed to send result");
         });
 
-        BackgroundProcessHandler::new(sender_interrupt, id)
+        BackgroundProcessHandler::new(sender_interrupt, id, title.to_string(), description.to_string())
     }
 }
 

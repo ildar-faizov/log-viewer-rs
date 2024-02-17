@@ -1,11 +1,20 @@
 use std::rc::Rc;
+use std::fmt::Write;
 use cursive::theme::Style;
 use cursive::utils::span::{IndexedCow, IndexedSpan, SpannedString};
+use crate::data_source::line_registry::LineRegistryError;
 use crate::highlight::highlight::Highlighter;
 use crate::highlight::style_with_priority::StyleWithPriority;
 use crate::model::model::RootModel;
-use crate::model::rendered::LineRender;
+use crate::model::rendered::{LineNumberMissingReason, LineRender};
 use crate::ui::span_producer::SpanProducer;
+
+const LINE_NO_DELIMITER: &str = " | ";
+const LINE_NO_DELIMITER_WIDTH: usize = LINE_NO_DELIMITER.len();
+const LINE_NO_DELIMITER_BYTE_WIDTH: usize = LINE_NO_DELIMITER.as_bytes().len();
+// const LOADING_INDICATOR: &str = "⌛"; TODO for some reason printing line with this symbol drops one space
+const LOADING_INDICATOR: &str = "⧖";
+const ERROR_INDICATOR: &str = "⚠";
 
 #[derive(Default)]
 pub struct LineDrawer<'a> {
@@ -70,15 +79,16 @@ impl<'a> LineDrawer<'a> {
         self
     }
 
-    pub fn draw(&self, i: usize, line: &LineRender) -> SpannedString<Style> {
+    pub fn draw(&self, line: &LineRender) -> SpannedString<Style> {
+        let mut result = self.draw_line_number(line)
+            .unwrap_or_else(|err| {
+                log::warn!("Failed to draw line number: {:?}", err);
+                SpannedString::new()
+            });
+
         let state = self.state.unwrap();
         let highlighters = self.highlighters.unwrap();
-        let (line_number_width, line_span_width) = if self.show_line_numbers {
-            let r = format!("{}", self.max_line_number + 1).len();
-            (r, r + " | ".len())
-        } else {
-            (0, 0)
-        };
+        let line_span_width = result.source().len();
         let width = self.width.map(|w| w.saturating_sub(line_span_width)).unwrap();
         let regular_style = self.regular_style.unwrap();
         let cursor_style = self.cursor_style.unwrap();
@@ -91,15 +101,15 @@ impl<'a> LineDrawer<'a> {
             .skip(horizontal_scroll)
             .take(width);
 
-        let display_str = get_visible_graphemes()
-            .map(|g| g.render.resolve(line.content.as_str()))
-            .fold(String::with_capacity(width), |mut acc, item| {
-                acc += item;
-                acc
-            });
         let selection = state.get_selection();
 
-        if let Some(first_grapheme) = get_visible_graphemes().next() {
+        let line_str = if let Some(first_grapheme) = get_visible_graphemes().next() {
+            let display_str = get_visible_graphemes()
+                .map(|g| g.render.resolve(line.content.as_str()))
+                .fold(String::with_capacity(width), |mut acc, item| {
+                    acc += item;
+                    acc
+                });
             let first_offset = first_grapheme.render_offset;
             let display_len = get_visible_graphemes().count();
 
@@ -147,37 +157,63 @@ impl<'a> LineDrawer<'a> {
                 let e = get_visible_graphemes().nth(interval.1.as_usize() - 1)
                     .map(|g| g.render_offset + g.render.resolve(line.content.as_str()).len() - first_offset)
                     .unwrap();
-                spans.push(indexed_span(line_span_width + s, line_span_width + e, (interval.1 - interval.0).as_usize(), style));
+                spans.push(indexed_span(s, e, (interval.1 - interval.0).as_usize(), style));
             }
-            let display_str = if self.show_line_numbers {
-                spans.insert(0, indexed_span(0, line_number_width, line_number_width, self.line_number_style.unwrap().get_style()));
-                spans.insert(1, indexed_span(line_number_width, line_span_width, line_span_width - line_number_width, regular_style.get_style()));
-                format!("{number:>width$} | {s}",
-                        number = line.line_no.unwrap_or(0) + 1,
-                        width = line_number_width,
-                        s = display_str)
-            } else {
-                display_str
-            };
-            log::trace!("{}: {}, spans = {:?}", i, display_str, spans);
             SpannedString::with_spans(display_str, spans)
         } else {
-            let mut display_str = String::new();
             let mut spans = vec![];
-            if self.show_line_numbers {
-                display_str = format!("{number:>width$} | ",
-                                      number = line.line_no.unwrap_or(0) + 1,
-                                      width = line_number_width);
-                spans.push(indexed_span(0, line_number_width, line_number_width, self.line_number_style.unwrap().get_style()));
-                spans.push(indexed_span(line_number_width, line_span_width, line_span_width - line_number_width, regular_style.get_style()))
-            }
+            let mut s = String::with_capacity(1);
             if cursor >= line.start && cursor <= line.end {
-                spans.push(indexed_span(line_span_width, line_span_width + 1, 1, cursor_style.get_style()));
-                display_str.push(' ');
+                spans.push(indexed_span(0, 1, 1, cursor_style.get_style()));
+                s.push(' ');
             }
+            SpannedString::with_spans(s, spans)
+        };
 
-            SpannedString::with_spans(display_str, spans)
+        result.append(line_str);
+        result
+    }
+
+    fn draw_line_number(&self, line: &LineRender) -> Result<SpannedString<Style>, std::fmt::Error> {
+        if !self.show_line_numbers {
+            return Ok(SpannedString::new());
         }
+
+        let line_number_width = self.max_line_number.checked_ilog10().unwrap_or(0) as usize + 1;
+        let mut prefix = String::new();
+        match &line.line_no {
+            Ok(line_no) => {
+                write!(
+                    &mut prefix,
+                    "{number:>width$}",
+                    number = line_no + 1,
+                    width = line_number_width
+                )?;
+            },
+            Err(LineNumberMissingReason::Delegate(LineRegistryError::NotReachedYet { .. })) => {
+                write!(
+                    &mut prefix,
+                    "{:width$}",
+                    LOADING_INDICATOR,
+                    width = line_number_width
+                )?;
+            },
+            Err(_) => {
+                write!(
+                    &mut prefix,
+                    "{:width$}",
+                    ERROR_INDICATOR,
+                    width = line_number_width
+                )?;
+            }
+        }
+        let line_number_offset = prefix.as_bytes().len();
+        prefix += LINE_NO_DELIMITER;
+        let spans = vec![
+            indexed_span(0, line_number_offset, line_number_width, self.line_number_style.unwrap().get_style()),
+            indexed_span(line_number_offset, line_number_offset + LINE_NO_DELIMITER_BYTE_WIDTH, LINE_NO_DELIMITER_WIDTH, self.regular_style.unwrap().get_style())
+        ];
+        Ok(SpannedString::with_spans(prefix, spans))
     }
 }
 

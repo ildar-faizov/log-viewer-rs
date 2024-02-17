@@ -49,6 +49,49 @@ pub enum LineRegistryError {
     }
 }
 
+impl Clone for LineRegistryError {
+    fn clone(&self) -> Self {
+        match self {
+            // TODO: we lose error data while cloning. Probably, use Arc<Error>
+            LineRegistryError::IO(io) => LineRegistryError::IO(std::io::Error::from(io.kind())),
+            LineRegistryError::Cancelled => LineRegistryError::Cancelled,
+            LineRegistryError::NotReachedYet { requested, limit } => LineRegistryError::NotReachedYet {
+                requested: requested.clone(),
+                limit: limit.clone()
+            },
+        }
+    }
+}
+
+impl PartialEq for LineRegistryError {
+    fn eq(&self, other: &Self) -> bool {
+        match self {
+            LineRegistryError::IO(io1) => {
+                if let LineRegistryError::IO(io2) = other {
+                    io1.kind() == io2.kind()
+                } else {
+                    false
+                }
+            }
+            LineRegistryError::Cancelled => {
+                match other {
+                    LineRegistryError::Cancelled => true,
+                    _ => false,
+                }
+            }
+            LineRegistryError::NotReachedYet { requested: r1, limit: lim1 } => {
+                if let LineRegistryError::NotReachedYet { requested: r2, limit: lim2} = other {
+                    r1 == r2 && lim1 == lim2
+                } else {
+                    false
+                }
+            }
+        }
+    }
+}
+
+impl Eq for LineRegistryError {}
+
 pub type LineRegistryResult<T> = Result<T, LineRegistryError>;
 
 #[derive(Default, Debug)]
@@ -215,6 +258,7 @@ impl LineRegistry for LineRegistryImpl {
 
             sw_read = Instant::now();
         }
+        bytes_processed(bytes_read);
         histogram!(METRIC_BUILD).record(sw_total.elapsed().to_unit(&Unit::Milliseconds));
         Ok(())
     }

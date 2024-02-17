@@ -15,3 +15,4 @@ pub mod progress_model;
 mod navigable_searcher_constructor;
 mod abstract_go_to_model;
 mod guess_date_format;
+mod bgp_model;

@@ -2,7 +2,6 @@ use crossbeam_channel::Sender;
 use uuid::Uuid;
 use fluent_integer::Integer;
 use crate::background_process::background_process_handler::BackgroundProcessHandler;
-use crate::background_process::background_process_registry::BackgroundProcessRegistry;
 use crate::background_process::run_in_background::RunInBackground;
 use crate::background_process::signal::Signal;
 use crate::background_process::task_context::TaskContext;
@@ -11,20 +10,20 @@ use crate::search::searcher::Occurrence;
 use crate::shared::Shared;
 use crate::utils::event_emitter::EventEmitter;
 
-pub struct AbstractGoToModel
+pub struct AbstractGoToModel<R: RunInBackground>
 {
     model_sender: Sender<ModelEvent>,
-    background_process_registry: Shared<BackgroundProcessRegistry>,
+    background_process_registry: Shared<R>,
     current_process: Option<BackgroundProcessHandler>,
     is_open: bool,
     open_event_producer: Box<dyn Fn(bool) -> ModelEvent>,
 }
 
-impl AbstractGoToModel
+impl<R: RunInBackground> AbstractGoToModel<R>
 {
     pub fn new(
         model_sender: Sender<ModelEvent>,
-        background_process_registry: Shared<BackgroundProcessRegistry>,
+        background_process_registry: Shared<R>,
         open_event_producer: Box<dyn Fn(bool) -> ModelEvent>,
     ) -> Self {
         AbstractGoToModel {
@@ -60,6 +59,8 @@ impl AbstractGoToModel
         let registry = &mut *self.background_process_registry.get_mut_ref();
         let handler = registry
             .background_process_builder::<(), _, Result<Integer, GoToError>, _>()
+            .with_title("Go to")
+            .with_description("Go to")
             .with_task(task)
             .with_listener(move |model, msg, id| {
                 let handle_result = result_handler(&mut *model, *id, msg);

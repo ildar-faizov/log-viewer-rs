@@ -1,13 +1,15 @@
 use fluent_integer::Integer;
+use thiserror::Error;
 use crate::data_source::{Data, Line, LineBuilder};
+use crate::data_source::line_registry::LineRegistryError;
 use crate::utils::GraphemeRender;
 
-#[derive(Debug, Default, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct LineRender {
     pub content: String,
     pub start: Integer, // offset of the first symbol in line
     pub end: Integer, // offset of the first symbol of the next line
-    pub line_no: Option<u64>,
+    pub line_no: LineNumberResult,
     pub render: Vec<GraphemeRender>
 }
 
@@ -59,7 +61,7 @@ impl LineRender {
             .with_content(self.content.clone())
             .with_start(self.start)
             .with_end(self.end)
-            .with_line_no(self.line_no)
+            .with_line_no(self.line_no.clone())
     }
 }
 
@@ -85,7 +87,7 @@ impl LineRenderBuilder {
         self
     }
 
-    pub fn with_line_no(mut self, n: Option<u64>) -> Self {
+    pub fn with_line_no(mut self, n: LineNumberResult) -> Self {
         self.line_builder = self.line_builder.with_line_no(n);
         self
     }
@@ -110,3 +112,15 @@ impl DataRender {
         }
     }
 }
+
+#[derive(Error, Debug, Clone, Eq, PartialEq)]
+pub enum LineNumberMissingReason {
+    #[error("Line numbering is turned off")]
+    LineNumberingTurnedOff,
+    #[error("Line registry error")]
+    Delegate(#[from] LineRegistryError),
+    #[error("Missing Data")]
+    MissingData,
+}
+
+pub type LineNumberResult = Result<u64, LineNumberMissingReason>;
