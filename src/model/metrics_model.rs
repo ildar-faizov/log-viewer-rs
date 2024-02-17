@@ -27,7 +27,7 @@ pub enum MetricsModelEvent {
     Open(bool),
 }
 
-pub type MetricsHolder = Option<(Rc<Registry<Key, AtomicStorage>>, Shared<HashMap<KeyName, Description>>)>;
+pub type MetricsHolder = (Rc<Registry<Key, AtomicStorage>>, Shared<HashMap<KeyName, Description>>);
 
 #[derive(Clone, Debug)]
 pub struct SingleMetrics {
@@ -41,7 +41,7 @@ pub struct SingleMetrics {
 }
 
 impl MetricsModel {
-    pub fn new(sender: Sender<ModelEvent>, metrics_holder: MetricsHolder) -> Self {
+    pub fn new(sender: Sender<ModelEvent>, metrics_holder: Option<MetricsHolder>) -> Self {
         let (registry, descriptions) = metrics_holder.unzip();
         Self {
             sender,
@@ -139,7 +139,7 @@ impl PartialEq for SingleMetrics {
 
 impl PartialOrd for SingleMetrics {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.description.partial_cmp(&other.description)
+        Some(self.description.cmp(&other.description))
     }
 }
 

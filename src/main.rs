@@ -29,7 +29,6 @@ mod welcome;
 mod application_metrics;
 mod args;
 
-use std::collections::HashMap;
 use cursive::{Cursive, CursiveRunnable, CursiveRunner, View};
 use cursive::views::{TextView, ViewRef, Canvas, Checkbox, ProgressBar};
 
@@ -41,7 +40,6 @@ use crate::model::model::ModelEvent::*;
 use cursive::direction::Direction;
 use std::fs::OpenOptions;
 use std::panic;
-use std::rc::Rc;
 use std::time::Duration;
 use anyhow::anyhow;
 use cursive::event::Event;
@@ -56,9 +54,8 @@ use crate::search::searcher::SearchError;
 use crate::shared::Shared;
 
 use human_bytes::human_bytes;
-use metrics::{describe_histogram, KeyName, Unit};
-use metrics_util::registry::{AtomicStorage, Registry};
-use crate::application_metrics::{ApplicationRecorder, Description};
+use metrics::{describe_histogram, Unit};
+use crate::application_metrics::ApplicationRecorder;
 use crate::args::Args;
 use crate::background_process::background_process_registry::BackgroundProcessRegistry;
 use crate::model::help_model::HelpModelEvent;
@@ -106,7 +103,7 @@ fn init_logging(args: &Args) -> std::io::Result<()> {
 		.unwrap();
 
 	let level = match args.log_level.as_ref() {
-		Some(loglevel) => loglevel.clone(),
+		Some(loglevel) => *loglevel,
 		None => LevelFilter::Info
 	};
 
@@ -135,7 +132,7 @@ fn init_panic_hook() {
 	}));
 }
 
-fn init_metrics() -> anyhow::Result<(Rc<Registry<metrics::Key, AtomicStorage>>, Shared<HashMap<KeyName, Description>>)> {
+fn init_metrics() -> anyhow::Result<MetricsHolder> {
 	let recorder = ApplicationRecorder::new();
 	let registry = recorder.get_registry();
 	let descriptions = recorder.get_descriptions();
@@ -160,10 +157,10 @@ fn init_profiler(args: &Args) {
 	}
 }
 
-fn create_model(args: &Args, sender: Sender<ModelEvent>, metrics_holder: MetricsHolder) -> (Shared<RootModel>, Shared<BackgroundProcessRegistry>) {
+fn create_model(args: &Args, sender: Sender<ModelEvent>, metrics_holder: Option<MetricsHolder>) -> (Shared<RootModel>, Shared<BackgroundProcessRegistry>) {
 	let background_process_registry = Shared::new(BackgroundProcessRegistry::new());
 	let model = RootModel::new(sender, background_process_registry.clone(), metrics_holder);
-	model.get_mut_ref().set_file_name(args.file.as_ref().map(|s| s.as_str()));
+	model.get_mut_ref().set_file_name(args.file.as_deref());
 	(model, background_process_registry)
 }
 
@@ -250,7 +247,7 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<R
 		Repaint => Ok(true),
 		DataUpdated => {
 			let mut v: ViewRef<Canvas<Shared<RootModel>>> = app.find_name(&UIElementName::MainContent.to_string()).unwrap();
-			v.take_focus(Direction::none());
+			let _ = v.take_focus(Direction::none());
 			Ok(true)
 		},
 		SearchOpen(show) => {
@@ -325,10 +322,10 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<R
 			callback(app);
 			Ok(true)
 		},
-		BGPEvent(evt) => {
+		BGPEvent(_evt) => {
 			let root_model = model.get_mut_ref();
 			let bgp_model = &mut *root_model.get_bgp_model();
-			let progress_visible = bgp_model.get_number() > 0;
+			let _progress_visible = bgp_model.get_number() > 0;
 			let overall_progress = bgp_model.get_overall_progress();
 			app.call_on_name(&UIElementName::StatusProgress.to_string(), |progress_bar: &mut ProgressBar| {
 				progress_bar.set_value(overall_progress as usize); // TODO hide when there are no processes

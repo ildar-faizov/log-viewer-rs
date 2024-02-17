@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use fluent_integer::Integer;
 
 #[derive(Debug, Clone, Copy)]
@@ -12,12 +13,10 @@ impl Selection {
     }
 
     pub fn create(boundary1: Integer, boundary2: Integer) -> Option<Box<Selection>> {
-        if boundary1 < boundary2 {
-            Some(Box::new(Selection::new(boundary1, boundary2)))
-        } else if boundary2 < boundary1 {
-            Some(Box::new(Selection::new(boundary2, boundary1)))
-        } else {
-            None
+        match boundary1.cmp(&boundary2) {
+            Ordering::Less => Some(Box::new(Selection::new(boundary1, boundary2))),
+            Ordering::Equal => None,
+            Ordering::Greater => Some(Box::new(Selection::new(boundary2, boundary1))),
         }
     }
 }

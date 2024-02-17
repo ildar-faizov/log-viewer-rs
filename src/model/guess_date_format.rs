@@ -156,6 +156,7 @@ impl KnownDateFormat {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_pattern(&self) -> &Regex {
         &self.pattern
     }

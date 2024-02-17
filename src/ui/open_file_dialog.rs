@@ -11,7 +11,6 @@ use crate::model::open_file_model::{DirEntry0, OpenFileModel, OpenFileModelEvent
 use crate::ui::view_with_callback::{ViewUpdateCallback, ViewWithCallback};
 use crate::ui::with_root_model::WithRootModel;
 
-const BREADCRUMBS_LABEL: &str = "Breadcrumbs";
 const BREADCRUMBS_PANEL: &str = "BreadcrumbsPanel";
 const FILE_LIST: &str = "FileList";
 const FILE_LIST_SCROLL: &str = "FileListScroll";
@@ -25,6 +24,8 @@ const PADDING: usize = 1;
 const DIALOG_WIDTH: usize = PADDING + FILE_LIST_SIZE.0 + PADDING + FILE_INFO_PANEL_SIZE.0 + PADDING;
 
 const DATE_FORMAT: &str = "%d %b %y %T";
+
+type FileListScroll = ScrollView<NamedView<SelectView>>;
 
 pub fn build_open_file_dialog(model: &mut OpenFileModel) -> ViewWithCallback {
     let mut content = LinearLayout::vertical();
@@ -62,7 +63,7 @@ pub fn handle_open_file_model_event(model: &mut OpenFileModel, evt: OpenFileMode
         OpenFileModelEvent::FilesUpdated => {
             let callback = populate_file_selector(model);
             Box::new(|app| {
-                app.call_on_name(FILE_LIST_SCROLL, |scroll_view: &mut ScrollView<NamedView<SelectView>>| {
+                app.call_on_name(FILE_LIST_SCROLL, |scroll_view: &mut FileListScroll| {
                     callback(scroll_view)
                 });
             })
@@ -137,13 +138,13 @@ fn build_file_selector(model: &mut OpenFileModel) -> Box<dyn View> {
         .into_boxed_view()
 }
 
-fn populate_file_selector(model: &OpenFileModel) -> Box<dyn FnOnce(&mut ScrollView<NamedView<SelectView>>)> {
+fn populate_file_selector(model: &OpenFileModel) -> Box<dyn FnOnce(&mut FileListScroll)> {
     let files: Vec<DirEntry0> = model.get_files()
         .iter()
         .map(Clone::clone)
         .collect();
     let file = model.get_current_file().map(String::from);
-    Box::new(move |scroll_view: &mut ScrollView<NamedView<SelectView>>| {
+    Box::new(move |scroll_view: &mut FileListScroll| {
         let list = &mut *scroll_view.get_inner_mut().get_mut();
         list.clear();
         for (i, dir_entry) in files.iter().enumerate() {

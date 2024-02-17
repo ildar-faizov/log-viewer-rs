@@ -164,7 +164,7 @@ pub fn read_delimited<R, F>(
                 Direction::Forward => Interval::closed(0.into(), offset),
                 Direction::Backward => Interval::closed_open(0.into(), offset),
             };
-            r.count(&interval).map_err(|err| LineNumberMissingReason::Delegate(err))
+            r.count(&interval).map_err(LineNumberMissingReason::Delegate)
         })
         .map(|n| n as u64);
 
@@ -477,7 +477,7 @@ impl<R, B> LineSource for LineSourceImpl<R, B> where R: Read + Seek, B: LineSour
             stat(METRIC_READ_DELIMITED, &Unit::Microseconds, || {
                 read_delimited(&mut f, offset, number_of_lines, true, line_registry, |c| *c == '\n')
             })
-        }).unwrap_or(Data::default());
+        }).unwrap_or_default();
 
         log::trace!("Result: {:?}", result);
 

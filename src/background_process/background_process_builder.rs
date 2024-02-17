@@ -40,8 +40,8 @@ where
             description: None,
             task: None,
             listener: None,
-            phantom_message: PhantomData::default(),
-            phantom_result: PhantomData::default(),
+            phantom_message: Default::default(),
+            phantom_result: Default::default(),
         }
     }
 

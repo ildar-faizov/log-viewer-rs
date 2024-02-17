@@ -72,9 +72,6 @@ impl PartialEq<SearchError> for SearchError {
 
 impl SearchError {
     pub fn is_not_found(&self) -> bool {
-        match &self {
-            SearchError::NotFound => true,
-            _ => false
-        }
+        matches!(&self, SearchError::NotFound)
     }
 }

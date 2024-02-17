@@ -45,7 +45,7 @@ pub fn build_canvas(model: Shared<RootModel>) -> NamedView<Canvas<Shared<RootMod
             if state.is_show_line_numbers() {
                 if let Some(data) = state.data() {
                     max_line_number = data.lines.iter()
-                        .map(|line| line.line_no.as_ref().unwrap_or(&0).clone())
+                        .map(|line| *line.line_no.as_ref().unwrap_or(&0))
                         .max();
                     if let Some(max_line_number) = max_line_number {
                         let max_line_number_len = max_line_number.number_of_decimal_digits();

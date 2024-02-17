@@ -33,7 +33,7 @@ pub trait LineRegistry {
     where
         R: Read + Seek,
         F: Fn() -> bool,
-        G: Fn(usize) -> ();
+        G: Fn(usize);
 }
 
 #[derive(Error, Debug)]
@@ -56,8 +56,8 @@ impl Clone for LineRegistryError {
             LineRegistryError::IO(io) => LineRegistryError::IO(std::io::Error::from(io.kind())),
             LineRegistryError::Cancelled => LineRegistryError::Cancelled,
             LineRegistryError::NotReachedYet { requested, limit } => LineRegistryError::NotReachedYet {
-                requested: requested.clone(),
-                limit: limit.clone()
+                requested: *requested,
+                limit: *limit
             },
         }
     }
@@ -74,10 +74,7 @@ impl PartialEq for LineRegistryError {
                 }
             }
             LineRegistryError::Cancelled => {
-                match other {
-                    LineRegistryError::Cancelled => true,
-                    _ => false,
-                }
+                matches!(other, LineRegistryError::Cancelled)
             }
             LineRegistryError::NotReachedYet { requested: r1, limit: lim1 } => {
                 if let LineRegistryError::NotReachedYet { requested: r2, limit: lim2} = other {
@@ -121,7 +118,7 @@ impl LineRegistryImpl {
 
     fn with_data<I: Into<Integer> + Copy>(data: Vec<I>) -> Self {
         let line_breaks: Vec<Integer> = data.iter().map(|i| (*i).into()).collect();
-        let crawled = **&line_breaks.iter().max().unwrap_or(&0.into());
+        let crawled = *line_breaks.iter().max().unwrap_or(&0.into());
         LineRegistryImpl {
             internals: RwLock::new(Internals {
                 line_breaks,
@@ -150,7 +147,7 @@ impl LineRegistry for LineRegistryImpl {
         if cmp == Ordering::Greater {
             return Err(LineRegistryError::NotReachedYet {
                 requested: range.right_bound,
-                limit: *&internals.crawled,
+                limit: internals.crawled,
             })
         }
 
@@ -160,7 +157,7 @@ impl LineRegistry for LineRegistryImpl {
             IntervalBound::PositiveInfinity => None,
             IntervalBound::NegativeInfinity => Some(0),
             IntervalBound::Fixed { value, is_included } => {
-                match v.binary_search(&(*value).into()) {
+                match v.binary_search(value) {
                     Ok(p) => {
                         if *is_included {
                             Some(p)
@@ -195,7 +192,7 @@ impl LineRegistry for LineRegistryImpl {
     where
         R: Read + Seek,
         F: Fn() -> bool,
-        G: Fn(usize) -> (),
+        G: Fn(usize),
     {
         let sw_total = Instant::now();
         let mut offset: Integer = reader.stream_position()?.into();
@@ -222,6 +219,7 @@ impl LineRegistry for LineRegistryImpl {
             let sw = Instant::now();
             let mut p = 0_usize;
             data.clear();
+            #[allow(clippy::explicit_counter_loop)] // using enumerate slows it twice
             for ch in &buffer {
                 if *ch == b'\n' {
                     data.push(offset + p);

@@ -18,6 +18,6 @@ pub trait UniqueElementAssertions<'s, T> {
 impl <'s, T> UniqueElementAssertions<'s, T> for Spec<'s, Vec<T>> {
     fn has_only_element(&mut self) -> Spec<'s, T> {
         assert_that(self.subject).has_length(1);
-        assert_that(self.subject.get(0).unwrap())
+        assert_that(self.subject.first().unwrap())
     }
 }

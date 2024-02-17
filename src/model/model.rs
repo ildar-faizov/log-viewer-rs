@@ -5,7 +5,7 @@ use ModelEvent::*;
 use crate::data_source::{Data, Direction, FileBackend, LineSource, LineSourceBackend, LineSourceImpl, StrBackend};
 use std::cell::RefMut;
 use num_rational::Ratio;
-use std::cmp::min;
+use std::cmp::{min, Ordering};
 use std::fmt::Debug;
 use std::fs::File;
 use std::io::{Cursor, Read, Seek};
@@ -113,7 +113,7 @@ impl RootModel {
     pub fn new(
         model_sender: Sender<ModelEvent>,
         background_process_registry: Shared<BackgroundProcessRegistry>,
-        metrics_holder: MetricsHolder,
+        metrics_holder: Option<MetricsHolder>,
     ) -> Shared<RootModel> {
         let sender = model_sender.clone();
         let sender2 = model_sender.clone();
@@ -186,6 +186,7 @@ impl RootModel {
         self.emit_cursor_moved();
     }
 
+    #[allow(dead_code)]
     pub fn error(&self) -> Option<String> {
         self.error.as_ref().map(|t| t.to_string())
     }
@@ -283,28 +284,31 @@ impl RootModel {
 
     pub fn set_horizontal_scroll(&mut self, horizontal_scroll: Integer) -> bool {
         log::trace!("set_horizontal_scroll {}", horizontal_scroll);
-        if self.horizontal_scroll < horizontal_scroll {
-            if let Some(data) = &self.data {
-                let max_length = data.lines.iter()
-                    .take(self.viewport_height.as_usize())
-                    .map(|line| line.content.len())
-                    .max();
-                log::trace!("set_horizontal_scroll max_length = {:?}", max_length);
-                if let Some(max_length) = max_length {
-                    if horizontal_scroll + self.viewport_width <= max_length {
-                        log::trace!("set_horizontal_scroll success");
-                        self.horizontal_scroll = horizontal_scroll;
-                        self.model_sender.emit_event(DataUpdated);
-                        return true;
+        match self.horizontal_scroll.cmp(&horizontal_scroll) {
+            Ordering::Less => {
+                if let Some(data) = &self.data {
+                    let max_length = data.lines.iter()
+                        .take(self.viewport_height.as_usize())
+                        .map(|line| line.content.len())
+                        .max();
+                    log::trace!("set_horizontal_scroll max_length = {:?}", max_length);
+                    if let Some(max_length) = max_length {
+                        if horizontal_scroll + self.viewport_width <= max_length {
+                            log::trace!("set_horizontal_scroll success");
+                            self.horizontal_scroll = horizontal_scroll;
+                            self.model_sender.emit_event(DataUpdated);
+                            return true;
+                        }
                     }
                 }
-            }
-        } else if self.horizontal_scroll > horizontal_scroll {
-            log::trace!("set_horizontal_scroll success");
-            self.horizontal_scroll = horizontal_scroll;
-            self.model_sender.emit_event(DataUpdated);
-            return true;
-        }
+            },
+            Ordering::Greater => {
+                self.horizontal_scroll = horizontal_scroll;
+                self.model_sender.emit_event(DataUpdated);
+                return true;
+            },
+            Ordering::Equal => {},
+        };
         false
     }
 
@@ -442,12 +446,11 @@ impl RootModel {
                         Direction::Forward => get_graphemes()
                             .skip(expected_index.as_usize())
                             .skip_while(|ch| !ch.is_first_in_original)
-                            .next(),
+                            .find(|ch| ch.is_first_in_original),
                         Direction::Backward => get_graphemes()
                             .take(expected_index.as_usize() + 1)
                             .rev()
-                            .skip_while(|ch| !ch.is_first_in_original)
-                            .next()
+                            .find(|ch| ch.is_first_in_original)
                     };
                     if let Some(grapheme) = get_grapheme {
                         break line.start + grapheme.original_offset;
@@ -511,6 +514,7 @@ impl RootModel {
         self.show_line_numbers
     }
 
+    #[allow(dead_code)]
     pub fn set_show_line_numbers(&mut self, show_line_numbers: bool) {
         self.show_line_numbers = show_line_numbers;
         if let Some(ds) = &self.datasource {
@@ -604,7 +608,7 @@ impl RootModel {
         file_name: String)
     {
         if self.show_line_numbers {
-            (&mut line_source).track_line_number(true);
+            line_source.track_line_number(true);
         }
         let file_size = line_source.get_length();
         self.datasource = Some(Shared::new(line_source));
@@ -1007,7 +1011,7 @@ impl RootModel {
                 .and_then(|render| render.lines.get(i))
                 .map(|line_render| line_render.line_no.clone())
                 .ok_or(LineNumberMissingReason::MissingData)
-                .unwrap_or_else(|err| Err(err));
+                .unwrap_or_else(Err);
             let event = CursorMoved(CursorPosition {
                 line_no,
                 position_in_line: cp.width.as_u64(),
@@ -1017,14 +1021,14 @@ impl RootModel {
         }
     }
 
-    fn guess_date_format(&mut self, path: &PathBuf) {
-        let path = path.clone();
+    fn guess_date_format(&mut self, path: &Path) {
+        let path = path.to_path_buf();
         let path2 = path.clone();
         self.background_process_builder::<(), _, _, _>()
             .with_title("Guess date format")
             .with_description(format!("Guess date format for {:?}", &path))
             .with_task(move |_| {
-                guess_date_format(path)
+                guess_date_format(path.to_path_buf())
             })
             .with_listener(move |model, signal, _| {
                 match signal {

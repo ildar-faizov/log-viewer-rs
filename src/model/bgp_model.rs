@@ -15,7 +15,6 @@ use crate::utils::measure_l;
 pub struct BGPModel {
     sender: Sender<ModelEvent>,
     background_process_registry: Shared<BackgroundProcessRegistry>,
-    is_open: bool,
     processes: LinkedHashMap<Uuid, ProcessDescriptor>,
     count: usize,
     overall_progress: u8,
@@ -29,6 +28,7 @@ pub enum BGPModelEvent {
 
 struct ProcessDescriptor {
     progress: u8, // 0-100
+    #[allow(dead_code)]
     handler: BackgroundProcessHandler,
 }
 
@@ -40,7 +40,6 @@ impl BGPModel {
         Self {
             sender,
             background_process_registry,
-            is_open: false,
             processes: LinkedHashMap::new(),
             count: 0,
             overall_progress: 0,
@@ -109,11 +108,11 @@ impl RunInBackground for BGPModel {
                 Signal::Custom(_) => {}
                 Signal::Progress(p) => {
                     let this = &mut *root_model.get_bgp_model();
-                    this.update_progress(&id, *p);
+                    this.update_progress(id, *p);
                 }
                 Signal::Complete(_) => {
                     let this = &mut *root_model.get_bgp_model();
-                    this.complete(&id);
+                    this.complete(id);
                 }
             }
             listener(root_model, signal, id);
@@ -124,7 +123,7 @@ impl RunInBackground for BGPModel {
         let registry = &mut *self.background_process_registry.get_mut_ref();
         let handle = registry.run_in_background(title, description, task_wrapper, listener_wrapper);
         let result = handle.clone();
-        self.processes.insert(handle.get_id().clone(), ProcessDescriptor::new(handle));
+        self.processes.insert(*handle.get_id(), ProcessDescriptor::new(handle));
         self.emit_event(BGPModelEvent::CountUpdated);
         result
     }

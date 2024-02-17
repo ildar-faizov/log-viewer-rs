@@ -17,7 +17,7 @@ pub fn build_progress_dialog(model: &ProgressModel) -> ViewWithCallback {
         .content(build_dialog_content(model))
         .with_name(DIALOG)
         .into_boxed_view();
-    let callback = Box::new(|app: &mut Cursive| {});
+    let callback = Box::new(|_app: &mut Cursive| {});
     ViewWithCallback::new(dialog, callback)
 }
 

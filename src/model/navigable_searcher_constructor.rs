@@ -44,12 +44,12 @@ pub enum NavigableSearcherConstructorError {
 }
 
 impl Display for NavigableSearcherConstructorError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let str = match self {
             NavigableSearcherConstructorError::PatternIsEmpty => "Pattern is empty",
             NavigableSearcherConstructorError::FileNotSet => "File (data source) not specified",
         };
-        write!(f, "{}", str.to_string())
+        write!(f, "{}", str)
     }
 }
 

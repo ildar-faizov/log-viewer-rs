@@ -95,7 +95,7 @@ fn bin_search(
 ) -> GoToResult {
     let total = reader.get_length();
     let _progress = 0_u8;
-    let (mut line1, mut dt1) = take_line(
+    let (mut line1, dt1) = take_line(
         reader,
         0,
         total,
@@ -139,7 +139,7 @@ fn bin_search(
             .ok_or(GoToError::NotReachable)?;
 
         match dt.cmp(&date) {
-            Ordering::Less => (line1, dt1) = (line, dt),
+            Ordering::Less => (line1, _) = (line, dt),
             Ordering::Equal => {
                 let result = earliest_line_with_given_date(reader, (line, dt), known_date_format, &guess_ctx);
                 return Ok(result);
