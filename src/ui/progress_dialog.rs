@@ -12,13 +12,12 @@ const DESCRIPTION: &str = "ProgressDialog.Description";
 const PROGRESS_BAR: &str = "ProgressDialog.ProgressBar";
 
 pub fn build_progress_dialog(model: &ProgressModel) -> ViewWithCallback {
-    let dialog = Dialog::new()
+    Dialog::new()
         .title(model.get_title())
         .content(build_dialog_content(model))
         .with_name(DIALOG)
-        .into_boxed_view();
-    let callback = Box::new(|_app: &mut Cursive| {});
-    ViewWithCallback::new(dialog, callback)
+        .into_boxed_view()
+        .into()
 }
 
 pub fn handle_progress_model_event(

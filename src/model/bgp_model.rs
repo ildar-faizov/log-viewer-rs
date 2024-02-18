@@ -63,11 +63,15 @@ impl BGPModel {
 
     fn complete(&mut self, id: &Uuid) {
         self.processes.remove(id);
-        self.emit_event(BGPModelEvent::CountUpdated);
         self.recalculate_overall_progress();
     }
 
     fn recalculate_overall_progress(&mut self) {
+        if self.count != self.processes.len() {
+            self.count = self.processes.len();
+            self.emit_event(BGPModelEvent::CountUpdated);
+        }
+
         let n = self.processes.len() as u64;
         let p = if n > 0 {
             (self.processes.values().map(|h| h.progress as u64).sum::<u64>().div_ceil(n)) as u8
@@ -120,11 +124,13 @@ impl RunInBackground for BGPModel {
         let task_wrapper = move |ctx: &mut TaskContext<M, R>| {
             measure_l(Level::Info, descr.as_str(), move || task(ctx))
         };
-        let registry = &mut *self.background_process_registry.get_mut_ref();
-        let handle = registry.run_in_background(title, description, task_wrapper, listener_wrapper);
+        let handle = {
+            let registry = &mut *self.background_process_registry.get_mut_ref();
+            registry.run_in_background(title, description, task_wrapper, listener_wrapper)
+        };
         let result = handle.clone();
         self.processes.insert(*handle.get_id(), ProcessDescriptor::new(handle));
-        self.emit_event(BGPModelEvent::CountUpdated);
+        self.recalculate_overall_progress();
         result
     }
 }

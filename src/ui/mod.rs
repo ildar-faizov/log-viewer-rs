@@ -10,6 +10,7 @@ pub mod with_root_model;
 pub mod metrics_dialog;
 pub mod progress_dialog;
 pub mod ui_utils;
+pub mod bgp_status;
 mod span_producer;
 mod line_drawer;
 mod canvas;

@@ -570,7 +570,7 @@ mod test_read_lines {
     {
         let line_registry = line_source.get_line_registry();
         let mut reader = BufReader::new(Cursor::new(s));
-        let result = line_registry.build(&mut reader, || false, |b| {});
+        let result = line_registry.build(&mut reader, || false, |_b| {});
         assert_that!(&result).is_ok();
     }
 }

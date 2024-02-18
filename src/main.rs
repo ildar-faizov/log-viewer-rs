@@ -30,7 +30,7 @@ mod application_metrics;
 mod args;
 
 use cursive::{Cursive, CursiveRunnable, CursiveRunner, View};
-use cursive::views::{TextView, ViewRef, Canvas, Checkbox, ProgressBar};
+use cursive::views::{TextView, ViewRef, Canvas, Checkbox};
 
 use clap::Parser;
 
@@ -60,6 +60,7 @@ use crate::args::Args;
 use crate::background_process::background_process_registry::BackgroundProcessRegistry;
 use crate::model::help_model::HelpModelEvent;
 use crate::model::metrics_model::MetricsHolder;
+use crate::ui::bgp_status::handle_bgp_event;
 use crate::ui::error_dialog::build_error_dialog;
 use crate::ui::go_to_date_dialog::build_go_to_date_dialog;
 use crate::ui::go_to_dialog::build_go_to_dialog;
@@ -322,14 +323,11 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<R
 			callback(app);
 			Ok(true)
 		},
-		BGPEvent(_evt) => {
+		BGPEvent(evt) => {
 			let root_model = model.get_mut_ref();
 			let bgp_model = &mut *root_model.get_bgp_model();
-			let _progress_visible = bgp_model.get_number() > 0;
-			let overall_progress = bgp_model.get_overall_progress();
-			app.call_on_name(&UIElementName::StatusProgress.to_string(), |progress_bar: &mut ProgressBar| {
-				progress_bar.set_value(overall_progress as usize); // TODO hide when there are no processes
-			});
+			let callback = handle_bgp_event(bgp_model, evt);
+			callback(app);
 			Ok(true)
 		},
 		Hint(hint) => {

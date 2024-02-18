@@ -41,7 +41,7 @@ pub fn build_ui(model: Shared<RootModel>) -> Box<dyn View> {
     let mut layout = LinearLayout::vertical();
     // layout.add_child(menu);
     layout.add_child(build_canvas(model).full_height());
-    layout.add_child(build_status_panel());
+    layout.add_child(build_status_panel().view);
 
     layout.focus_view(&Selector::Name(UIElementName::MainContent.to_string().as_str()))
         .expect("TODO: panic message");

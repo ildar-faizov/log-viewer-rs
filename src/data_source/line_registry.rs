@@ -316,7 +316,7 @@ mod tests {
         let mut data = vec![];
         let mut a: Integer = 1.into();
         let mut b: Integer = 1.into();
-        for i in 0..N {
+        for _i in 0..N {
             data.push(b);
             (a, b) = (b, a + b);
         }
