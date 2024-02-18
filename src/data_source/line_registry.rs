@@ -220,7 +220,7 @@ impl LineRegistry for LineRegistryImpl {
             let mut p = 0_usize;
             data.clear();
             #[allow(clippy::explicit_counter_loop)] // using enumerate slows it twice
-            for ch in &buffer {
+            for ch in &buffer[0..b] {
                 if *ch == b'\n' {
                     data.push(offset + p);
                 }
