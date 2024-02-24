@@ -29,6 +29,14 @@ pub trait LineRegistry {
     where
         I: Into<Integer> + Copy + Ord;
 
+    /// Returns offset of the first symbol in `line_no` line
+    ///
+    /// If `line_no` is greater than number of crawled line breaks, `Err` with crawled value
+    /// is returned
+    fn find_offset_by_line_number<I>(&self, line_no: I) -> Result<Integer, Integer>
+    where
+        I: Into<Integer>;
+
     fn build<R, F, G>(&self, reader: &mut BufReader<R>, is_interrupted: F, bytes_processed: G) -> LineRegistryResult<()>
     where
         R: Read + Seek,
@@ -186,6 +194,21 @@ impl LineRegistry for LineRegistryImpl {
             }
         };
         Ok(s.zip(e).map(|(s, e)| e - s + Integer::from(1_i32)).map(|u| u.as_usize()).unwrap_or(0))
+    }
+
+    fn find_offset_by_line_number<I>(&self, line_no: I) -> Result<Integer, Integer>
+        where
+            I: Into<Integer>
+    {
+        let line_no = line_no.into();
+        if line_no <= 0 {
+            return Ok(0.into());
+        }
+        let internals = self.internals.read()
+            .map_err(|_| Integer::new(0))?;
+        internals.line_breaks.get(line_no.as_usize() - 1)
+            .map(|p| *p + 1)
+            .ok_or(internals.crawled)
     }
 
     fn build<R, F, G>(&self, reader: &mut BufReader<R>, is_interrupted: F, bytes_processed: G) -> LineRegistryResult<()>

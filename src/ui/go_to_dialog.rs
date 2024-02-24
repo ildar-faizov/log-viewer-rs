@@ -46,6 +46,8 @@ fn try_submit(app: &mut Cursive) -> anyhow::Result<()> {
     };
     let root_model = &mut *app.get_root_model();
     let go_to_model = &mut *root_model.get_go_to_line_model();
+    let line_registry = root_model.get_line_registry();
+    go_to_model.set_line_registry(line_registry);
     go_to_model.set_value(&content);
     go_to_model.submit(&file_name)
 }

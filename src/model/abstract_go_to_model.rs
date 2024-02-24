@@ -86,23 +86,28 @@ impl<R: RunInBackground> AbstractGoToModel<R>
         let h = self.current_process.take();
         if let Some(h) = h {
             if *h.get_id() == pid {
-                match msg {
-                    Signal::Complete(Ok(p)) => self
-                        .model_sender
-                        .emit_event(ModelEvent::Search(Ok(Occurrence::new(p, p)))),
-                    Signal::Complete(Err(GoToError::Cancelled)) => {
-                        log::info!("{:?}", GoToError::Cancelled)
-                    }
-                    Signal::Complete(Err(err)) => {
-                        return Err(err);
-                    }
-                    _ => (), // TODO: show progress
-                };
+                if let Signal::Complete(result) = msg {
+                    return self.complete(result);
+                }
             } else {
                 log::trace!("Result of GoToLine {} has been ignored, because different process {} is started", pid, h.get_id());
             }
         }
         Ok(())
+    }
+
+    pub fn complete(&self, result: Result<Integer, GoToError>) -> Result<(), GoToError> {
+        match result {
+            Ok(p) => {
+                self.model_sender.emit_event(ModelEvent::Search(Ok(Occurrence::new(p, p))));
+                Ok(())
+            },
+            Err(GoToError::Cancelled) => {
+                log::info!("{:?}", GoToError::Cancelled);
+                Ok(())
+            },
+            err => err.map(|_| ()),
+        }
     }
 }
 

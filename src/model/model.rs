@@ -10,6 +10,7 @@ use std::fmt::Debug;
 use std::fs::File;
 use std::io::{Cursor, Read, Seek};
 use std::option::Option::Some;
+use std::sync::Arc;
 use std::time::SystemTime;
 use chrono::{Datelike, DateTime, Utc};
 use fluent_integer::Integer;
@@ -20,7 +21,7 @@ use crate::background_process::background_process_registry::BackgroundProcessReg
 use crate::background_process::run_in_background::RunInBackground;
 use crate::background_process::signal::Signal;
 use crate::background_process::task_context::TaskContext;
-use crate::data_source::line_registry::{LineRegistry, LineRegistryError};
+use crate::data_source::line_registry::{LineRegistry, LineRegistryError, LineRegistryImpl};
 use crate::interval::Interval;
 use crate::model::bgp_model::{BGPModel, BGPModelEvent};
 use crate::selection::Selection;
@@ -820,6 +821,10 @@ impl RootModel {
 
     fn get_datasource_ref(&self) -> Option<RefMut<Box<dyn LineSource>>> {
         self.datasource.as_ref().map(|ds| ds.get_mut_ref())
+    }
+
+    pub fn get_line_registry(&self) -> Option<Arc<LineRegistryImpl>> {
+        self.get_datasource_ref().map(|ds| ds.get_line_registry())
     }
 
     #[profiling::function]
