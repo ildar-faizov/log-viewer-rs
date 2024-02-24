@@ -229,7 +229,6 @@ impl LineRegistry for LineRegistryImpl {
                 let elapsed = sw_read.elapsed().to_unit(&Unit::Microseconds);
                 histogram!(METRIC_READ).record(elapsed);
                 gauge!(METRIC_READ_TOTAL).increment(elapsed);
-                log::info!("{} << {}", METRIC_READ, elapsed);
             }
             if b == 0 {
                 break;
@@ -253,7 +252,6 @@ impl LineRegistry for LineRegistryImpl {
                 let elapsed = sw.elapsed().to_unit(&Unit::Microseconds);
                 histogram!(METRIC_COUNT).record(elapsed);
                 gauge!(METRIC_COUNT_TOTAL).increment(elapsed);
-                log::info!("{} << {}", METRIC_COUNT, elapsed);
             }
 
             let sw = Instant::now();
@@ -266,7 +264,6 @@ impl LineRegistry for LineRegistryImpl {
                 let elapsed = sw.elapsed().to_unit(&Unit::Microseconds);
                 histogram!(METRIC_SUBMIT).record(elapsed);
                 gauge!(METRIC_SUBMIT_TOTAL).increment(elapsed);
-                log::info!("{} << {}", METRIC_SUBMIT, elapsed);
             }
 
             bytes_read += b;

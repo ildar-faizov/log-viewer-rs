@@ -219,7 +219,7 @@ impl RootModel {
         if self.scroll_position != scroll_position {
             let previous_scroll_position = self.scroll_position;
             self.scroll_position = scroll_position;
-            log::info!("Scroll position set to {}", scroll_position);
+            log::trace!("Scroll position set to {}", scroll_position);
             if !self.update_viewport_content() {
                 log::error!("Failed to set scroll position {}", scroll_position);
                 self.scroll_position = previous_scroll_position;
