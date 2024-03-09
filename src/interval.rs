@@ -174,6 +174,20 @@ impl<T> Interval<T> where T: Ord, T: Eq, T: Copy {
         }
     }
 
+    pub fn point_location(&self, point: &T) -> PointLocationWithRespectToInterval {
+        if self.is_empty() {
+            return PointLocationWithRespectToInterval::Undefined;
+        }
+        let bound = IntervalBound::Fixed { value: *point, is_included: true };
+        let left = self.left_bound.cmp(&bound, BoundSide::Left);
+        let right = self.right_bound.cmp(&bound, BoundSide::Right);
+        match (left, right) {
+            (Ordering::Less, Ordering::Less) => PointLocationWithRespectToInterval::Greater,
+            (Ordering::Greater, Ordering::Greater) => PointLocationWithRespectToInterval::Less,
+            _ => PointLocationWithRespectToInterval::Belongs,
+        }
+    }
+
     pub fn map<U, F>(&self, f: F) -> Interval<U>
         where
             U: Ord + Eq + Copy,
@@ -199,6 +213,14 @@ impl<T> PartialEq<Self> for Interval<T> where T: Copy + Eq + Ord {
             empty1 == empty2
         }
     }
+}
+
+#[derive(Eq, PartialEq, Debug)]
+pub enum PointLocationWithRespectToInterval {
+    Undefined, // empty interval
+    Less,
+    Belongs,
+    Greater,
 }
 
 enum BoundSide {

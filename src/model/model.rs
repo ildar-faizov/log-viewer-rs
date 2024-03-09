@@ -595,7 +595,7 @@ impl RootModel {
             self.do_load_file(Box::new(line_source), backend, self.file_name.as_ref().unwrap().to_string())
         } else {
             let welcome: &'static str = &crate::welcome::WELCOME;
-            let line_source = LineSourceImpl::<Cursor<&'_ [u8]>, StrBackend<'_>>::from_str(welcome);
+            let line_source = LineSourceImpl::from_str(welcome);
             let backend = StrBackend::new(welcome);
             self.do_load_file(Box::new(line_source), backend, String::from("welcome"))
         };

@@ -1,5 +1,6 @@
 use spectral::prelude::*;
-use crate::interval::Interval;
+use super::Interval;
+use super::PointLocationWithRespectToInterval;
 use paste::paste;
 
 macro_rules! test_display {
@@ -109,3 +110,32 @@ test_intersection!("all_finite", Interval::<i32>::all(), Interval::closed(0, 1),
 test_intersection!("oo_oo", Interval::open(0, 5), Interval::open(1, 10), Interval::open(1, 5));
 test_intersection!("oc_oo", Interval::open(0, 5), Interval::open_closed(1, 5), Interval::open(1, 5));
 test_intersection!("inf_open_open_inf", Interval::inf_open(5), Interval::open_inf(0), Interval::open(0, 5));
+
+macro_rules! test_point_location_with_respect_to_interval {
+    ($descr: literal, $int: expr, $point: expr, $expected: expr) => {
+        paste! {
+            #[test]
+            fn [<test_point_location_with_respect_to_interval $descr>]() {
+                let point = $point;
+                let interval = $int;
+                let expected = $expected;
+                let description = format!("Point {:?} with respect to {:?} has location {:?}", &point, &interval, &expected);
+                let result = interval.point_location(&point);
+                asserting!(description).that(&result).is_equal_to(&expected);
+            }
+        }
+    };
+}
+
+test_point_location_with_respect_to_interval!("empty", Interval::<i32>::empty(), 0, PointLocationWithRespectToInterval::Undefined);
+test_point_location_with_respect_to_interval!("empty_non_standard", Interval::open(1, 1), 1, PointLocationWithRespectToInterval::Undefined);
+test_point_location_with_respect_to_interval!("all", Interval::<i32>::all(), 0, PointLocationWithRespectToInterval::Belongs);
+test_point_location_with_respect_to_interval!("closed_bound_belongs", Interval::closed(0, 5), 5, PointLocationWithRespectToInterval::Belongs);
+test_point_location_with_respect_to_interval!("closed_open_bound_not_belongs", Interval::closed_open(0, 5), 5, PointLocationWithRespectToInterval::Greater);
+test_point_location_with_respect_to_interval!("open_closed_bound_not_belongs", Interval::open_closed(0, 5), 0, PointLocationWithRespectToInterval::Less);
+test_point_location_with_respect_to_interval!("half_open_belongs_1", Interval::open_inf(0), 10, PointLocationWithRespectToInterval::Belongs);
+test_point_location_with_respect_to_interval!("half_open_belongs_2", Interval::inf_open(0), -10, PointLocationWithRespectToInterval::Belongs);
+test_point_location_with_respect_to_interval!("half_open_not_belongs_1", Interval::open_inf(0), 0, PointLocationWithRespectToInterval::Less);
+test_point_location_with_respect_to_interval!("half_open_not_belongs_2", Interval::open_inf(0), -10, PointLocationWithRespectToInterval::Less);
+test_point_location_with_respect_to_interval!("half_open_not_belongs_3", Interval::inf_open(0), 0, PointLocationWithRespectToInterval::Greater);
+test_point_location_with_respect_to_interval!("half_open_not_belongs_4", Interval::inf_open(0), 10, PointLocationWithRespectToInterval::Greater);

@@ -55,6 +55,18 @@ impl Line {
     fn builder() -> LineBuilder {
         LineBuilder::default()
     }
+
+    pub fn to_builder(self) -> LineBuilder {
+        LineBuilder::default()
+            .with_start(self.start)
+            .with_end(self.end)
+            .with_line_no(self.line_no)
+            .with_content(self.content)
+    }
+
+    pub fn as_interval(&self) -> Interval<Integer> {
+        Interval::closed(self.start, self.end)
+    }
 }
 
 #[derive(Debug, Default, Clone, Eq, PartialEq)]
@@ -412,13 +424,15 @@ pub struct LineSourceImpl<R, B> where R: Read, B: LineSourceBackend<R> {
     line_registry: Arc<LineRegistryImpl>,
 }
 
+impl<'a> LineSourceImpl<Cursor<&'a [u8]>, StrBackend<'a>> {
+    pub fn from_str(s: &'a str) -> LineSourceImpl<Cursor<&'a [u8]>, StrBackend<'a>> {
+        LineSourceImpl::new(StrBackend::new(s))
+    }
+}
+
 impl<R, B> LineSourceImpl<R, B> where R: Read + Seek, B: LineSourceBackend<R> {
     pub fn from_file_name(file_name: PathBuf) -> LineSourceImpl<File, FileBackend> {
         LineSourceImpl::new(FileBackend::new(file_name))
-    }
-
-    pub fn from_str(s: &str) -> LineSourceImpl<Cursor<&[u8]>, StrBackend> {
-        LineSourceImpl::new(StrBackend::new(s))
     }
 
     pub fn new(backend: B) -> LineSourceImpl<R, B> {
@@ -607,3 +621,4 @@ mod char_navigation {
 mod data_source_tests;
 
 pub mod line_registry;
+pub mod filtered;

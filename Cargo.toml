@@ -43,6 +43,9 @@ puffin_http = "0.16.0"
 profiling = { version = "1.0.13", features = ["profile-with-puffin"] }
 linked-hash-map = "0.5.6"
 
+[dev-dependencies]
+paste = "*"
+
 #[dependencies.cursive]
 #version = "*"
 #default-features = false

@@ -557,7 +557,7 @@ mod test_read_lines {
     }
 
     fn test(s: &str, offset: u64, n: i32) -> Vec<Line> {
-        let mut line_source = LineSourceImpl::<Cursor<&'static [u8]>, StrBackend<'static>>::from_str(s);
+        let mut line_source = LineSourceImpl::from_str(s);
         line_source.track_line_number(true);
         build_line_registry(&mut line_source, s);
         let data = line_source.read_lines(offset.into(), n.into());
@@ -610,7 +610,7 @@ mod test_skip_token {
     }
 
     fn test_skip_token(s: &str, offset: u64, direction: Direction) -> Result<Integer, ()> {
-        let mut line_source = LineSourceImpl::<Cursor<&'static [u8]>, StrBackend<'static>>::from_str(s);
+        let mut line_source = LineSourceImpl::from_str(s);
         line_source.skip_token(offset.into(), direction)
     }
 }

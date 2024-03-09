@@ -304,8 +304,7 @@ mod tests {
     fn test_guess_date_format0() {
         let ctx = GuessContext::with_year(2023);
         for (input, expected) in TEST_CASES.iter() {
-            let mut line_source =
-                LineSourceImpl::<Cursor<&'static [u8]>, StrBackend<'static>>::from_str(input);
+            let mut line_source = LineSourceImpl::from_str(input);
             let actual = guess_date_format0(&mut line_source, &ctx)
                 .map(|kdf| kdf.get_date_format().to_string());
             let description = format!("{} => {:?}", input, expected);
