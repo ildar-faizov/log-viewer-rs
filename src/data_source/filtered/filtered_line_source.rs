@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 use std::ops::{Deref, Sub};
-use crate::data_source::line_registry::LineRegistryImpl;
+use crate::data_source::line_registry::{LineRegistry, LineRegistryImpl};
 use crate::data_source::{Data, Direction, Line, LineSource};
 use fluent_integer::Integer;
 use std::sync::Arc;
@@ -18,6 +18,7 @@ where
     offset_mapper: OffsetMapper,
     track_line_number: bool,
     pivots: Vec<(ProxyOffset, ProxyOffset)>,
+    line_registry: Arc<LineRegistryImpl>,
 }
 
 impl<T> LineSource for FilteredLineSource<T>
@@ -94,7 +95,7 @@ where
     }
 
     fn get_line_registry(&self) -> Arc<LineRegistryImpl> {
-        todo!()
+        Arc::clone(&self.line_registry)
     }
 }
 
@@ -112,6 +113,7 @@ where
             offset_mapper: OffsetMapper::default(),
             track_line_number: true,
             pivots: Vec::new(),
+            line_registry: Arc::new(LineRegistryImpl::new()),
         }
     }
 
@@ -160,6 +162,16 @@ where
     }
 
     fn seek_next_line(&mut self, proxy_offset: ProxyOffset, original_offset: OriginalOffset) -> Option<Line> {
+        match self.do_seek_next_line(proxy_offset, original_offset) {
+            None => None,
+            Some(line) => {
+                self.line_registry.push(line.end);
+                Some(line)
+            }
+        }
+    }
+
+    fn do_seek_next_line(&mut self, proxy_offset: ProxyOffset, original_offset: OriginalOffset) -> Option<Line> {
         let mut ox: Integer = *original_offset;
         while let Some(next_line) = self.original.read_next_line(ox) {
             let s = next_line.start;

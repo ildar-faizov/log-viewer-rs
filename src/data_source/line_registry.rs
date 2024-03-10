@@ -4,6 +4,7 @@ use fluent_integer::Integer;
 use std::io::{BufReader, Read, Seek};
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
+use std::vec::IntoIter;
 use metrics::{describe_gauge, describe_histogram, gauge, histogram, Unit};
 use thiserror::Error;
 use crate::data_source::BUFFER_SIZE;
@@ -141,8 +142,13 @@ impl LineRegistry for LineRegistryImpl {
     where
         I: Into<Integer>,
     {
+        let offset = offset.into();
         let mut internals = self.internals.write().unwrap();
-        internals.line_breaks.push(offset.into());
+        let Err(p) = internals.line_breaks.binary_search(&offset) else { return; };
+        internals.line_breaks.insert(p, offset);
+        if internals.crawled < offset {
+            internals.crawled = offset;
+        }
     }
 
     fn count<I>(&self, range: &Interval<I>) -> LineRegistryResult<usize>
@@ -282,12 +288,24 @@ impl LineRegistry for LineRegistryImpl {
     }
 }
 
+impl IntoIterator for &LineRegistryImpl {
+    type Item = Integer;
+    type IntoIter = IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let internals = self.internals.read().unwrap();
+        internals.line_breaks.clone().into_iter()
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use crate::data_source::line_registry::{LineRegistry, LineRegistryImpl};
     use crate::interval::Interval;
     use fluent_integer::Integer;
     use spectral::prelude::*;
+    use paste::paste;
 
     const N: usize = 15;
 
@@ -342,4 +360,32 @@ mod tests {
         }
         LineRegistryImpl::with_data(data)
     }
+
+    fn vec_to_int<I: Into<Integer> + Copy>(v: Vec<I>) -> Vec<Integer> {
+        v.iter().map(|i| (*i).into()).collect()
+    }
+
+    macro_rules! test_push {
+        ($name: literal, $initial: expr, $value: expr, $expected: expr) => {
+            paste! {
+                #[test]
+                fn [<test_push_ $name >]() {
+                    let initial: Vec<Integer> = vec_to_int($initial);
+                    let value = $value;
+                    let expected = vec_to_int($expected);
+
+                    let registry = LineRegistryImpl::with_data(initial);
+                    registry.push(value);
+                    let actual: Vec<Integer> = registry.into_iter().collect();
+                    assert_that!(actual).equals_iterator(&expected.iter());
+                }
+            }
+        };
+    }
+
+    test_push!("to_empty", Vec::<i32>::new(), 10, vec![10]);
+    test_push!("to_tail", vec![0, 10, 20, 30, 40], 50, vec![0, 10, 20, 30, 40, 50]);
+    test_push!("to_middle", vec![0, 10, 20, 30, 40], 25, vec![0, 10, 20, 25, 30, 40]);
+    test_push!("to_head", vec![0, 10, 20, 30, 40], -10, vec![-10, 0, 10, 20, 30, 40]);
+    test_push!("to_existing", vec![0, 10, 20, 30, 40], 20, vec![0, 10, 20, 30, 40]);
 }

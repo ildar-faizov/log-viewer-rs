@@ -1,3 +1,4 @@
+use clap::builder::IntoResettable;
 use super::*;
 use crate::data_source::filtered::filtered_line_source::FilteredLineSource;
 use crate::data_source::{Line, LineSourceImpl, StrBackend};
@@ -93,4 +94,18 @@ fn test_none_match() {
     assert_that!(proxy.read_lines(100.into(), (-10).into()))
         .map(|d| &d.lines)
         .is_empty();
+}
+
+#[test]
+fn test_line_registry() {
+    let original = LineSourceImpl::from_str(&ORIGINAL);
+    let mut proxy = FilteredLineSource::new(original, Box::new(filter_each_fifth));
+    let registry = proxy.get_line_registry();
+
+    let n = 10_usize;
+    proxy.read_lines(0.into(), n.into());
+
+    let actual: Vec<Integer> = registry.into_iter().clone().collect_vec();
+    let expected = expected(n).0.iter().map(|line| line.end).collect_vec();
+    assert_that!(&actual).equals_iterator(&expected.iter());
 }
