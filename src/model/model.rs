@@ -555,7 +555,8 @@ impl RootModel {
 
     pub fn get_selected_content(&self) -> Option<String> {
         self.get_selection().and_then(|selection| {
-            self.get_datasource_ref().and_then(|datasource| {
+            self.get_datasource_ref().and_then(|mut datasource| {
+                let mut datasource = &mut *datasource;
                 let result = datasource.read_raw(selection.start, selection.end);
                 match result {
                     Ok(s) => Some(s),

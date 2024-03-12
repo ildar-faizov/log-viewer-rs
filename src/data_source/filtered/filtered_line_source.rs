@@ -1,5 +1,6 @@
-use std::cmp::Ordering;
+use std::cmp::{min, Ordering};
 use std::ops::{Deref, Sub};
+use std::string::FromUtf8Error;
 use crate::data_source::line_registry::{LineRegistry, LineRegistryImpl};
 use crate::data_source::{Data, Direction, Line, LineSource};
 use fluent_integer::Integer;
@@ -86,8 +87,27 @@ where
         }
     }
 
-    fn read_raw(&self, start: Integer, end: Integer) -> Result<String, ()> {
-        todo!()
+    fn read_raw(&mut self, start: Integer, end: Integer) -> Result<String, ()> {
+        if start > end {
+            return Err(());
+        }
+        if start == end {
+            return Ok(String::with_capacity(0));
+        }
+        let capacity = (end - start).as_usize();
+        let mut buffer = LimitedBuf::new(capacity);
+        let mut offset = start;
+
+        while !buffer.is_full() && offset <= end {
+            let Some(line) = self.read_next_line(offset) else { break; };
+            let skip = (offset - line.start).as_usize();
+            let bytes = &line.content.as_bytes()[skip..];
+            buffer.extend_from_slice(bytes);
+            buffer.new_line();
+            offset = line.end + 1;
+        }
+
+        buffer.to_string().map_err(|_| ())
     }
 
     fn skip_token(&mut self, offset: Integer, direction: Direction) -> Result<Integer, ()> {
@@ -191,6 +211,46 @@ where
 
         // todo: do I need to map proxy_offset -> +Infinity
         None
+    }
+}
+
+struct LimitedBuf {
+    buffer: Vec<u8>,
+    limit: usize,
+    p: usize,
+}
+
+impl LimitedBuf {
+    fn new(capacity: usize) -> Self {
+        LimitedBuf {
+            buffer: Vec::with_capacity(capacity),
+            limit: capacity,
+            p: 0
+        }
+    }
+
+    fn extend_from_slice(&mut self, slice: &[u8]) {
+        let n = min(slice.len(), self.limit - self.p);
+        if n == 0 {
+            return;
+        }
+        self.buffer.extend_from_slice(&slice[..n]);
+        self.p += n;
+    }
+
+    fn new_line(&mut self) {
+        if !self.is_full() {
+            self.buffer.push(b'\n');
+            self.p += 1;
+        }
+    }
+
+    fn is_full(&self) -> bool {
+        self.p >= self.limit
+    }
+
+    fn to_string(self) -> Result<String, FromUtf8Error> {
+        String::from_utf8(self.buffer)
     }
 }
 

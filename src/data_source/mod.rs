@@ -361,7 +361,7 @@ pub trait LineSource {
 
     fn track_line_number(&mut self, track: bool);
 
-    fn read_raw(&self, start: Integer, end: Integer) -> Result<String, ()>;
+    fn read_raw(&mut self, start: Integer, end: Integer) -> Result<String, ()>;
 
     /// Skips token starting from offset +/- 1 (depending on `direction`). A token is a
     /// group of either non-delimiters or delimiters.
@@ -502,7 +502,7 @@ impl<R, B> LineSource for LineSourceImpl<R, B> where R: Read + Seek, B: LineSour
         self.track_line_no = track;
     }
 
-    fn read_raw(&self, start: Integer, end: Integer) -> Result<String, ()> {
+    fn read_raw(&mut self, start: Integer, end: Integer) -> Result<String, ()> {
         let mut f = self.backend.new_reader();
         f.seek(SeekFrom::Start(start.as_u64())).map_err(|_| ())?;
         let len = (end - start).as_usize();

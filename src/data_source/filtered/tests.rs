@@ -109,3 +109,35 @@ fn test_line_registry() {
     let expected = expected(n).0.iter().map(|line| line.end).collect_vec();
     assert_that!(&actual).equals_iterator(&expected.iter());
 }
+
+mod read_raw {
+    use spectral::prelude::*;
+    use paste::paste;
+    use crate::data_source::filtered::filtered_line_source::tests::{filter_each_fifth, ORIGINAL};
+    use crate::data_source::filtered::FilteredLineSource;
+    use crate::data_source::{LineSource, LineSourceImpl};
+
+    macro_rules! test {
+        ($n: literal, $from: literal, $to: literal, $expected: literal) => {
+            paste!{
+                #[test]
+                fn [<test $n>]() {
+                    let original = LineSourceImpl::from_str(&ORIGINAL);
+                    let mut proxy = FilteredLineSource::new(original, Box::new(filter_each_fifth));
+
+                    let actual = proxy.read_raw($from.into(), $to.into());
+                    assert_that!(actual).is_ok_containing(String::from($expected));
+                }
+            }
+        };
+    }
+
+    test!(1, 7, 14, "Line 10");
+    test!(2, 6, 15, "\nLine 10\n");
+    test!(3, 3, 15, "e 5\nLine 10\n");
+    test!(4, 3, 22, "e 5\nLine 10\nLine 15");
+    test!(5, 0, 22, "Line 5\nLine 10\nLine 15");
+    test!(6, 0, 38, "Line 5\nLine 10\nLine 15\nLine 20\nLine 25");
+    test!("empty", 0, 0, "");
+
+}
