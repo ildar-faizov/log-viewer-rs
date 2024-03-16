@@ -4,6 +4,7 @@ use std::fs::File;
 use std::cmp::Ordering;
 use std::cell::RefMut;
 use std::sync::Arc;
+use anyhow::anyhow;
 use metrics::{describe_histogram, Unit};
 use fluent_integer::Integer;
 use crate::advanced_io::advanced_buf_reader::BidirectionalBufRead;
@@ -365,7 +366,7 @@ pub trait LineSource {
 
     /// Skips token starting from offset +/- 1 (depending on `direction`). A token is a
     /// group of either non-delimiters or delimiters.
-    fn skip_token(&mut self, offset: Integer, direction: Direction) -> Result<Integer, ()>;
+    fn skip_token(&mut self, offset: Integer, direction: Direction) -> anyhow::Result<Integer>;
 
     fn get_line_registry(&self) -> Arc<LineRegistryImpl>;
 }
@@ -516,62 +517,9 @@ impl<R, B> LineSource for LineSourceImpl<R, B> where R: Read + Seek, B: LineSour
         Ok(String::from_utf8(result).unwrap())
     }
 
-    fn skip_token(&mut self, offset: Integer, direction: Direction) -> Result<Integer, ()> {
+    fn skip_token(&mut self, offset: Integer, direction: Direction) -> anyhow::Result<Integer> {
         let mut f = self.reader();
-
-        let actual_offset: Integer = f.stream_position().map_err(|_| ())?.into();
-        f.seek_relative((offset - actual_offset).as_i64()).map_err(|_| ())?;
-
-        let take_char0 = match direction {
-            Direction::Forward => next_char,
-            Direction:: Backward => prev_char,
-        };
-        let take_char = |reader: &mut BufReader<R>| -> Result<Option<UtfChar>, ()> {
-            take_char0(reader).map_err(|_| ())
-        };
-
-        if direction == Direction::Backward {
-            next_char(&mut f).map_err(|_| ())?;
-        }
-
-        let is_delimiter = |ch: &char| !ch.is_alphanumeric() && *ch != '_'; // TODO: better UTF-8 delimiter detection
-
-        enum State {
-            InToken,
-            InWhitespace,
-            DetermineIfTokenBoundary
-        }
-
-        if let Some(pattern) = take_char(&mut f)? {
-            let mut state = if !is_delimiter(&pattern.get_char()) {
-                State::DetermineIfTokenBoundary
-            } else {
-                State::InWhitespace
-            };
-            let mut prev_char_offset = pattern.get_offset();
-            while let Some(ch) = take_char(&mut f)? {
-                match state {
-                    State::DetermineIfTokenBoundary => {
-                        if !is_delimiter(&ch.get_char()) {
-                            state = State::InToken;
-                        } else {
-                            state = State::InWhitespace;
-                        }
-                    },
-                    State::InWhitespace => if !is_delimiter(&ch.get_char()) {
-                        prev_char_offset = ch.get_offset();
-                        break;
-                    },
-                    State::InToken => if is_delimiter(&ch.get_char()) {
-                        break;
-                    }
-                };
-                prev_char_offset = ch.get_offset();
-            }
-            Ok(prev_char_offset.into())
-        } else {
-            Ok(offset)
-        }
+        tokenizer::skip_token(offset, direction, &mut *f)
     }
 
     fn get_line_registry(&self) -> Arc<LineRegistryImpl> {
@@ -622,3 +570,4 @@ mod data_source_tests;
 
 pub mod line_registry;
 pub mod filtered;
+mod tokenizer;

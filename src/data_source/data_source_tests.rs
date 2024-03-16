@@ -609,7 +609,7 @@ mod test_skip_token {
         assert_that!(offset).is_ok_containing(&1.into());
     }
 
-    fn test_skip_token(s: &str, offset: u64, direction: Direction) -> Result<Integer, ()> {
+    fn test_skip_token(s: &str, offset: u64, direction: Direction) -> anyhow::Result<Integer> {
         let mut line_source = LineSourceImpl::from_str(s);
         line_source.skip_token(offset.into(), direction)
     }

@@ -8,8 +8,8 @@ use regex::Regex;
 use spectral::prelude::*;
 
 lazy_static! {
-    static ref ORIGINAL: String = { (0..1000).map(|i| format!("Line {}", i)).join("\n") };
-    static ref LINE_NUMBER_PATTERN: Regex = { Regex::new(r"^Line (?P<N>\d+)$").unwrap() };
+    static ref ORIGINAL: String = (0..1000).map(|i| format!("Line {}", i)).join("\n");
+    static ref LINE_NUMBER_PATTERN: Regex = Regex::new(r"^Line (?P<N>\d+)$").unwrap();
 }
 
 fn filter_each_fifth(line: &Line) -> bool {
@@ -140,4 +140,39 @@ mod read_raw {
     test!(6, 0, 38, "Line 5\nLine 10\nLine 15\nLine 20\nLine 25");
     test!("empty", 0, 0, "");
 
+}
+
+mod skip_token {
+    use spectral::prelude::*;
+    use paste::paste;
+    use crate::data_source::{Direction, LineSource};
+    use super::{filter_each_fifth, ORIGINAL};
+    use super::FilteredLineSource;
+    use super::super::LineSourceImpl;
+
+    macro_rules! test {
+        ($name: literal, $offset: literal, $direction: expr, $expected: literal) => {
+            paste!{
+                #[test]
+                fn [<test_ $name>]() {
+                    let original = LineSourceImpl::from_str(&ORIGINAL);
+                    let mut proxy = FilteredLineSource::new(original, Box::new(filter_each_fifth));
+
+                    let actual = proxy.skip_token($offset.into(), $direction);
+                    let expected = $expected;
+                    assert_that!(actual).is_ok_containing(&expected.into());
+                }
+            }
+        };
+    }
+
+    test!(1, 2, Direction::Forward, 3);
+    test!(2, 2, Direction::Backward, 0);
+    test!(3, 4, Direction::Forward, 5);
+    test!(4, 5, Direction::Forward, 7);
+    test!(5, 7, Direction::Backward, 5);
+    test!(6, 10, Direction::Backward, 7);
+    test!(7, 11, Direction::Backward, 10);
+    test!(8, 12, Direction::Backward, 10);
+    // todo more tests
 }

@@ -1,11 +1,15 @@
 use std::cmp::{min, Ordering};
+use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::ops::{Deref, Sub};
-use std::string::FromUtf8Error;
 use crate::data_source::line_registry::{LineRegistry, LineRegistryImpl};
-use crate::data_source::{Data, Direction, Line, LineSource};
+use crate::data_source::{Data, Direction, Line, LineSource, LineSourceBackend, LineSourceImpl};
 use fluent_integer::Integer;
 use std::sync::Arc;
+use anyhow::anyhow;
+use itertools::Itertools;
+use mucow::MuCow;
 use crate::data_source::filtered::offset_mapper::{OffsetEvaluationResult, OffsetMapper, OriginalOffset, ProxyOffset};
+use crate::data_source::tokenizer::skip_token;
 use crate::interval::PointLocationWithRespectToInterval;
 use crate::model::rendered::LineNumberMissingReason;
 use crate::utils;
@@ -96,22 +100,14 @@ where
         }
         let capacity = (end - start).as_usize();
         let mut buffer = LimitedBuf::new(capacity);
-        let mut offset = start;
-
-        while !buffer.is_full() && offset <= end {
-            let Some(line) = self.read_next_line(offset) else { break; };
-            let skip = (offset - line.start).as_usize();
-            let bytes = &line.content.as_bytes()[skip..];
-            buffer.extend_from_slice(bytes);
-            buffer.new_line();
-            offset = line.end + 1;
-        }
-
+        self.read_raw_internal(start, &mut buffer);
         buffer.to_string().map_err(|_| ())
     }
 
-    fn skip_token(&mut self, offset: Integer, direction: Direction) -> Result<Integer, ()> {
-        todo!()
+    fn skip_token(&mut self, offset: Integer, direction: Direction) -> anyhow::Result<Integer> {
+        let cursor = LocalCursor::new(self);
+        let mut f = BufReader::new(cursor);
+        skip_token(offset, direction, &mut f)
     }
 
     fn get_line_registry(&self) -> Arc<LineRegistryImpl> {
@@ -212,20 +208,86 @@ where
         // todo: do I need to map proxy_offset -> +Infinity
         None
     }
+
+    fn read_raw_internal(&mut self, start: Integer, buffer: &mut LimitedBuf) {
+        let mut offset = start;
+
+        while !buffer.is_full() {
+            let Some(line) = self.read_next_line(offset) else { break; };
+            let skip = (offset - line.start).as_usize();
+            let bytes = &line.content.as_bytes()[skip..];
+            buffer.extend_from_slice(bytes);
+            buffer.new_line();
+            offset = line.end + 1;
+        }
+    }
 }
 
-struct LimitedBuf {
-    buffer: Vec<u8>,
+struct LocalCursor<'a, T: LineSource> {
+    src: &'a mut FilteredLineSource<T>,
+    pos: Integer,
+}
+
+impl<'a, T: LineSource> LocalCursor<'a, T> {
+    fn new(src: &'a mut FilteredLineSource<T>) -> Self {
+        LocalCursor {
+            src,
+            pos: 0.into(),
+        }
+    }
+}
+
+impl<'a, T: LineSource> Read for LocalCursor<'a, T> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let mut buf = LimitedBuf::from_buf(buf);
+        self.src.read_raw_internal(self.pos, &mut buf);
+        self.pos += buf.position();
+        Ok(buf.position())
+    }
+}
+
+impl<'a, T: LineSource> Seek for LocalCursor<'a, T> {
+    fn seek(&mut self, shift: SeekFrom) -> std::io::Result<u64> {
+        match shift {
+            SeekFrom::Start(p) => {
+                self.pos = p.into();
+            },
+            SeekFrom::End(_) => panic!("Seek from end is not supported for FilteredLineSource"), // todo better error
+            SeekFrom::Current(delta) => {
+                self.pos += delta;
+                if self.pos < 0 {
+                    panic!() // todo better error
+                }
+            }
+        }
+        Ok(self.pos.as_u64())
+    }
+}
+
+struct LimitedBuf<'a> {
+    buffer: MuCow<'a, [u8]>,
     limit: usize,
     p: usize,
 }
 
-impl LimitedBuf {
+impl LimitedBuf<'static> {
     fn new(capacity: usize) -> Self {
         LimitedBuf {
-            buffer: Vec::with_capacity(capacity),
+            buffer: MuCow::Owned(Vec::with_capacity(capacity)),
             limit: capacity,
             p: 0
+        }
+    }
+}
+
+impl<'a> LimitedBuf<'a> {
+
+    fn from_buf(v: &'a mut [u8]) -> Self {
+        let limit = v.len();
+        LimitedBuf {
+            buffer: MuCow::Borrowed(v),
+            limit,
+            p: 0,
         }
     }
 
@@ -234,13 +296,25 @@ impl LimitedBuf {
         if n == 0 {
             return;
         }
-        self.buffer.extend_from_slice(&slice[..n]);
+        let slice = &slice[..n];
+        match &mut self.buffer {
+            MuCow::Borrowed(buffer) => {
+                let mut buffer = &mut buffer[self.p..self.p + n];
+                buffer.copy_from_slice(slice);
+            }
+            MuCow::Owned(ref mut vec) => {
+                vec.extend_from_slice(slice);
+            }
+        }
         self.p += n;
     }
 
     fn new_line(&mut self) {
         if !self.is_full() {
-            self.buffer.push(b'\n');
+            match &mut self.buffer {
+                MuCow::Borrowed(buffer) => buffer[self.p] = b'\n',
+                MuCow::Owned(ref mut vec) => vec.push(b'\n'),
+            }
             self.p += 1;
         }
     }
@@ -249,8 +323,15 @@ impl LimitedBuf {
         self.p >= self.limit
     }
 
-    fn to_string(self) -> Result<String, FromUtf8Error> {
-        String::from_utf8(self.buffer)
+    fn to_string(self) -> anyhow::Result<String> {
+        match self.buffer {
+            MuCow::Borrowed(_) => Err(anyhow!("Not supported")),
+            MuCow::Owned(v) => Ok(String::from_utf8(v)?),
+        }
+    }
+
+    fn position(&self) -> usize {
+        self.p
     }
 }
 

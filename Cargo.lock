@@ -785,6 +785,7 @@ dependencies = [
  "log4rs",
  "metrics",
  "metrics-util",
+ "mucow",
  "num-rational 0.4.0",
  "num-traits",
  "ordered-float 4.2.0",
@@ -885,6 +886,12 @@ dependencies = [
  "radix_trie",
  "sketches-ddsketch",
 ]
+
+[[package]]
+name = "mucow"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c55d0c9dc43dedfd2414deb74ade67687749ef88b1d3482024d4c81d901a7a83"
 
 [[package]]
 name = "ncurses"
