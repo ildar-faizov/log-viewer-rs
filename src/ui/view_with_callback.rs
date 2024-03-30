@@ -30,3 +30,12 @@ impl<T: IntoBoxedView> From<T> for ViewWithCallback {
         ViewWithCallback::with_dummy_callback(value)
     }
 }
+
+impl Into<ViewUpdateCallback> for ViewWithCallback {
+    fn into(self) -> ViewUpdateCallback {
+        Box::new(move |app: &mut Cursive| {
+            app.add_layer(self.view);
+            (self.callback)(app);
+        })
+    }
+}

@@ -8,17 +8,17 @@ use std::sync::Arc;
 use anyhow::anyhow;
 use itertools::Itertools;
 use mucow::MuCow;
+use regex::Regex;
 use crate::data_source::filtered::offset_mapper::{OffsetEvaluationResult, OffsetMapper, OriginalOffset, ProxyOffset};
+use crate::data_source::line_source_holder::ConcreteLineSourceHolder;
 use crate::data_source::tokenizer::skip_token;
 use crate::interval::PointLocationWithRespectToInterval;
 use crate::model::rendered::LineNumberMissingReason;
 use crate::utils;
 
-pub struct FilteredLineSource<T>
-where
-    T: LineSource,
+pub struct FilteredLineSource
 {
-    original: T,
+    original: ConcreteLineSourceHolder,
     filter: Box<dyn Fn(&Line) -> bool>,
     offset_mapper: OffsetMapper,
     track_line_number: bool,
@@ -26,10 +26,7 @@ where
     line_registry: Arc<LineRegistryImpl>,
 }
 
-impl<T> LineSource for FilteredLineSource<T>
-where
-    T: LineSource,
-{
+impl LineSource for FilteredLineSource {
     fn get_length(&self) -> Integer {
         self.original.get_length()
     }
@@ -115,12 +112,9 @@ where
     }
 }
 
-impl<T> FilteredLineSource<T>
-where
-    T: LineSource
-{
+impl FilteredLineSource {
     pub fn new(
-        original: T,
+        original: ConcreteLineSourceHolder,
         mapper: Box<dyn Fn(&Line) -> bool>,
     ) -> Self {
         FilteredLineSource {
@@ -131,6 +125,19 @@ where
             pivots: Vec::new(),
             line_registry: Arc::new(LineRegistryImpl::new()),
         }
+    }
+
+    pub fn with_substring(
+        original: ConcreteLineSourceHolder,
+        pattern: &str
+    ) -> Self {
+        let pattern = pattern.to_string();
+        let mapper = Box::new(move |ln: &Line| ln.content.contains(&pattern));
+        Self::new(original, mapper)
+    }
+
+    pub fn get_original(self) -> ConcreteLineSourceHolder {
+        self.original
     }
 
     fn poll(&mut self, offset: ProxyOffset) -> Option<Line> {
@@ -156,7 +163,8 @@ where
                 }
                 OffsetEvaluationResult::Unpredictable => {
                     self.seek_next_line(ProxyOffset::default(), OriginalOffset::default())
-                }
+                },
+                OffsetEvaluationResult::Unreachable => None,
             };
             match next_line {
                 None => return None,
@@ -223,13 +231,13 @@ where
     }
 }
 
-struct LocalCursor<'a, T: LineSource> {
-    src: &'a mut FilteredLineSource<T>,
+struct LocalCursor<'a> {
+    src: &'a mut FilteredLineSource,
     pos: Integer,
 }
 
-impl<'a, T: LineSource> LocalCursor<'a, T> {
-    fn new(src: &'a mut FilteredLineSource<T>) -> Self {
+impl<'a> LocalCursor<'a> {
+    fn new(src: &'a mut FilteredLineSource) -> Self {
         LocalCursor {
             src,
             pos: 0.into(),
@@ -237,7 +245,7 @@ impl<'a, T: LineSource> LocalCursor<'a, T> {
     }
 }
 
-impl<'a, T: LineSource> Read for LocalCursor<'a, T> {
+impl<'a> Read for LocalCursor<'a> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let mut buf = LimitedBuf::from_buf(buf);
         self.src.read_raw_internal(self.pos, &mut buf);
@@ -246,7 +254,7 @@ impl<'a, T: LineSource> Read for LocalCursor<'a, T> {
     }
 }
 
-impl<'a, T: LineSource> Seek for LocalCursor<'a, T> {
+impl<'a> Seek for LocalCursor<'a> {
     fn seek(&mut self, shift: SeekFrom) -> std::io::Result<u64> {
         match shift {
             SeekFrom::Start(p) => {

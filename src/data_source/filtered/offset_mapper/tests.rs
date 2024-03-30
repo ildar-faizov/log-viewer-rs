@@ -46,6 +46,13 @@ fn test_negative_input() {
     assert_that!(om.add(ProxyOffset::from(0), OriginalOffset::from(10))).is_ok();
     assert_that!(om.add(ProxyOffset::from(5), OriginalOffset::from(20))).is_ok();
 
+    assert_that!(om.eval(ProxyOffset::from(-1))).is_unreachable();
+}
+
+#[test]
+fn test_negative_input_on_empty_mapper() {
+    let mut om = OffsetMapper::default();
+
     assert_that!(om.eval(ProxyOffset::from(-1))).is_unpredictable();
 }
 
@@ -86,6 +93,8 @@ trait OffsetEvaluationResultAssert {
     fn is_predicted<I: Into<Integer>, J: Into<Integer>>(&self, expected_proxy: I, expected_original: J);
 
     fn is_unpredictable(&self);
+
+    fn is_unreachable(&self);
 }
 
 impl<'a> OffsetEvaluationResultAssert for Spec<'a, OffsetEvaluationResult> {
@@ -126,6 +135,17 @@ impl<'a> OffsetEvaluationResultAssert for Spec<'a, OffsetEvaluationResult> {
         if !matches {
             AssertionFailure::from_spec(self)
                 .with_expected(format!("{:?}", OffsetEvaluationResult::Unpredictable))
+                .with_actual(format!("{:?}", subject))
+                .fail();
+        }
+    }
+
+    fn is_unreachable(&self) {
+        let subject = self.subject;
+        let matches = matches!(&subject, OffsetEvaluationResult::Unreachable);
+        if !matches {
+            AssertionFailure::from_spec(self)
+                .with_expected(format!("{:?}", OffsetEvaluationResult::Unreachable))
                 .with_actual(format!("{:?}", subject))
                 .fail();
         }

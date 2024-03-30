@@ -33,7 +33,7 @@ fn expected(n: usize) -> (Vec<Line>, usize) {
 
 #[test]
 fn test_read_next_line() {
-    let original = LineSourceImpl::from_str(&ORIGINAL);
+    let original = ConcreteLineSourceHolder::from(LineSourceImpl::from_str(&ORIGINAL));
     let mut proxy = FilteredLineSource::new(original, Box::new(filter_each_fifth));
 
     assert_that!(proxy.read_next_line(0.into()))
@@ -43,7 +43,7 @@ fn test_read_next_line() {
 
 #[test]
 fn test_read_10_lines_forward() {
-    let original = LineSourceImpl::from_str(&ORIGINAL);
+    let original = ConcreteLineSourceHolder::from(LineSourceImpl::from_str(&ORIGINAL));
     let mut proxy = FilteredLineSource::new(original, Box::new(filter_each_fifth));
 
     let expected = expected(10).0;
@@ -54,7 +54,7 @@ fn test_read_10_lines_forward() {
 
 #[test]
 fn test_read_10_lines_backward() {
-    let original = LineSourceImpl::from_str(&ORIGINAL);
+    let original = ConcreteLineSourceHolder::from(LineSourceImpl::from_str(&ORIGINAL));
     let mut proxy = FilteredLineSource::new(original, Box::new(filter_each_fifth));
 
     let (expected, last_offset) = expected(10);
@@ -65,7 +65,7 @@ fn test_read_10_lines_backward() {
 
 #[test]
 fn test_read_prev_line() {
-    let original = LineSourceImpl::from_str(&ORIGINAL);
+    let original = ConcreteLineSourceHolder::from(LineSourceImpl::from_str(&ORIGINAL));
     let mut proxy = FilteredLineSource::new(original, Box::new(filter_each_fifth));
 
     assert_that!(proxy.read_prev_line(0.into()))
@@ -81,7 +81,7 @@ fn test_read_prev_line() {
 
 #[test]
 fn test_none_match() {
-    let original = LineSourceImpl::from_str(&ORIGINAL);
+    let original = ConcreteLineSourceHolder::from(LineSourceImpl::from_str(&ORIGINAL));
     let mut proxy = FilteredLineSource::new(original, Box::new(|_: &Line| false));
 
     assert_that!(proxy.read_next_line(0.into())).is_none();
@@ -98,7 +98,7 @@ fn test_none_match() {
 
 #[test]
 fn test_line_registry() {
-    let original = LineSourceImpl::from_str(&ORIGINAL);
+    let original = ConcreteLineSourceHolder::from(LineSourceImpl::from_str(&ORIGINAL));
     let mut proxy = FilteredLineSource::new(original, Box::new(filter_each_fifth));
     let registry = proxy.get_line_registry();
 
@@ -113,6 +113,7 @@ fn test_line_registry() {
 mod read_raw {
     use spectral::prelude::*;
     use paste::paste;
+    use super::*;
     use crate::data_source::filtered::filtered_line_source::tests::{filter_each_fifth, ORIGINAL};
     use crate::data_source::filtered::FilteredLineSource;
     use crate::data_source::{LineSource, LineSourceImpl};
@@ -122,7 +123,7 @@ mod read_raw {
             paste!{
                 #[test]
                 fn [<test $n>]() {
-                    let original = LineSourceImpl::from_str(&ORIGINAL);
+                    let original = ConcreteLineSourceHolder::from(LineSourceImpl::from_str(&ORIGINAL));
                     let mut proxy = FilteredLineSource::new(original, Box::new(filter_each_fifth));
 
                     let actual = proxy.read_raw($from.into(), $to.into());
@@ -145,6 +146,7 @@ mod read_raw {
 mod skip_token {
     use spectral::prelude::*;
     use paste::paste;
+    use super::*;
     use crate::data_source::{Direction, LineSource};
     use super::{filter_each_fifth, ORIGINAL};
     use super::FilteredLineSource;
@@ -155,7 +157,7 @@ mod skip_token {
             paste!{
                 #[test]
                 fn [<test_ $name>]() {
-                    let original = LineSourceImpl::from_str(&ORIGINAL);
+                    let original = ConcreteLineSourceHolder::from(LineSourceImpl::from_str(&ORIGINAL));
                     let mut proxy = FilteredLineSource::new(original, Box::new(filter_each_fifth));
 
                     let actual = proxy.skip_token($offset.into(), $direction);

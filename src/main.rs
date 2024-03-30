@@ -62,6 +62,7 @@ use crate::model::help_model::HelpModelEvent;
 use crate::model::metrics_model::MetricsHolder;
 use crate::ui::bgp_status::handle_bgp_event;
 use crate::ui::error_dialog::build_error_dialog;
+use crate::ui::filter_dialog::handle_filter_dialog_model_event;
 use crate::ui::go_to_date_dialog::build_go_to_date_dialog;
 use crate::ui::go_to_dialog::build_go_to_dialog;
 use crate::ui::help_dialog::HelpDialog;
@@ -327,6 +328,15 @@ fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<R
 			let root_model = model.get_mut_ref();
 			let bgp_model = &mut *root_model.get_bgp_model();
 			let callback = handle_bgp_event(bgp_model, evt);
+			callback(app);
+			Ok(true)
+		},
+		FilterEvent(evt) => {
+			let callback = {
+				let root_model = model.get_mut_ref();
+				let model = root_model.get_filter_dialog_model();
+				handle_filter_dialog_model_event(&model, evt)
+			};
 			callback(app);
 			Ok(true)
 		},

@@ -1,8 +1,9 @@
+use std::any::{Any, TypeId};
 use crossbeam_channel::Sender;
 use std::path::{Path, PathBuf};
 use std::env::current_dir;
 use ModelEvent::*;
-use crate::data_source::{Data, Direction, FileBackend, LineSource, LineSourceBackend, LineSourceImpl, StrBackend};
+use crate::data_source::{Data, Direction, FileBackend, Line, LineSource, LineSourceBackend, LineSourceImpl, StrBackend};
 use std::cell::RefMut;
 use num_rational::Ratio;
 use std::cmp::{min, Ordering};
@@ -12,6 +13,7 @@ use std::io::{Cursor, Read, Seek};
 use std::option::Option::Some;
 use std::sync::Arc;
 use std::time::SystemTime;
+use anyhow::anyhow;
 use chrono::{Datelike, DateTime, Utc};
 use fluent_integer::Integer;
 use num_traits::identities::Zero;
@@ -21,7 +23,9 @@ use crate::background_process::background_process_registry::BackgroundProcessReg
 use crate::background_process::run_in_background::RunInBackground;
 use crate::background_process::signal::Signal;
 use crate::background_process::task_context::TaskContext;
+use crate::data_source::filtered::FilteredLineSource;
 use crate::data_source::line_registry::{LineRegistry, LineRegistryError, LineRegistryImpl};
+use crate::data_source::line_source_holder::LineSourceHolder;
 use crate::interval::Interval;
 use crate::model::bgp_model::{BGPModel, BGPModelEvent};
 use crate::selection::Selection;
@@ -30,6 +34,7 @@ use crate::shared::Shared;
 use crate::model::cursor_helper;
 use crate::model::cursor_shift::CursorShift;
 use crate::model::dimension::Dimension;
+use crate::model::filter_model::{FilterDialogModel, FilterDialogModelEvent};
 use crate::model::go_to_date_model::GoToDateModel;
 use crate::model::go_to_line_model::GoToLineModel;
 use crate::model::guess_date_format::{guess_date_format, GuessContext, KnownDateFormat};
@@ -53,7 +58,7 @@ pub struct RootModel {
     open_file_model: Shared<OpenFileModel>,
     file_name: Option<String>,
     is_file_loaded: bool,
-    file_size: Integer,
+    file_size: Integer, // todo do not use for scroll calculation
     data: Option<DataRender>,
     viewport_height: Integer,
     viewport_width: Integer,
@@ -61,7 +66,7 @@ pub struct RootModel {
     horizontal_scroll: Integer,
     cursor: Integer,
     selection: Option<Box<Selection>>,
-    datasource: Option<Shared<Box<dyn LineSource>>>,
+    datasource: Option<Shared<LineSourceHolder>>,
     error: Option<Box<dyn ToString>>,
     show_line_numbers: bool,
     date_format: Option<&'static KnownDateFormat>, // guessed from content
@@ -71,6 +76,8 @@ pub struct RootModel {
     // go to line
     go_to_line_model: Shared<GoToLineModel<BGPModel>>,
     go_to_date_model: Shared<GoToDateModel<BGPModel>>,
+    // filter
+    filter_dialog_model: Shared<FilterDialogModel>,
     // help
     help_model: Shared<HelpModel>,
     // metrics
@@ -98,6 +105,7 @@ pub enum ModelEvent {
     MetricsEvent(MetricsModelEvent),
     ProgressEvent(ProgressModelEvent),
     BGPEvent(BGPModelEvent),
+    FilterEvent(FilterDialogModelEvent),
     Hint(String),
     Error(Option<String>),
     Quit,
@@ -124,6 +132,7 @@ impl RootModel {
         let sender6 = model_sender.clone();
         let sender7 = model_sender.clone();
         let sender8 = model_sender.clone();
+        let sender9 = model_sender.clone();
         let registry5 = background_process_registry.clone();
         let registry6 = background_process_registry.clone();
         let bgp_model = Shared::new(BGPModel::new(sender8, registry6));
@@ -149,6 +158,7 @@ impl RootModel {
             current_search: Shared::new(None),
             go_to_line_model: Shared::new(GoToLineModel::new(sender3, bgp_model.clone())),
             go_to_date_model: Shared::new(GoToDateModel::new(sender4, bgp_model.clone())),
+            filter_dialog_model: Shared::new(FilterDialogModel::new(sender9)),
             help_model: Shared::new(HelpModel::new(sender2)),
             metrics_model: Shared::new(MetricsModel::new(sender6, metrics_holder)),
             progress_model: Shared::new(ProgressModel::new(sender7, registry5)),
@@ -588,24 +598,24 @@ impl RootModel {
     }
 
     fn load_file(&mut self) {
-        self.reset();
+        self.reset(true);
         if let Some(path) = self.resolve_file_name() {
             let line_source = LineSourceImpl::<File, FileBackend>::from_file_name(path.clone());
             let backend = FileBackend::new(path.clone());
             self.guess_date_format(&path);
-            self.do_load_file(Box::new(line_source), backend, self.file_name.as_ref().unwrap().to_string())
+            self.do_load_file(LineSourceHolder::from(line_source), backend, self.file_name.as_ref().unwrap().to_string())
         } else {
             let welcome: &'static str = &crate::welcome::WELCOME;
             let line_source = LineSourceImpl::from_str(welcome);
             let backend = StrBackend::new(welcome);
-            self.do_load_file(Box::new(line_source), backend, String::from("welcome"))
+            self.do_load_file(LineSourceHolder::from(line_source), backend, String::from("welcome"))
         };
 
     }
 
     fn do_load_file<R: Read + Seek + 'static, B: LineSourceBackend<R> + Send + 'static>(
         &mut self,
-        mut line_source: Box<dyn LineSource>,
+        mut line_source: LineSourceHolder,
         backend: B,
         file_name: String)
     {
@@ -636,12 +646,14 @@ impl RootModel {
         })
     }
 
-    fn reset(&mut self) {
+    fn reset(&mut self, reset_date_format: bool) {
         self.cursor = 0.into();
         self.scroll_position = ScrollPosition::default();
         self.horizontal_scroll = 0.into();
         self.datasource = None;
-        self.date_format = None;
+        if reset_date_format {
+            self.date_format = None;
+        }
     }
 
     #[profiling::function]
@@ -820,7 +832,7 @@ impl RootModel {
         }
     }
 
-    fn get_datasource_ref(&self) -> Option<RefMut<Box<dyn LineSource>>> {
+    fn get_datasource_ref(&self) -> Option<RefMut<LineSourceHolder>> {
         self.datasource.as_ref().map(|ds| ds.get_mut_ref())
     }
 
@@ -868,6 +880,44 @@ impl RootModel {
 
     pub fn get_go_to_date_model(&self) -> RefMut<GoToDateModel<BGPModel>> {
         self.go_to_date_model.get_mut_ref()
+    }
+
+    pub fn get_filter_dialog_model(&self) -> RefMut<FilterDialogModel> {
+        self.filter_dialog_model.get_mut_ref()
+    }
+
+    pub fn filter(&mut self, pattern: &str) -> anyhow::Result<()> {
+        let ds = self.datasource.take().ok_or(anyhow!("DataSource not set"))?.into_inner();
+        let base_ds = match ds {
+            LineSourceHolder::Concrete(ds) => ds,
+            LineSourceHolder::Filtered(f) => f.get_original(),
+        };
+        let filtered = FilteredLineSource::with_substring(base_ds, pattern);
+        self.reset(false);
+        self.datasource = Some(Shared::new(LineSourceHolder::from(filtered)));
+        self.update_viewport_content();
+        self.model_sender.emit_event(ModelEvent::Repaint);
+        self.model_sender.emit_event(ModelEvent::Hint(String::from("Press ESC to return to original")));
+        Ok(())
+    }
+
+    pub fn reset_filter(&mut self) {
+        let filtered = self.datasource
+            .as_ref()
+            .filter(|ds| matches!(&*ds.get_ref(), LineSourceHolder::Filtered(_)))
+            .is_some();
+        if filtered {
+            let ds = self.datasource.take().unwrap().into_inner();
+            let LineSourceHolder::Filtered(filtered) = ds else {
+                self.datasource.replace(Shared::new(ds));
+                return;
+            };
+            self.reset(false);
+            self.datasource.replace(Shared::new(filtered.get_original().into()));
+            self.update_viewport_content();
+            self.model_sender.emit_event(ModelEvent::Repaint);
+            self.model_sender.emit_event(ModelEvent::Hint(String::new()));
+        }
     }
 
     pub fn get_help_model(&self) -> RefMut<HelpModel> {
@@ -955,6 +1005,17 @@ impl RootModel {
             if go_to_date_model.is_open() {
                 go_to_date_model.set_is_open(false);
             }
+        }
+
+        {
+            let mut filter_dialog_model = self.filter_dialog_model.get_mut_ref();
+            if filter_dialog_model.is_open() {
+                filter_dialog_model.set_open(false);
+            }
+        }
+
+        {
+            self.reset_filter();
         }
     }
 

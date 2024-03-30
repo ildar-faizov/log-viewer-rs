@@ -313,7 +313,7 @@ pub fn read_delimited<R, F>(
 pub trait LineSource {
 
     /// Returns length
-    fn get_length(&self) -> Integer;
+    fn get_length(&self) -> Integer; // TODO: eliminate this or move to ConcreteLineSource
 
     /// Reads requested number of lines in any direction. Result contains collection of lines with
     /// their offsets and also overall start and end offsets.
@@ -570,4 +570,5 @@ mod data_source_tests;
 
 pub mod line_registry;
 pub mod filtered;
+pub mod line_source_holder;
 mod tokenizer;

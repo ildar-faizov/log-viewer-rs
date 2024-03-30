@@ -22,6 +22,14 @@ impl <T> Shared<T> {
         let s: &RefCell<T> = self.v.borrow();
         s.borrow()
     }
+
+    pub fn into_inner(self) -> T {
+        let refcell = Rc::try_unwrap(self.v);
+        match refcell {
+            Ok(refcell) => refcell.into_inner(),
+            Err(_) => panic!("Failed to unwrap Reference"),
+        }
+    }
 }
 
 impl<T> Clone for Shared<T> {

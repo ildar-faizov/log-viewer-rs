@@ -76,6 +76,7 @@ pub enum OffsetEvaluationResult {
     Exact(OriginalOffset),
     LastConfirmed(ProxyOffset, OriginalOffset),
     Unpredictable,
+    Unreachable,
 }
 
 /// Represents a piecewise-linear function that maps offset in proxy LineSource to real offset.
@@ -92,7 +93,11 @@ impl OffsetMapper {
         let result = self.pivots.binary_search_by_key(&x, |&(x_i, _)| x_i);
         let el = match result {
             Ok(q) => self.pivots.get(q),
-            Err(0) => return OffsetEvaluationResult::Unpredictable,
+            Err(0) => return if self.pivots.is_empty() {
+                OffsetEvaluationResult::Unpredictable
+            } else {
+                OffsetEvaluationResult::Unreachable
+            },
             Err(q) => if q < self.pivots.len() { self.pivots.get(q - 1) } else { None }
         };
         match el {

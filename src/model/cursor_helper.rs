@@ -2,11 +2,12 @@ use std::borrow::Cow;
 use std::cell::RefMut;
 use fluent_integer::Integer;
 use crate::data_source::{Direction, LineSource};
+use crate::data_source::line_source_holder::LineSourceHolder;
 use crate::model::rendered::{DataRender, LineRender};
 
 pub struct LineIterator<'a> {
     cache: &'a DataRender,
-    datasource: RefMut<'a, Box<dyn LineSource>>,
+    datasource: RefMut<'a, LineSourceHolder>,
     direction: Direction,
     current_line: Option<Cow<'a, LineRender>>,
     line_number: Integer,
@@ -17,7 +18,7 @@ pub struct LineIterator<'a> {
 impl<'a> LineIterator<'a> {
     pub fn new(
         cache: &'a DataRender,
-        datasource: RefMut<'a, Box<dyn LineSource>>,
+        datasource: RefMut<'a, LineSourceHolder>,
         direction: Direction,
         line_number: Integer,
     ) -> Self {

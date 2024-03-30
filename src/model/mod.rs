@@ -13,6 +13,7 @@ pub mod open_file_model;
 pub mod metrics_model;
 pub mod progress_model;
 pub mod bgp_model;
+pub mod filter_model;
 mod navigable_searcher_constructor;
 mod abstract_go_to_model;
 mod guess_date_format;
