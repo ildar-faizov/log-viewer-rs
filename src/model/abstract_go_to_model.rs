@@ -119,6 +119,8 @@ pub enum GoToError {
     NotReachable,
     #[error("Operation is cancelled")]
     Cancelled,
+    #[error("Total source length is unknown")]
+    LengthUnknown,
 }
 
 pub type GoToResult = Result<Integer, GoToError>;

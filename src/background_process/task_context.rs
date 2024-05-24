@@ -1,6 +1,8 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::time::{Duration, Instant};
 use crate::background_process::signal::Signal;
 use crossbeam_channel::{Receiver, SendError, Sender};
+use num_rational::Ratio;
 use uuid::Uuid;
 
 pub struct TaskContext<M, R> {
@@ -9,6 +11,7 @@ pub struct TaskContext<M, R> {
     ri: Receiver<bool>,
     id: Uuid,
     last_reported_progress: Cell<u8>,
+    last_interrupt_check: RefCell<Instant>,
 }
 
 impl<M, R> TaskContext<M, R> {
@@ -19,6 +22,7 @@ impl<M, R> TaskContext<M, R> {
             ri,
             id,
             last_reported_progress: Cell::new(0),
+            last_interrupt_check: RefCell::new(Instant::now()),
         }
     }
 
@@ -35,10 +39,29 @@ impl<M, R> TaskContext<M, R> {
         }
     }
 
+    pub fn update_progress_u64(&self, a: u64, b: u64) {
+        let p = Ratio::new(a * 100, b).to_integer() as u8;
+        self.update_progress(p);
+    }
+
     pub fn interrupted(&self) -> bool {
         let r = self.interrupted.get() || self.ri.try_recv().unwrap_or_default();
         self.interrupted.set(r);
         r
+    }
+
+    pub fn interrupted_debounced(&self, rate: Duration) -> bool {
+        if self.interrupted.get() {
+            return true;
+        }
+        let now = Instant::now();
+        let diff = now - *self.last_interrupt_check.borrow();
+        if diff > rate {
+            self.last_interrupt_check.replace(now);
+            self.interrupted()
+        } else {
+            false
+        }
     }
 
     #[allow(dead_code)]

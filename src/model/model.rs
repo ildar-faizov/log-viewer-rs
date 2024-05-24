@@ -1,4 +1,3 @@
-use std::any::{Any, TypeId};
 use crossbeam_channel::Sender;
 use std::path::{Path, PathBuf};
 use std::env::current_dir;
@@ -6,7 +5,7 @@ use ModelEvent::*;
 use crate::data_source::{Data, Direction, FileBackend, Line, LineSource, LineSourceBackend, LineSourceImpl, StrBackend};
 use std::cell::RefMut;
 use num_rational::Ratio;
-use std::cmp::{min, Ordering};
+use std::cmp::{max, min, Ordering};
 use std::fmt::Debug;
 use std::fs::File;
 use std::io::{Cursor, Read, Seek};
@@ -58,7 +57,6 @@ pub struct RootModel {
     open_file_model: Shared<OpenFileModel>,
     file_name: Option<String>,
     is_file_loaded: bool,
-    file_size: Integer, // todo do not use for scroll calculation
     data: Option<DataRender>,
     viewport_height: Integer,
     viewport_width: Integer,
@@ -142,7 +140,6 @@ impl RootModel {
             open_file_model: Shared::new(OpenFileModel::new(sender5)),
             file_name: None,
             is_file_loaded: false,
-            file_size: 0.into(),
             data: None,
             viewport_height: 0.into(),
             viewport_width: 0.into(),
@@ -280,9 +277,7 @@ impl RootModel {
                         log::warn!("Scroll {} lines not possible, cursor is at the beginning of the source", num_of_lines);
                         Integer::zero()
                     };
-                let starting_pont = self.scroll_position.starting_point;
-                let shift = self.scroll_position.shift + delta;
-                let new_scroll_position = ScrollPosition::new(starting_pont, shift);
+                let new_scroll_position = &self.scroll_position + delta;
                 return self.set_scroll_position(new_scroll_position)
             } else {
                 log::warn!("Scroll {} lines failed, no first line", num_of_lines);
@@ -416,7 +411,10 @@ impl RootModel {
                         .unwrap_or(0.into())
                 }
             } else { // y < 0
-                let mut new_lines = datasource.read_lines(data.start.unwrap() - 1, y).lines;
+                let mut new_lines = data.start.as_ref()
+                    .filter(|i| **i > 0)
+                    .map(|i| datasource.read_lines(*i - 1, y).lines)
+                    .unwrap_or_default();
                 if !new_lines.is_empty() {
                     calc_offset_in_line(&LineRender::new(new_lines.remove(0)))
                 } else {
@@ -534,12 +532,26 @@ impl RootModel {
     }
 
     pub fn move_cursor_to_end(&mut self) -> bool {
-        let offset = self.get_datasource_ref()
-            .map(|ds| ds.get_length());
-            // .map(|len| len - bool_to_u64(len > 0, 1, 0));
+        let Some((ds, bgp)) = self.datasource.clone()
+            .zip(Some(self.bgp_model.clone())) else {
+            return false;
+        };
+        let offset = ds.get_ref().get_length();
         match offset {
-            Some(offset) => self.move_cursor_to_offset(offset, false),
-            None => false
+            Some(offset) => {
+                self.move_cursor_to_offset(offset, false)
+            },
+            None => {
+                match &mut *ds.get_mut_ref() {
+                    LineSourceHolder::Filtered(f) => {
+                        f.build_offset_mapper(&mut *bgp.get_mut_ref(), Box::new(|model: &mut RootModel| {
+                            model.move_cursor_to_end();
+                        }));
+                    },
+                    _ => {},
+                }
+                false
+            }
         }
     }
 
@@ -553,7 +565,7 @@ impl RootModel {
     }
 
     pub fn select_all(&mut self) {
-        let length = self.get_datasource_ref().map(|ds| ds.get_length());
+        let length = self.get_datasource_ref().and_then(|ds| ds.get_length());
         if let Some(length) = length {
             self.set_selection(Some(Box::new(Selection {
                 start: Integer::zero(),
@@ -622,7 +634,7 @@ impl RootModel {
         if self.show_line_numbers {
             line_source.track_line_number(true);
         }
-        let file_size = line_source.get_length();
+        let file_size = line_source.get_length().unwrap();
         self.datasource = Some(Shared::new(line_source));
         self.build_line_registry(backend, file_size);
 
@@ -663,9 +675,8 @@ impl RootModel {
         }
         if let Some(datasource) = &self.datasource {
             let mut datasource = datasource.get_mut_ref();
-            let source_length = datasource.get_length();
-            let offset = (self.scroll_position.starting_point * source_length).to_integer()
-                + self.scroll_position.shift;
+            let offset = self.scroll_position.into();
+            // TODO: if line source supports length, convert offset to positive
             log::info!("update_viewport_content offset = {}", offset);
             let data = datasource.read_lines(offset, self.viewport_height);
             log::trace!("update_viewport_content data: {:?}", &data.lines[..min(3, data.lines.len())]);
@@ -824,7 +835,7 @@ impl RootModel {
                 .map(|line| (line.start, calc_horizontal_scroll(&LineRender::new(line), offset)))
                 .unwrap_or((Integer::zero(), Integer::zero()));
             drop(datasource);
-            let scroll_position = ScrollPosition::new(Ratio::new(line_offset, self.file_size), Integer::zero());
+            let scroll_position = ScrollPosition::from_beginning(line_offset);
             // TODO will be implemented using futures chain
             self.scroll_position = scroll_position;
             self.horizontal_scroll = horizontal_scroll;
@@ -832,7 +843,7 @@ impl RootModel {
         }
     }
 
-    fn get_datasource_ref(&self) -> Option<RefMut<LineSourceHolder>> {
+    pub fn get_datasource_ref(&self) -> Option<RefMut<LineSourceHolder>> {
         self.datasource.as_ref().map(|ds| ds.get_mut_ref())
     }
 
@@ -853,9 +864,8 @@ impl RootModel {
                 new_offset = offset;
             }
         }
-        let scroll_starting_point = Ratio::new(new_offset, datasource.get_length());
         drop(datasource);
-        self.set_scroll_position(ScrollPosition::new(scroll_starting_point, 0.into()))
+        self.set_scroll_position(ScrollPosition::from(new_offset))
     }
 
     pub fn get_search_model(&self) -> RefMut<SearchModel<BGPModel>> {
@@ -890,7 +900,7 @@ impl RootModel {
         let ds = self.datasource.take().ok_or(anyhow!("DataSource not set"))?.into_inner();
         let base_ds = match ds {
             LineSourceHolder::Concrete(ds) => ds,
-            LineSourceHolder::Filtered(f) => f.get_original(),
+            LineSourceHolder::Filtered(f) => f.get_original().clone(),
         };
         let filtered = FilteredLineSource::with_substring(base_ds, pattern);
         self.reset(false);
@@ -913,7 +923,7 @@ impl RootModel {
                 return;
             };
             self.reset(false);
-            self.datasource.replace(Shared::new(filtered.get_original().into()));
+            self.datasource.replace(Shared::new(filtered.get_original().clone().into()));
             self.update_viewport_content();
             self.model_sender.emit_event(ModelEvent::Repaint);
             self.model_sender.emit_event(ModelEvent::Hint(String::new()));

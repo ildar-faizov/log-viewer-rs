@@ -1,12 +1,15 @@
 use std::fs::File;
-use std::io::Cursor;
+use std::io::{Cursor, Read};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
+
 use fluent_integer::Integer;
-use crate::data_source::{Data, Direction, FileBackend, Line, LineSource, LineSourceImpl, StrBackend};
+
+use crate::data_source::{Data, Direction, FileBackend, Line, LineSource, LineSourceBackend, LineSourceImpl, StrBackend};
 use crate::data_source::filtered::FilteredLineSource;
 use crate::data_source::line_registry::LineRegistryImpl;
 
+#[derive(Clone)]
 pub enum ConcreteLineSourceHolder {
     FileBased(LineSourceImpl<File, FileBackend>),
     ConstantBased(LineSourceImpl<Cursor<&'static [u8]>, StrBackend<'static>>),
@@ -83,7 +86,7 @@ impl From<FilteredLineSource> for LineSourceHolder {
 }
 
 impl LineSource for LineSourceHolder {
-    fn get_length(&self) -> Integer {
+    fn get_length(&self) -> Option<Integer> {
         self.deref().get_length()
     }
 

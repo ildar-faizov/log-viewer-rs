@@ -1,34 +1,60 @@
 use std::cmp::{min, Ordering};
-use std::io::{BufReader, Read, Seek, SeekFrom};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::ops::{Deref, Sub};
-use crate::data_source::line_registry::{LineRegistry, LineRegistryImpl};
-use crate::data_source::{Data, Direction, Line, LineSource, LineSourceBackend, LineSourceImpl};
-use fluent_integer::Integer;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
+
 use anyhow::anyhow;
-use itertools::Itertools;
 use mucow::MuCow;
 use regex::Regex;
-use crate::data_source::filtered::offset_mapper::{OffsetEvaluationResult, OffsetMapper, OriginalOffset, ProxyOffset};
-use crate::data_source::line_source_holder::ConcreteLineSourceHolder;
+use uuid::Uuid;
+
+use fluent_integer::Integer;
+use crate::background_process::background_process_handler::BackgroundProcessHandler;
+use crate::background_process::buffered_message_sender::BufferedMessageSender;
+use crate::background_process::run_in_background::RunInBackground;
+use crate::background_process::signal::Signal;
+use crate::background_process::task_context::TaskContext;
+
+use crate::data_source::{Data, Direction, Line, LineSource, LineSourceBackend, LineSourceImpl};
+use crate::data_source::filtered::offset_mapper::{IOffsetMapper, OffsetEvaluationResult, OffsetMapper, OriginalOffset, ProxyOffset};
+use crate::data_source::line_registry::{LineRegistry, LineRegistryImpl};
+use crate::data_source::line_source_holder::{ConcreteLineSourceHolder, LineSourceHolder};
 use crate::data_source::tokenizer::skip_token;
 use crate::interval::PointLocationWithRespectToInterval;
+use crate::model::model::RootModel;
 use crate::model::rendered::LineNumberMissingReason;
+use crate::shared::Shared;
 use crate::utils;
+
+type LineFilter = Arc<dyn Fn(&str) -> bool + Sync + Send + 'static>;
+
+pub type Callback = Box<dyn Fn(&mut RootModel) + 'static>;
+
+const PUSH_INTERVAL: Duration = Duration::from_millis(500);
+const MESSAGE_LIMIT: usize = 1024;
 
 pub struct FilteredLineSource
 {
+    id: Uuid,
     original: ConcreteLineSourceHolder,
-    filter: Box<dyn Fn(&Line) -> bool>,
+    filter: LineFilter,
     offset_mapper: OffsetMapper,
     track_line_number: bool,
-    pivots: Vec<(ProxyOffset, ProxyOffset)>,
     line_registry: Arc<LineRegistryImpl>,
+    handler: Option<BackgroundProcessHandler>,
+    highest_scanned_original_offset: OriginalOffset,
 }
 
 impl LineSource for FilteredLineSource {
-    fn get_length(&self) -> Integer {
-        self.original.get_length()
+    fn get_length(&self) -> Option<Integer> {
+        let original_length = self.original.get_length()?;
+        if original_length <= *self.highest_scanned_original_offset {
+            self.offset_mapper.get_highest_known()
+                .map(|(proxy_offset, _)| *proxy_offset)
+        } else {
+            None
+        }
     }
 
     fn read_lines(&mut self, mut offset: Integer, number_of_lines: Integer) -> Data {
@@ -39,7 +65,7 @@ impl LineSource for FilteredLineSource {
             Ordering::Equal => return Data::default(),
         };
         let mut lines = Vec::with_capacity(n.as_usize());
-        while lines.len() < n {
+        while lines.len() < n && offset >= 0 {
             match direction {
                 Direction::Forward => {
                     if let Some(line) = self.read_next_line(offset) {
@@ -115,15 +141,17 @@ impl LineSource for FilteredLineSource {
 impl FilteredLineSource {
     pub fn new(
         original: ConcreteLineSourceHolder,
-        mapper: Box<dyn Fn(&Line) -> bool>,
+        mapper: LineFilter,
     ) -> Self {
         FilteredLineSource {
+            id: Uuid::new_v4(),
             original,
             filter: mapper,
             offset_mapper: OffsetMapper::default(),
             track_line_number: true,
-            pivots: Vec::new(),
             line_registry: Arc::new(LineRegistryImpl::new()),
+            handler: None,
+            highest_scanned_original_offset: Default::default(),
         }
     }
 
@@ -132,12 +160,125 @@ impl FilteredLineSource {
         pattern: &str
     ) -> Self {
         let pattern = pattern.to_string();
-        let mapper = Box::new(move |ln: &Line| ln.content.contains(&pattern));
+        let mapper = Arc::new(move |s: &str| s.contains(&pattern));
         Self::new(original, mapper)
     }
 
-    pub fn get_original(self) -> ConcreteLineSourceHolder {
-        self.original
+    pub fn get_original(&self) -> &ConcreteLineSourceHolder {
+        &self.original
+    }
+
+    pub fn build_offset_mapper<T: RunInBackground>(&mut self, runner: &mut T, on_finish: Callback) {
+        match &self.original {
+            ConcreteLineSourceHolder::FileBased(ls) => {
+                self.build_offset_mapper_0(runner, ls.backend().clone(), on_finish);
+            }
+            ConcreteLineSourceHolder::ConstantBased(ls) => {
+                self.build_offset_mapper_0(runner, ls.backend().clone(), on_finish);
+            }
+        }
+    }
+
+    fn build_offset_mapper_0<T, R, B>(&mut self, runner: &mut T, backend: B, on_finish: Callback)
+    where
+        T: RunInBackground,
+        R: Read + Seek,
+        B: LineSourceBackend<R> + Send + 'static
+    {
+        if self.handler.is_some() {
+            return;
+        }
+        let self_id = self.id.clone();
+        let filter = Arc::clone(&self.filter);
+        let handler = runner.background_process_builder::<Vec<Message>, _, anyhow::Result<Integer>, _>()
+            .with_title("Scanning...")
+            .with_description("Building complete filtered output")
+            .with_task(move |ctx| {
+                let mut message_sender = BufferedMessageSender::new(MESSAGE_LIMIT, PUSH_INTERVAL, ctx);
+
+                let total = backend.get_length();
+                let mut proxy_offset = ProxyOffset::from(0);
+                let mut original_offset = OriginalOffset::from(0);
+
+                let mut reader = backend.new_reader();
+                let mut line = String::new();
+                while let Ok(bytes_read) = reader.read_line(&mut line) {
+                    if bytes_read == 0 {
+                        break;
+                    }
+                    let trimmed = utils::trim_newline(&mut line);
+                    if filter(&line) {
+                        message_sender.push(Message {
+                            proxy_offset,
+                            original_offset,
+                            line_length: (bytes_read - trimmed).into(),
+                        })?;
+                        proxy_offset = proxy_offset + bytes_read;
+                    }
+                    original_offset = original_offset + bytes_read;
+                    ctx.update_progress_u64(original_offset.as_u64(), total);
+                    if ctx.interrupted_debounced(PUSH_INTERVAL) {
+                        return Err(anyhow!("Cancelled"));
+                    }
+                    line.clear();
+                }
+
+                Ok(*original_offset)
+            })
+            .with_listener(move |model, msg, id| {
+                match msg {
+                    Signal::Custom(data) => {
+                        perform_on_self(self_id, model, |ls| ls.accept_offset_mapper(data, id));
+                    },
+                    Signal::Complete(result) => {
+                        perform_on_self(self_id, model, |ls| ls.accept_offset_mapper_finish(id, result));
+                        on_finish(model);
+                    }
+                    _ => {}
+                }
+            })
+            .run();
+        self.handler = Some(handler);
+    }
+
+    fn accept_offset_mapper(&mut self, msgs: Vec<Message>, id: &Uuid) {
+        if self.handler.is_none() {
+            log::warn!("Cannot update FilteredLineSource, it's been destroyed");
+            return;
+        }
+        let handler = self.handler.as_ref().unwrap();
+        if handler.get_id() != id {
+            log::warn!("Trying to assign results of {} to {}", id, handler.get_id());
+            return;
+        }
+        for msg in msgs {
+            let Message {
+                proxy_offset,
+                original_offset,
+                line_length,
+            } = msg;
+            self.offset_mapper.add(proxy_offset, original_offset).unwrap_or_default(); // skip error
+            self.offset_mapper.confirm(proxy_offset + line_length);
+            self.line_registry.push(*(proxy_offset + line_length));
+            self.highest_scanned_original_offset = OriginalOffset::from(original_offset);
+        }
+    }
+
+    fn accept_offset_mapper_finish(&mut self, id: &Uuid, res: anyhow::Result<Integer>) {
+        if self.handler.is_none() {
+            log::warn!("Cannot update FilteredLineSource, it's been destroyed");
+            return;
+        }
+        let handler = self.handler.as_ref().unwrap();
+        if handler.get_id() != id {
+            log::warn!("Trying to assign results of {} to {}", id, handler.get_id());
+            return;
+        }
+        self.handler = None;
+
+        if let Ok(original_offset) = res {
+            self.highest_scanned_original_offset = OriginalOffset::from(original_offset);
+        }
     }
 
     fn poll(&mut self, offset: ProxyOffset) -> Option<Line> {
@@ -154,6 +295,7 @@ impl FilteredLineSource {
                                 line.to_builder()
                                     .with_start(*s)
                                     .with_end(*e)
+                                    .with_line_no(Err(LineNumberMissingReason::LineNumberingTurnedOff)) // todo
                                     .build()
                             )
                         })
@@ -164,7 +306,6 @@ impl FilteredLineSource {
                 OffsetEvaluationResult::Unpredictable => {
                     self.seek_next_line(ProxyOffset::default(), OriginalOffset::default())
                 },
-                OffsetEvaluationResult::Unreachable => None,
             };
             match next_line {
                 None => return None,
@@ -200,7 +341,8 @@ impl FilteredLineSource {
         while let Some(next_line) = self.original.read_next_line(ox) {
             let s = next_line.start;
             let e = next_line.end;
-            if (*self.filter)(&next_line) {
+            self.highest_scanned_original_offset = OriginalOffset::from(e);
+            if (*self.filter)(&next_line.content) {
                 self.offset_mapper.add(proxy_offset, OriginalOffset::from(s)).unwrap();
                 self.offset_mapper.confirm(proxy_offset + (e - s));
                 return Some(Line {
@@ -341,6 +483,36 @@ impl<'a> LimitedBuf<'a> {
     fn position(&self) -> usize {
         self.p
     }
+}
+
+impl Drop for FilteredLineSource {
+    fn drop(&mut self) {
+        if let Some(handler) = &self.handler.as_mut() {
+            handler.interrupt();
+        }
+    }
+}
+
+struct Message {
+    proxy_offset: ProxyOffset,
+    original_offset: OriginalOffset,
+    line_length: Integer,
+}
+
+fn perform_on_self<F>(id: Uuid, model: &mut RootModel, f: F)
+where
+    F: FnOnce(&mut FilteredLineSource) -> ()
+{
+    let Some(mut ds) = model.get_datasource_ref() else { return; };
+    let holder = &mut *ds;
+    match holder {
+        LineSourceHolder::Filtered(ls) => {
+            if ls.id == id {
+                f(ls)
+            }
+        },
+        _ => {},
+    };
 }
 
 #[cfg(test)]

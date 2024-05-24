@@ -93,7 +93,7 @@ fn bin_search(
     guess_ctx: GuessContext,
     ctx: &mut TaskContext<(), GoToResult>,
 ) -> GoToResult {
-    let total = reader.get_length();
+    let total = reader.get_length().ok_or(GoToError::LengthUnknown)?;
     let _progress = 0_u8;
     let (mut line1, dt1) = take_line(
         reader,

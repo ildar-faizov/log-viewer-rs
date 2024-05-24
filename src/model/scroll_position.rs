@@ -1,40 +1,63 @@
-use num_rational::Ratio;
 use fluent_integer::Integer;
 use std::fmt;
-use num_traits::Zero;
+use std::ops::Add;
 
-/* Describes scroll position.
- * starting_point denotes initial scroll position. It is 0 at the beginning. A user
- * may scroll to the end (then it is 1) or choose some point in between. Belongs to [0, 1].
- * shift denotes number of lines to count from starting_point.
- *
- * E.g. when user scrolls 3 lines down from the beginning of the file, starting_point=0 and shift=3.
- * E.g. when user scrolls to the bottom, starting_point=1 and shift=0.
- */
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
-pub struct ScrollPosition {
-    pub starting_point: Ratio<Integer>,
-    // [0, 1] - initial point in scroll area
-    pub shift: Integer,
+pub enum  ScrollPosition {
+    FromBeginning { shift: Integer },
+    FromEnd { shift: Integer },
 }
 
 impl fmt::Display for ScrollPosition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ScrollPosition(starting_point={}/{}, shift={})", self.starting_point.numer(), self.starting_point.denom(), self.shift)
+        write!(f, "{:?}", &self)
     }
 }
 
 impl ScrollPosition {
-    pub fn new(starting_point: Ratio<Integer>, shift: Integer) -> Self {
-        ScrollPosition {
-            starting_point,
-            shift,
+    pub fn from_beginning(shift: impl Into<Integer>) -> Self {
+        ScrollPosition::FromBeginning { shift: shift.into() }
+    }
+
+    pub fn from_end(shift: impl Into<Integer>) -> Self {
+        ScrollPosition::FromEnd { shift: shift.into() }
+    }
+}
+
+impl Add<Integer> for &ScrollPosition {
+    type Output = ScrollPosition;
+
+    fn add(self, rhs: Integer) -> Self::Output {
+        match self {
+            ScrollPosition::FromBeginning { shift } =>
+                ScrollPosition::FromBeginning { shift: *shift + rhs },
+            ScrollPosition::FromEnd { shift } =>
+                ScrollPosition::FromEnd { shift: *shift - rhs},
+        }
+    }
+}
+
+impl Into<Integer> for ScrollPosition {
+    fn into(self) -> Integer {
+        match self {
+            ScrollPosition::FromBeginning { shift } => shift,
+            ScrollPosition::FromEnd { shift } => - shift,
+        }
+    }
+}
+
+impl From<Integer> for ScrollPosition {
+    fn from(value: Integer) -> Self {
+        if value >= 0 {
+            ScrollPosition::FromBeginning { shift: value }
+        } else {
+            ScrollPosition::FromEnd { shift: -value }
         }
     }
 }
 
 impl Default for ScrollPosition {
     fn default() -> Self {
-        ScrollPosition::new(Ratio::zero(), 0.into())
+        ScrollPosition::FromBeginning { shift: 0.into() }
     }
 }

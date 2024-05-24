@@ -313,7 +313,7 @@ pub fn read_delimited<R, F>(
 pub trait LineSource {
 
     /// Returns length
-    fn get_length(&self) -> Integer; // TODO: eliminate this or move to ConcreteLineSource
+    fn get_length(&self) -> Option<Integer>;
 
     /// Reads requested number of lines in any direction. Result contains collection of lines with
     /// their offsets and also overall start and end offsets.
@@ -377,6 +377,7 @@ pub trait LineSourceBackend<R: Read> {
     fn new_reader(&self) -> BufReader<R>;
 }
 
+#[derive(Clone)]
 pub struct FileBackend {
     file_name: PathBuf
 }
@@ -397,6 +398,7 @@ impl LineSourceBackend<File> for FileBackend {
     }
 }
 
+#[derive(Clone)]
 pub struct StrBackend<'a> {
     s: Cursor<&'a str>
 }
@@ -446,6 +448,10 @@ impl<R, B> LineSourceImpl<R, B> where R: Read + Seek, B: LineSourceBackend<R> {
         }
     }
 
+    pub fn backend(&self) -> &B {
+        &self.backend
+    }
+
     fn reader(&mut self) -> RefMut<'_, BufReader<R>> {
         if self.file_reader.is_none() {
             let f = self.backend.new_reader();
@@ -459,6 +465,21 @@ impl<R, B> LineSourceImpl<R, B> where R: Read + Seek, B: LineSourceBackend<R> {
     {
         let file_reader = self.reader();
         f(file_reader)
+    }
+
+    fn get_length_internal(&self) -> Integer {
+        self.backend.get_length().into()
+    }
+}
+
+impl<R, B> Clone for LineSourceImpl<R, B>
+    where
+        R: Read + Seek,
+        B: LineSourceBackend<R>,
+        B: Clone,
+{
+    fn clone(&self) -> Self {
+        Self::new(self.backend.clone())
     }
 }
 
@@ -477,8 +498,8 @@ impl<R, B> SeekTo for LineSourceImpl<R, B> where B: LineSourceBackend<R>, R: Rea
 
 impl<R, B> LineSource for LineSourceImpl<R, B> where R: Read + Seek, B: LineSourceBackend<R> {
 
-    fn get_length(&self) -> Integer {
-        self.backend.get_length().into()
+    fn get_length(&self) -> Option<Integer> {
+        Some(self.get_length_internal())
     }
 
     fn read_lines(&mut self, offset: Integer, number_of_lines: Integer) -> Data {
@@ -486,6 +507,11 @@ impl<R, B> LineSource for LineSourceImpl<R, B> where R: Read + Seek, B: LineSour
             Some(Arc::clone(&self.line_registry))
         } else {
             None
+        };
+        let offset = if offset < 0 {
+            self.get_length_internal() - offset
+        } else {
+            offset
         };
         let result = self.with_reader(|mut f| {
             log::trace!("read_lines number_of_lines = {}, offset = {}", number_of_lines, offset);
