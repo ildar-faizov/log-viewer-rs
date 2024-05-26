@@ -9,8 +9,8 @@
             "request": "launch",
             "name": "Debug",
             "program": "${workspaceRoot}/target/debug/logv",
-            "args": ["-f", "/var/log/bootstrap.log"],
-            "cwd": "${workspaceRoot}/target/debug/",
+            "args": ["-f", "/Users/ildarfaizov/dev/logv/samples/boot.log"],
+            "cwd": "${workspaceRoot}",
             "sourceLanguages": ["rust"],
             "console": "integratedTerminal"
         },
@@ -20,8 +20,6 @@
             "name": "Attach",
             "sourceLanguages": ["rust"],
             "program": "${workspaceRoot}/target/debug/logv",
-            "args": ["-f", "/var/log/bootstrap.log"],
-            "cwd": "${workspaceRoot}/target/debug/",
             "processId": "${command.pickProcess}"
         },
     ]
