@@ -1,5 +1,7 @@
 ## Debug
 
+### Linux
+
 Run program using
 ```
 gdbserver :8888 ./target/debug/logv -f ./samples/syslog
@@ -9,7 +11,23 @@ or
 ./debug.sh -f ./samples/syslog
 ```
 
-Then attach remote GNU debugger with `target remote` args `127.0.0.1:8888`
+Then attach remote GDB with `target remote` args `127.0.0.1:8888`
+
+### MacOS
+
+Install XCode.
+
+Run program using
+```
+/Applications/Xcode.app/Contents/SharedFrameworks/LLDB.framework/Resources/debugserver 0.0.0.0:8888 ./target/debug/logv -f ./samples/syslog
+```
+or
+```
+./debug-mac.sh -f ./samples/syslog
+```
+
+Then attach remote LLDB with `target remote` args `connect://127.0.0.1:8888`
+
 
 ## Profiling
 
