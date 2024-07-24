@@ -7,14 +7,16 @@ use cursive::view::Nameable;
 use cursive::views::{Canvas, NamedView};
 use log::Level;
 use metrics::{describe_histogram, Unit};
-use crate::actions::action_registry::action_registry;
+
+use crate::actions::action_registry::ActionRegistry;
 use crate::highlight::highlighter_registry::cursive_highlighters;
 use crate::highlight::style_with_priority::StyleWithPriority;
 use crate::model::model::RootModel;
+use crate::profiles::OS_PROFILE;
 use crate::shared::Shared;
 use crate::ui::line_drawer::LineDrawer;
 use crate::ui::ui_elements::UIElementName;
-use crate::utils::{stat, stat_l, NumberOfDecimalDigits};
+use crate::utils::{NumberOfDecimalDigits, stat, stat_l};
 
 const METRIC_DRAW: &str = "draw";
 const METRIC_ACTION: &str = "action";
@@ -22,8 +24,6 @@ const METRIC_ACTION: &str = "action";
 pub fn build_canvas(model: Shared<RootModel>) -> NamedView<Canvas<Shared<RootModel>>> {
     describe_histogram!(METRIC_DRAW, Unit::Microseconds, "Time to draw canvas");
     describe_histogram!(METRIC_ACTION, Unit::Microseconds, "UI action");
-
-    let actions = action_registry();
 
     let palette = Theme::default().palette;
     let highlighters = cursive_highlighters(&palette);
@@ -78,7 +78,12 @@ pub fn build_canvas(model: Shared<RootModel>) -> NamedView<Canvas<Shared<RootMod
             }
         }))
         .with_on_event(move |state, event| {
-            match actions.get(&event) {
+            let action = {
+                let model = &mut state.get_mut_ref();
+                let actions = &*model.get_action_registry();
+                actions.lookup_by_key(&event).cloned()
+            };
+            match action {
                 Some(action) => {
                     let state = &mut state.get_mut_ref();
                     stat_l(Level::Info, METRIC_ACTION, &Unit::Microseconds, move || {

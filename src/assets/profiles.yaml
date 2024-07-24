@@ -1,0 +1,129 @@
+---
+profile:
+  name: default
+  actions:
+    # Miscellaneous
+    - id: quit
+      description: Quit
+      hotkeys: [ q ]
+    - id: help
+      description: Help
+      hotkeys: ['?']
+    - id: application_metrics
+      description: Display internal application metrics
+      hotkeys: [Shift+m]
+    - id: copy
+      description: Copy selection to clipboard
+      hotkeys: [ Ctrl+c ]
+    - id: open_file
+      description: Open file
+      hotkeys: [Ctrl+o]
+    # Scroll
+    - id: scroll_up
+      description: Scroll one line up
+      hotkeys: [Ctrl+UP]
+    - id: scroll_down
+      description: Scroll one line down
+      hotkeys: [Ctrl+DOWN]
+    # Word navigation
+    - id: word_backward
+      description: Move cursor one word backwards
+      hotkeys: [Ctrl+LEFT]
+    - id: word_forward
+      description: Move cursor one word forward
+      hotkeys: [Ctrl+RIGHT]
+    # Standard navigation
+    - id: cursor_down
+      description: Move cursor one line down
+      hotkeys: [DOWN]
+    - id: cursor_up
+      description: Move cursor one line up
+      hotkeys: [UP]
+    - id: cursor_left
+      description: Move cursor by one symbol to the left
+      hotkeys: [LEFT]
+    - id: cursor_right
+      description: Move cursor by one symbol to the right
+      hotkeys: [RIGHT]
+    # Line navigation
+    - id: line_start
+      description: Move cursor to the beginning of current line
+      hotkeys: [HOME]
+    - id: line_end
+      description: Move cursor to the end of current line
+      hotkeys: [END]
+    # File navigation
+    - id: file_start
+      description: Go to beginning of file
+      hotkeys: [Ctrl+HOME]
+    - id: file_end
+      description: Go to end of file
+      hotkeys: [Ctrl+END]
+    # Selection
+    - id: select_left
+      description: Expand selection to previous character
+      hotkeys: [Shift+LEFT]
+    - id: select_right
+      description: Expand selection to next character
+      hotkeys: [Shift+RIGHT]
+    - id: select_up
+      description: Expand selection one line up
+      hotkeys: [Shift+UP]
+    - id: select_down
+      description: Expand selection one line down
+      hotkeys: [Shift+DOWN]
+    - id: select_all
+      description: Select all
+      hotkeys: [Ctrl+a]
+    - id: select_word_left
+      description: Expand selection to previous word
+      hotkeys: [Shift+Ctrl+LEFT]
+    - id: select_word_right
+      description: Expand selection to next word
+      hotkeys: [Shift+Ctrl+RIGHT]
+    # Page Navigation
+    - id: page_up
+      description: Move cursor one screen up
+      hotkeys: [PAGEUP]
+    - id: page_down
+      description: Move cursor one screen down
+      hotkeys: [PAGEDOWN]
+    # Search
+    - id: search
+      description: Search
+      hotkeys: [Ctrl+f]
+    - id: search_next
+      description: Navigate to next match
+      hotkeys: [n]
+    - id: search_prev
+      description: Navigate to previous match
+      hotkeys: [Shift+n]
+    - id: open_filter_dialog
+      description: Filter (grep)
+      hotkeys: [Ctrl+y]
+    # Go To
+    - id: go_to_line
+      description: Go to line
+      hotkeys: [Ctrl+g]
+    - id: go_to_date
+      description: Go to date
+      hotkeys: [Ctrl+d]
+---
+profile:
+  name: macos
+  actions:
+    # Selection
+    # On macOS Shift+Arrow is not delivered to terminal
+    - id: select_up
+      hotkeys: [ Shift+u ]
+    - id: select_down
+      hotkeys: [ Shift+d ]
+    - id: select_word_left
+      hotkeys: [ '<' ]
+    - id: select_word_right
+      hotkeys: [ '>' ]
+    # Word navigation
+    - id: word_backward
+      hotkeys: [ ',' ]
+    - id: word_forward
+      hotkeys: [ '.' ]

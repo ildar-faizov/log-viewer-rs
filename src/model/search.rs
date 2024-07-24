@@ -1,8 +1,17 @@
+use std::rc::Rc;
+
+use anyhow::anyhow;
+use clap::builder::Str;
+use crossbeam_channel::{Receiver, Sender};
+use fluent_integer::Integer;
+use uuid::Uuid;
+
 use crate::actions::action::Action;
-use crate::actions::search_next::SearchNextAction;
-use crate::actions::search_prev::SearchPrevAction;
+// use crate::actions::search_next::SearchNextAction;
+// use crate::actions::search_prev::SearchPrevAction;
 use crate::background_process::background_process_handler::BackgroundProcessHandler;
 use crate::background_process::run_in_background::RunInBackground;
+use crate::background_process::signal::Signal;
 use crate::background_process::task_context::TaskContext;
 use crate::data_source::Direction;
 use crate::immediate::Immediate;
@@ -14,12 +23,6 @@ use crate::model::navigable_searcher_constructor::{
 use crate::search::searcher::{Occurrence, SearchError, SearchResult};
 use crate::utils::event_emitter::EventEmitter;
 use crate::utils::measure_l;
-use anyhow::anyhow;
-use crossbeam_channel::{Receiver, Sender};
-use fluent_integer::Integer;
-use std::rc::Rc;
-use uuid::Uuid;
-use crate::background_process::signal::Signal;
 
 pub struct Search {
     model_sender: Sender<ModelEvent>,
@@ -134,13 +137,14 @@ impl Search {
     }
 
     pub fn get_hint(&self) -> String {
-        let next = SearchNextAction::default();
-        let prev = SearchPrevAction::default();
-        format!(
-            "Use {}/{} for next/prev occurrence",
-            next.print_hotkeys(),
-            prev.print_hotkeys()
-        )
+        // let next = SearchNextAction::default();
+        // let prev = SearchPrevAction::default();
+        // format!(
+        //     "Use {}/{} for next/prev occurrence",
+            // next.print_hotkeys(),
+            // prev.print_hotkeys()
+        // )
+        String::new()
     }
 
     fn index_of_last_occurrence(&self) -> Option<usize> {

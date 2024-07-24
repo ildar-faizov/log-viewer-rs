@@ -1,28 +1,11 @@
-use cursive::event::{Event, EventResult, Key};
-use crate::actions::action::Action;
-use crate::model::model::RootModel;
+use cursive::event::{Event, EventResult};
+use logv_macro::define_action;
+
 use crate::model::cursor_shift::CursorShift;
+use crate::model::model::RootModel;
 
-pub struct WordForwardAction {}
-
-impl WordForwardAction {
-    pub fn new() -> Self {
-        WordForwardAction {}
-    }
-}
-
-impl Action for WordForwardAction {
-
-    fn description(&self) -> &str {
-        "Move cursor to the end of the word"
-    }
-
-    fn hotkeys(&self) -> Vec<Event> {
-        vec![Event::Ctrl(Key::Right)]
-    }
-
-    fn perform_action(&self, model: &mut RootModel, _event: &Event) -> EventResult {
-        model.move_cursor(CursorShift::token_forward(), false);
-        EventResult::Consumed(None)
-    }
+#[define_action]
+fn word_forward(model: &mut RootModel, _event: &Event) -> EventResult {
+    model.move_cursor(CursorShift::token_forward(), false);
+    EventResult::Consumed(None)
 }

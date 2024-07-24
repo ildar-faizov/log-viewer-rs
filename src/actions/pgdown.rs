@@ -1,28 +1,12 @@
-use cursive::event::{Event, EventResult, Key};
-use crate::actions::action::Action;
+use cursive::event::{Event, EventResult};
+use logv_macro::define_action;
+
 use crate::model::cursor_shift::CursorShift;
 use crate::model::model::RootModel;
 
-pub struct PgDownAction {}
-
-impl PgDownAction {
-    pub fn new() -> Self {
-        PgDownAction {}
-    }
-}
-
-impl Action for PgDownAction {
-    fn description(&self) -> &str {
-        "Scroll one page down"
-    }
-
-    fn hotkeys(&self) -> Vec<Event> {
-        vec![Event::Key(Key::PageDown)]
-    }
-
-    fn perform_action(&self, model: &mut RootModel, _event: &Event) -> EventResult {
-        let h = model.get_viewport_height();
-        model.move_cursor(CursorShift::Y(h), false);
-        EventResult::Consumed(None)
-    }
+#[define_action]
+fn page_down(model: &mut RootModel, _event: &Event) -> EventResult {
+    let h = model.get_viewport_height();
+    model.move_cursor(CursorShift::Y(h), false);
+    EventResult::Consumed(None)
 }

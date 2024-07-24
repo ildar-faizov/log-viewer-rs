@@ -17,6 +17,7 @@ crossbeam-channel = "0.5.4"
 uuid = { version = "1.6.1", features = ["v4"] }
 num-rational = "*"
 fluent-integer = { path = "../fluent-integer"}
+logv-macro = { path = "../logv-macro"}
 num-traits = "0.2.14" # TODO transitive dependencies?
 terminal-clipboard = "0.4.1"
 regex = "1.5"
@@ -41,6 +42,9 @@ puffin_http = "0.16.0"
 profiling = { version = "1.0.13", features = ["profile-with-puffin"] }
 linked-hash-map = "0.5.6"
 mucow = "0.1.0"
+yaml-rust2 = "0.8.1"
+casey = "0.4.0"
+trim-margin = "0.1.0"
 
 [dev-dependencies]
 paste = "*"

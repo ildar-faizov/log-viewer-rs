@@ -1,29 +1,12 @@
 use cursive::event::{Event, EventResult};
-use crate::actions::action::Action;
-use crate::Event::CtrlChar;
+use logv_macro::define_action;
+
 use crate::model::model::RootModel;
 
-pub struct CopyAction {}
-
-impl CopyAction {
-    pub fn new() -> Self {
-        CopyAction {}
+#[define_action]
+fn copy(model: &mut RootModel, _event: &Event) -> EventResult {
+    if let Some(content) = model.get_selected_content() {
+        terminal_clipboard::set_string(content).unwrap();
     }
-}
-
-impl Action for CopyAction {
-    fn description(&self) -> &str {
-        "Copy selected text"
-    }
-
-    fn hotkeys(&self) -> Vec<Event> {
-        vec![CtrlChar('c')]
-    }
-
-    fn perform_action(&self, model: &mut RootModel, _event: &Event) -> EventResult {
-        if let Some(content) = model.get_selected_content() {
-            terminal_clipboard::set_string(content).unwrap();
-        }
-        EventResult::Ignored
-    }
+    EventResult::Ignored
 }
