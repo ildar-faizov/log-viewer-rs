@@ -127,3 +127,10 @@ profile:
       hotkeys: [ ',' ]
     - id: word_forward
       hotkeys: [ '.' ]
+    # File navigation
+    - id: file_start
+      description: Go to beginning of file
+      hotkeys: [ 'Ctrl+b' ]
+    - id: file_end
+      description: Go to end of file
+      hotkeys: [ 'Ctrl+e' ]
