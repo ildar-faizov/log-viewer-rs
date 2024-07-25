@@ -1,9 +1,10 @@
+use crossbeam_channel::Sender;
+
 use crate::actions::action::Action;
-use crate::actions::action_registry::plain_action_registry;
+use crate::actions::action_registry::ActionRegistry;
 use crate::model::model::ModelEvent;
 use crate::model::model::ModelEvent::HelpEvent;
 use crate::utils::event_emitter::EventEmitter;
-use crossbeam_channel::Sender;
 
 #[derive(Debug)]
 pub struct HelpModel {
@@ -28,8 +29,8 @@ pub enum HelpModelEvent {
 }
 
 impl HelpModel {
-    pub fn new(model_sender: Sender<ModelEvent>) -> Self {
-        let actions = plain_action_registry()
+    pub fn new(model_sender: Sender<ModelEvent>, action_registry: &ActionRegistry) -> Self {
+        let actions = action_registry
             .into_iter()
             .map(|a| ActionDescription::from(&*a))
             .collect();
@@ -101,8 +102,8 @@ impl EventEmitter<HelpModelEvent> for HelpModel {
     }
 }
 
-impl From<&dyn Action> for ActionDescription {
-    fn from(value: &dyn Action) -> Self {
+impl From<&Action> for ActionDescription {
+    fn from(value: &Action) -> Self {
         ActionDescription {
             hotkeys: value.print_hotkeys(),
             description: value.description().to_string(),

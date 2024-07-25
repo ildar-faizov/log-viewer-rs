@@ -1,5 +1,5 @@
-use crossbeam_channel::Sender;
-use std::path::{Path, PathBuf};
+use std::cell::{Ref, RefMut};
+use std::cmp::{min, Ordering};
 use std::env::current_dir;
 use ModelEvent::*;
 use crate::data_source::{Data, Direction, FileBackend, Line, LineSource, LineSourceBackend, LineSourceImpl, StrBackend};
@@ -10,26 +10,32 @@ use std::fmt::Debug;
 use std::fs::File;
 use std::io::{Cursor, Read, Seek};
 use std::option::Option::Some;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
+
 use anyhow::anyhow;
 use chrono::{Datelike, DateTime, Utc};
+use crossbeam_channel::Sender;
 use fluent_integer::Integer;
+use num_rational::Ratio;
 use num_traits::identities::Zero;
 use uuid::Uuid;
+
+use ModelEvent::*;
+
+use crate::actions::action_registry::ActionRegistry;
 use crate::background_process::background_process_handler::BackgroundProcessHandler;
 use crate::background_process::background_process_registry::BackgroundProcessRegistry;
 use crate::background_process::run_in_background::RunInBackground;
 use crate::background_process::signal::Signal;
 use crate::background_process::task_context::TaskContext;
+use crate::data_source::{Data, Direction, FileBackend, Line, LineSource, LineSourceBackend, LineSourceImpl, StrBackend};
 use crate::data_source::filtered::FilteredLineSource;
 use crate::data_source::line_registry::{LineRegistry, LineRegistryError, LineRegistryImpl};
 use crate::data_source::line_source_holder::LineSourceHolder;
 use crate::interval::Interval;
 use crate::model::bgp_model::{BGPModel, BGPModelEvent};
-use crate::selection::Selection;
-use crate::utils;
-use crate::shared::Shared;
 use crate::model::cursor_helper;
 use crate::model::cursor_shift::CursorShift;
 use crate::model::dimension::Dimension;
@@ -43,17 +49,22 @@ use crate::model::open_file_model::{OpenFileModel, OpenFileModelEvent};
 use crate::model::progress_model::{ProgressModel, ProgressModelEvent};
 use crate::model::rendered::{DataRender, LineNumberMissingReason, LineNumberResult, LineRender};
 use crate::model::scroll_position::ScrollPosition;
-use crate::model::search_model::SearchModel;
-use crate::search::searcher::SearchResult;
-use crate::utils::GraphemeRender;
 use crate::model::search::Search;
+use crate::model::search_model::SearchModel;
+use crate::profiles::OS_PROFILE;
+use crate::search::searcher::SearchResult;
+use crate::selection::Selection;
+use crate::shared::Shared;
+use crate::utils;
 use crate::utils::event_emitter::EventEmitter;
+use crate::utils::GraphemeRender;
 
 const OFFSET_THRESHOLD: u64 = 8192;
 
 pub struct RootModel {
     model_sender: Sender<ModelEvent>,
     background_process_registry: Shared<BackgroundProcessRegistry>,
+    action_registry: Shared<ActionRegistry>,
     open_file_model: Shared<OpenFileModel>,
     file_name: Option<String>,
     is_file_loaded: bool,
@@ -122,6 +133,8 @@ impl RootModel {
         background_process_registry: Shared<BackgroundProcessRegistry>,
         metrics_holder: Option<MetricsHolder>,
     ) -> Shared<RootModel> {
+        let action_registry = Shared::new(ActionRegistry::new(&OS_PROFILE));
+        let action_registry2 = action_registry.clone();
         let sender = model_sender.clone();
         let sender2 = model_sender.clone();
         let sender3 = model_sender.clone();
@@ -137,6 +150,7 @@ impl RootModel {
         let root_model = RootModel {
             model_sender,
             background_process_registry,
+            action_registry,
             open_file_model: Shared::new(OpenFileModel::new(sender5)),
             file_name: None,
             is_file_loaded: false,
@@ -156,13 +170,17 @@ impl RootModel {
             go_to_line_model: Shared::new(GoToLineModel::new(sender3, bgp_model.clone())),
             go_to_date_model: Shared::new(GoToDateModel::new(sender4, bgp_model.clone())),
             filter_dialog_model: Shared::new(FilterDialogModel::new(sender9)),
-            help_model: Shared::new(HelpModel::new(sender2)),
+            help_model: Shared::new(HelpModel::new(sender2, &*action_registry2.get_ref())),
             metrics_model: Shared::new(MetricsModel::new(sender6, metrics_holder)),
             progress_model: Shared::new(ProgressModel::new(sender7, registry5)),
             bgp_model,
         };
 
         Shared::new(root_model)
+    }
+
+    pub fn get_action_registry(&self) -> Ref<ActionRegistry> {
+        self.action_registry.get_ref()
     }
 
     pub fn get_open_file_model(&self) -> RefMut<OpenFileModel> {
