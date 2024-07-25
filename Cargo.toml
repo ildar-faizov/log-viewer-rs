@@ -19,7 +19,6 @@ num-rational = "0.4.2"
 fluent-integer = { path = "../fluent-integer"}
 logv-macro = { path = "../logv-macro"}
 num-traits = "0.2.14" # TODO transitive dependencies?
-terminal-clipboard = "0.4.1"
 regex = "1.5"
 stopwatch = "0.0.7"
 spectral = "0.6.0"
@@ -45,6 +44,7 @@ mucow = "0.1.0"
 yaml-rust2 = "0.8.1"
 casey = "0.4.0"
 trim-margin = "0.1.0"
+copypasta = "0.10.1"
 
 [dev-dependencies]
 paste = "*"

@@ -281,6 +281,13 @@ impl<T> IntervalBound<T> where T: Ord {
             }
         }
     }
+
+    pub fn as_fixed(&self) -> Option<&T> {
+        match &self {
+            IntervalBound::Fixed { value, is_included: _is_included } => Some(value),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Eq, PartialEq)]

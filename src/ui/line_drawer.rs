@@ -1,10 +1,13 @@
-use std::rc::Rc;
 use std::fmt::Write;
+use std::rc::Rc;
+
 use cursive::theme::Style;
 use cursive::utils::span::{IndexedCow, IndexedSpan, SpannedString};
+
 use crate::data_source::line_registry::LineRegistryError;
 use crate::highlight::highlight::Highlighter;
 use crate::highlight::style_with_priority::StyleWithPriority;
+use crate::interval::Interval;
 use crate::model::model::RootModel;
 use crate::model::rendered::{LineNumberMissingReason, LineRender};
 use crate::ui::span_producer::SpanProducer;
@@ -124,16 +127,19 @@ impl<'a> LineDrawer<'a> {
                 }
             }
 
-            if let Some(selection) = selection {
-                if selection.start <= line.end && selection.end >= (line.start + first_grapheme.original_offset) {
-                    let selection_start = line.find_grapheme_index_by_offset(selection.start - line.start);
-                    let selection_end = line.find_grapheme_by_offset(selection.end - line.start);
-                    if let Some((s, (mut e, g))) = selection_start.zip(selection_end) {
-                        if g.original_offset < selection.end - line.start {
-                            e += 1;
-                        }
-                        intervals.add_interval(s, e, selection_style);
+            let line_int = Interval::closed(line.start + first_grapheme.original_offset, line.end);
+            let selection_in_line = line_int.intersect(selection).map(|t| *t - line.start);
+
+            if !selection_in_line.is_empty() {
+                let ss = *selection_in_line.left_bound.as_fixed().unwrap();
+                let se = *selection_in_line.right_bound.as_fixed().unwrap();
+                let selection_start = line.find_grapheme_index_by_offset(ss);
+                let selection_end = line.find_grapheme_by_offset(se);
+                if let Some((s, (mut e, g))) = selection_start.zip(selection_end) {
+                    if g.original_offset < se.as_usize() {
+                        e += 1;
                     }
+                    intervals.add_interval(s, e, selection_style);
                 }
             }
 

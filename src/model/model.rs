@@ -29,7 +29,7 @@ use crate::data_source::{Data, Direction, FileBackend, Line, LineSource, LineSou
 use crate::data_source::filtered::FilteredLineSource;
 use crate::data_source::line_registry::{LineRegistry, LineRegistryError, LineRegistryImpl};
 use crate::data_source::line_source_holder::LineSourceHolder;
-use crate::interval::Interval;
+use crate::interval::{Interval, IntervalBound};
 use crate::model::bgp_model::{BGPModel, BGPModelEvent};
 use crate::model::cursor_helper;
 use crate::model::cursor_shift::CursorShift;
@@ -69,7 +69,7 @@ pub struct RootModel {
     scroll_position: ScrollPosition,
     horizontal_scroll: Integer,
     cursor: Integer,
-    selection: Option<Box<Selection>>,
+    selection: Interval<Integer>,
     datasource: Option<Shared<LineSourceHolder>>,
     error: Option<Box<dyn ToString>>,
     show_line_numbers: bool,
@@ -155,7 +155,7 @@ impl RootModel {
             scroll_position: ScrollPosition::default(),
             horizontal_scroll: 0.into(),
             cursor: 0.into(),
-            selection: None,
+            selection: Interval::empty(),
             datasource: None,
             error: None,
             show_line_numbers: true,
@@ -370,12 +370,13 @@ impl RootModel {
     }
 
     pub fn move_cursor_to_offset(&mut self, pos: Integer, adjust_selection: bool) -> bool {
-        if let Some(selection) = self.get_selection() {
+        let selection = &self.selection;
+        if !selection.is_empty() {
             if adjust_selection {
-                if self.cursor == selection.end {
-                    self.set_selection(Selection::create(selection.start, pos));
-                } else if self.cursor == selection.start {
-                    self.set_selection(Selection::create(pos, selection.end));
+                if selection.right_bound == self.cursor {
+                    self.set_selection(selection.to_builder().right_bound_inclusive(pos).build());
+                } else if selection.left_bound == self.cursor {
+                    self.set_selection(selection.to_builder().left_bound_inclusive(pos).build());
                 } else {
                     log::warn!("Inconsistent situation cursor is neither in the beginning nor in the end of selection. Cursor {}, selection: {:?}", self.cursor, selection);
                 }
@@ -383,7 +384,9 @@ impl RootModel {
                 self.reset_selection();
             }
         } else if adjust_selection {
-            self.set_selection(Selection::create(self.cursor, pos));
+            let s = min(self.cursor, pos);
+            let e = max(self.cursor, pos);
+            self.set_selection(Interval::closed(s, e));
         }
         self.set_cursor(pos);
         self.bring_cursor_into_view()
@@ -568,41 +571,38 @@ impl RootModel {
         }
     }
 
-    pub fn get_selection(&self) -> Option<Selection> {
-        self.selection.as_ref().map(|b| *b.clone())
+    pub fn get_selection(&self) -> &Interval<Integer> {
+        &self.selection
     }
 
-    fn set_selection(&mut self, selection: Option<Box<Selection>>) {
+    fn set_selection(&mut self, selection: Interval<Integer>) {
         self.selection = selection;
         // TODO: emit event
     }
 
     pub fn select_all(&mut self) {
-        let length = self.get_datasource_ref().and_then(|ds| ds.get_length());
-        if let Some(length) = length {
-            self.set_selection(Some(Box::new(Selection {
-                start: Integer::zero(),
-                end: length
-            })));
-            self.move_cursor_to_offset(Integer::zero(), true); // TODO: use set_cursor and do not scroll, when cursor out of viewport is supported
-        }
+        self.set_selection(Interval::closed_inf(0.into()));
+        self.move_cursor_to_offset(Integer::zero(), true); // TODO: use set_cursor and do not scroll, when cursor out of viewport is supported
     }
 
     pub fn get_selected_content(&self) -> Option<String> {
-        self.get_selection().and_then(|selection| {
-            self.get_datasource_ref().and_then(|mut datasource| {
-                let mut datasource = &mut *datasource;
-                let result = datasource.read_raw(selection.start, selection.end);
-                match result {
-                    Ok(s) => Some(s),
-                    Err(_) => None
-                }
-            })
-        })
+        let Some(mut ds) = self.get_datasource_ref() else { return None };
+        let selection = &self.selection;
+        let start = match &selection.left_bound {
+            IntervalBound::PositiveInfinity => None,
+            IntervalBound::NegativeInfinity => Some(0.into()),
+            IntervalBound::Fixed { value, is_included: _is_included } => Some(*value),
+        };
+        let end = match &selection.right_bound {
+            IntervalBound::PositiveInfinity => ds.get_length(),
+            IntervalBound::NegativeInfinity => None,
+            IntervalBound::Fixed { value, is_included: _is_included } => Some(*value),
+        };
+        start.zip(end).and_then(|(s, e)| ds.read_raw(s, e).ok())
     }
 
     fn reset_selection(&mut self) {
-        self.set_selection(None);
+        self.set_selection(Interval::empty());
     }
 
     pub fn set_error(&mut self, err: Box<dyn ToString>) {
