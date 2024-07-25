@@ -1,11 +1,6 @@
 use std::cell::{Ref, RefMut};
-use std::cmp::{min, Ordering};
-use std::env::current_dir;
-use ModelEvent::*;
-use crate::data_source::{Data, Direction, FileBackend, Line, LineSource, LineSourceBackend, LineSourceImpl, StrBackend};
-use std::cell::RefMut;
-use num_rational::Ratio;
 use std::cmp::{max, min, Ordering};
+use std::env::current_dir;
 use std::fmt::Debug;
 use std::fs::File;
 use std::io::{Cursor, Read, Seek};
