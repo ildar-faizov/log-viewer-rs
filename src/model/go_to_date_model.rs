@@ -1,19 +1,20 @@
-use std::cmp::Ordering;
-use std::path::PathBuf;
-use crossbeam_channel::Sender;
-use crate::model::abstract_go_to_model::{AbstractGoToModel, GoToError, GoToResult};
-use crate::model::model::{ModelEvent, RootModel};
-use crate::shared::Shared;
-use chrono::prelude::*;
-use log::{Level};
-use uuid::Uuid;
-use fluent_integer::Integer;
 use crate::background_process::run_in_background::RunInBackground;
 use crate::background_process::signal::Signal;
 use crate::background_process::task_context::TaskContext;
+use crate::data_source::line_source_holder::ConcreteLineSourceHolder;
 use crate::data_source::{Direction, FileBackend, Line, LineSource, LineSourceImpl};
+use crate::model::abstract_go_to_model::{AbstractGoToModel, GoToError, GoToResult};
 use crate::model::guess_date_format::{GuessContext, KnownDateFormat};
+use crate::model::model::{ModelEvent, RootModel};
+use crate::shared::Shared;
 use crate::utils::measure_l;
+use chrono::prelude::*;
+use crossbeam_channel::Sender;
+use fluent_integer::Integer;
+use log::Level;
+use std::cmp::Ordering;
+use std::path::PathBuf;
+use uuid::Uuid;
 
 pub const DATE_FORMAT: &str = "%d-%b-%Y %T";
 
@@ -66,8 +67,8 @@ impl<R: RunInBackground + 'static> GoToDateModel<R> {
                 if total == 0 {
                     return Err(GoToError::NotReachable);
                 }
-                let mut reader = LineSourceImpl::new(FileBackend::new(path));
-                let result = bin_search(date, &mut reader, known_date_format, guess_context, ctx);
+                let reader = LineSourceImpl::new(FileBackend::new(path));
+                let result = bin_search(date, &mut ConcreteLineSourceHolder::from(reader), known_date_format, guess_context, ctx);
                 log::info!("Search date {} finished: {:?}", date_str, &result);
                 result
             })
@@ -88,12 +89,12 @@ impl<R: RunInBackground + 'static> GoToDateModel<R> {
 /// requested `date` or the last line among those whose date is less than `date`.
 fn bin_search(
     date: NaiveDateTime,
-    reader: &mut dyn LineSource,
+    reader: &mut ConcreteLineSourceHolder,
     known_date_format: &'static KnownDateFormat,
     guess_ctx: GuessContext,
     ctx: &mut TaskContext<(), GoToResult>,
 ) -> GoToResult {
-    let total = reader.get_length().ok_or(GoToError::LengthUnknown)?;
+    let total = reader.get_length();
     let _progress = 0_u8;
     let (mut line1, dt1) = take_line(
         reader,
@@ -156,7 +157,7 @@ fn are_lines_same(line1: &Line, line2: &Line) -> bool {
 
 /// Returns earliest line with recognized date in the given direction
 fn take_line<I, J>(
-    reader: &mut dyn LineSource,
+    reader: &mut ConcreteLineSourceHolder,
     offset: I,
     boundary: J,
     direction: Direction,
@@ -223,7 +224,7 @@ fn take_line<I, J>(
 }
 
 fn earliest_line_with_given_date(
-    reader: &mut dyn LineSource,
+    reader: &mut ConcreteLineSourceHolder,
     line: LineWithDate,
     known_date_format: &'static KnownDateFormat,
     guess_context: &GuessContext,

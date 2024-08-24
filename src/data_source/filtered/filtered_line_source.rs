@@ -9,18 +9,18 @@ use mucow::MuCow;
 use regex::Regex;
 use uuid::Uuid;
 
-use fluent_integer::Integer;
 use crate::background_process::background_process_handler::BackgroundProcessHandler;
 use crate::background_process::buffered_message_sender::BufferedMessageSender;
 use crate::background_process::run_in_background::RunInBackground;
 use crate::background_process::signal::Signal;
 use crate::background_process::task_context::TaskContext;
+use fluent_integer::Integer;
 
-use crate::data_source::{Data, Direction, Line, LineSource, LineSourceBackend, LineSourceImpl};
 use crate::data_source::filtered::offset_mapper::{IOffsetMapper, OffsetEvaluationResult, OffsetMapper, OriginalOffset, ProxyOffset};
 use crate::data_source::line_registry::{LineRegistry, LineRegistryImpl};
 use crate::data_source::line_source_holder::{ConcreteLineSourceHolder, LineSourceHolder};
 use crate::data_source::tokenizer::skip_token;
+use crate::data_source::{Data, Direction, Line, LineSource, LineSourceBackend, LineSourceImpl};
 use crate::interval::PointLocationWithRespectToInterval;
 use crate::model::model::RootModel;
 use crate::model::rendered::LineNumberMissingReason;
@@ -47,15 +47,6 @@ pub struct FilteredLineSource
 }
 
 impl LineSource for FilteredLineSource {
-    fn get_length(&self) -> Option<Integer> {
-        let original_length = self.original.get_length()?;
-        if original_length <= *self.highest_scanned_original_offset {
-            self.offset_mapper.get_highest_known()
-                .map(|(proxy_offset, _)| *proxy_offset)
-        } else {
-            None
-        }
-    }
 
     fn read_lines(&mut self, mut offset: Integer, number_of_lines: Integer) -> Data {
         let (n, sign) = utils::sign(number_of_lines);
@@ -166,6 +157,16 @@ impl FilteredLineSource {
 
     pub fn get_original(&self) -> &ConcreteLineSourceHolder {
         &self.original
+    }
+
+    pub fn get_length(&self) -> Option<Integer> {
+        let original_length = self.original.get_length();
+        if original_length <= *self.highest_scanned_original_offset {
+            self.offset_mapper.get_highest_known()
+                .map(|(proxy_offset, _)| *proxy_offset)
+        } else {
+            None
+        }
     }
 
     pub fn build_offset_mapper<T: RunInBackground>(&mut self, runner: &mut T, on_finish: Callback) {

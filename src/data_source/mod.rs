@@ -1,22 +1,22 @@
-use std::path::PathBuf;
-use std::io::{Read, Seek, BufReader, SeekFrom, Cursor};
-use std::fs::File;
-use std::cmp::Ordering;
-use std::cell::RefMut;
-use std::sync::Arc;
-use anyhow::anyhow;
-use metrics::{describe_histogram, Unit};
-use fluent_integer::Integer;
 use crate::advanced_io::advanced_buf_reader::BidirectionalBufRead;
 use crate::advanced_io::seek_to::SeekTo;
-use crate::shared::Shared;
-use crate::utils;
-use crate::utils::utf8::UtfChar;
 use crate::data_source::char_navigation::{next_char, peek_next_char, peek_prev_char, prev_char};
 use crate::data_source::line_registry::{LineRegistry, LineRegistryImpl};
 use crate::interval::Interval;
 use crate::model::rendered::{LineNumberMissingReason, LineNumberResult};
+use crate::shared::Shared;
+use crate::utils;
 use crate::utils::stat;
+use crate::utils::utf8::UtfChar;
+use anyhow::anyhow;
+use fluent_integer::Integer;
+use metrics::{describe_histogram, Unit};
+use std::cell::RefMut;
+use std::cmp::Ordering;
+use std::fs::File;
+use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
+use std::path::PathBuf;
+use std::sync::Arc;
 
 pub const BUFFER_SIZE: usize = 1024 * 1024; // 1MB
 
@@ -312,9 +312,6 @@ pub fn read_delimited<R, F>(
 /// Represents source of lines.
 pub trait LineSource {
 
-    /// Returns length
-    fn get_length(&self) -> Option<Integer>;
-
     /// Reads requested number of lines in any direction. Result contains collection of lines with
     /// their offsets and also overall start and end offsets.
     ///
@@ -452,6 +449,10 @@ impl<R, B> LineSourceImpl<R, B> where R: Read + Seek, B: LineSourceBackend<R> {
         &self.backend
     }
 
+    pub fn get_length(&self) -> Integer {
+        self.backend.get_length().into()
+    }
+
     fn reader(&mut self) -> RefMut<'_, BufReader<R>> {
         if self.file_reader.is_none() {
             let f = self.backend.new_reader();
@@ -498,10 +499,6 @@ impl<R, B> SeekTo for LineSourceImpl<R, B> where B: LineSourceBackend<R>, R: Rea
 
 impl<R, B> LineSource for LineSourceImpl<R, B> where R: Read + Seek, B: LineSourceBackend<R> {
 
-    fn get_length(&self) -> Option<Integer> {
-        Some(self.get_length_internal())
-    }
-
     fn read_lines(&mut self, offset: Integer, number_of_lines: Integer) -> Data {
         let line_registry = if self.track_line_no {
             Some(Arc::clone(&self.line_registry))
@@ -509,7 +506,7 @@ impl<R, B> LineSource for LineSourceImpl<R, B> where R: Read + Seek, B: LineSour
             None
         };
         let offset = if offset < 0 {
-            self.get_length_internal() - offset
+            self.get_length() - offset
         } else {
             offset
         };
@@ -554,9 +551,9 @@ impl<R, B> LineSource for LineSourceImpl<R, B> where R: Read + Seek, B: LineSour
 }
 
 mod char_navigation {
-    use std::io::{BufReader, Read, Seek};
     use crate::utils;
     use crate::utils::utf8::UtfChar;
+    use std::io::{BufReader, Read, Seek};
 
     pub fn next_char<R: Read + Seek>(reader: &mut BufReader<R>) -> std::io::Result<Option<UtfChar>> {
         utils::utf8::read_utf_char(reader)

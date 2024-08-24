@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use anyhow::anyhow;
-use chrono::{Datelike, DateTime, Utc};
+use chrono::{DateTime, Datelike, Utc};
 use crossbeam_channel::Sender;
 use fluent_integer::Integer;
 use num_rational::Ratio;
@@ -25,10 +25,10 @@ use crate::background_process::background_process_registry::BackgroundProcessReg
 use crate::background_process::run_in_background::RunInBackground;
 use crate::background_process::signal::Signal;
 use crate::background_process::task_context::TaskContext;
-use crate::data_source::{Data, Direction, FileBackend, Line, LineSource, LineSourceBackend, LineSourceImpl, StrBackend};
 use crate::data_source::filtered::FilteredLineSource;
 use crate::data_source::line_registry::{LineRegistry, LineRegistryError, LineRegistryImpl};
-use crate::data_source::line_source_holder::LineSourceHolder;
+use crate::data_source::line_source_holder::{ConcreteLineSourceHolder, LineSourceHolder};
+use crate::data_source::{Data, Direction, FileBackend, Line, LineSource, LineSourceBackend, LineSourceImpl, StrBackend};
 use crate::interval::{Interval, IntervalBound};
 use crate::model::bgp_model::{BGPModel, BGPModelEvent};
 use crate::model::cursor_helper;
@@ -548,27 +548,26 @@ impl RootModel {
     }
 
     pub fn move_cursor_to_end(&mut self) -> bool {
-        let Some((ds, bgp)) = self.datasource.clone()
-            .zip(Some(self.bgp_model.clone())) else {
-            return false;
-        };
-        let offset = ds.get_ref().get_length();
-        match offset {
-            Some(offset) => {
-                self.move_cursor_to_offset(offset, false)
-            },
-            None => {
-                match &mut *ds.get_mut_ref() {
-                    LineSourceHolder::Filtered(f) => {
-                        f.build_offset_mapper(&mut *bgp.get_mut_ref(), Box::new(|model: &mut RootModel| {
+        let offset = {
+            let Some(ds) = self.datasource.clone() else { return false };
+
+            let ds = &mut *ds.get_mut_ref();
+            match ds {
+                LineSourceHolder::Concrete(ds) => Some(ds.get_length()),
+                LineSourceHolder::Filtered(ds) => {
+                    let offset = ds.get_length();
+                    if offset.is_none() {
+                        let bgp = &mut *self.bgp_model.get_mut_ref();
+                        ds.build_offset_mapper(bgp, Box::new(|model: &mut RootModel| {
                             model.move_cursor_to_end();
                         }));
-                    },
-                    _ => {},
+                    }
+                    offset
                 }
-                false
             }
-        }
+        };
+        let Some(offset) = offset else { return false };
+        self.move_cursor_to_offset(offset, false)
     }
 
     pub fn get_selection(&self) -> &Interval<Integer> {
@@ -587,6 +586,7 @@ impl RootModel {
 
     pub fn get_selected_content(&self) -> Option<String> {
         let Some(mut ds) = self.get_datasource_ref() else { return None };
+        let ds = &mut *ds;
         let selection = &self.selection;
         let start = match &selection.left_bound {
             IntervalBound::PositiveInfinity => None,
@@ -594,7 +594,12 @@ impl RootModel {
             IntervalBound::Fixed { value, is_included: _is_included } => Some(*value),
         };
         let end = match &selection.right_bound {
-            IntervalBound::PositiveInfinity => ds.get_length(),
+            IntervalBound::PositiveInfinity => {
+                match ds {
+                    LineSourceHolder::Concrete(ds) => Some(ds.get_length()),
+                    LineSourceHolder::Filtered(ds) => ds.get_length(),
+                }
+            },
             IntervalBound::NegativeInfinity => None,
             IntervalBound::Fixed { value, is_included: _is_included } => Some(*value),
         };
@@ -628,27 +633,27 @@ impl RootModel {
             let line_source = LineSourceImpl::<File, FileBackend>::from_file_name(path.clone());
             let backend = FileBackend::new(path.clone());
             self.guess_date_format(&path);
-            self.do_load_file(LineSourceHolder::from(line_source), backend, self.file_name.as_ref().unwrap().to_string())
+            self.do_load_file(ConcreteLineSourceHolder::from(line_source), backend, self.file_name.as_ref().unwrap().to_string())
         } else {
             let welcome: &'static str = &crate::welcome::WELCOME;
             let line_source = LineSourceImpl::from_str(welcome);
             let backend = StrBackend::new(welcome);
-            self.do_load_file(LineSourceHolder::from(line_source), backend, String::from("welcome"))
+            self.do_load_file(ConcreteLineSourceHolder::from(line_source), backend, String::from("welcome"))
         };
 
     }
 
     fn do_load_file<R: Read + Seek + 'static, B: LineSourceBackend<R> + Send + 'static>(
         &mut self,
-        mut line_source: LineSourceHolder,
+        mut line_source: ConcreteLineSourceHolder,
         backend: B,
         file_name: String)
     {
         if self.show_line_numbers {
             line_source.track_line_number(true);
         }
-        let file_size = line_source.get_length().unwrap();
-        self.datasource = Some(Shared::new(line_source));
+        let file_size = line_source.get_length();
+        self.datasource = Some(Shared::new(line_source.into()));
         self.build_line_registry(backend, file_size);
 
         let event = FileName(file_name, file_size.as_u64());

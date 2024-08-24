@@ -1,13 +1,13 @@
 use std::fs::File;
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use fluent_integer::Integer;
 
-use crate::data_source::{Data, Direction, FileBackend, Line, LineSource, LineSourceBackend, LineSourceImpl, StrBackend};
 use crate::data_source::filtered::FilteredLineSource;
 use crate::data_source::line_registry::LineRegistryImpl;
+use crate::data_source::{Data, Direction, FileBackend, Line, LineSource, LineSourceBackend, LineSourceImpl, StrBackend};
 
 #[derive(Clone)]
 pub enum ConcreteLineSourceHolder {
@@ -44,6 +44,15 @@ impl From<LineSourceImpl<Cursor<&'static [u8]>, StrBackend<'static>>> for Concre
 impl From<LineSourceImpl<File, FileBackend>> for ConcreteLineSourceHolder {
     fn from(value: LineSourceImpl<File, FileBackend>) -> Self {
         ConcreteLineSourceHolder::FileBased(value)
+    }
+}
+
+impl ConcreteLineSourceHolder {
+    pub fn get_length(&self) -> Integer {
+        match &self {
+            ConcreteLineSourceHolder::FileBased(h) => h.get_length(),
+            ConcreteLineSourceHolder::ConstantBased(h) => h.get_length(),
+        }
     }
 }
 
@@ -86,9 +95,6 @@ impl From<FilteredLineSource> for LineSourceHolder {
 }
 
 impl LineSource for LineSourceHolder {
-    fn get_length(&self) -> Option<Integer> {
-        self.deref().get_length()
-    }
 
     fn read_lines(&mut self, offset: Integer, number_of_lines: Integer) -> Data {
         self.deref_mut().read_lines(offset, number_of_lines)

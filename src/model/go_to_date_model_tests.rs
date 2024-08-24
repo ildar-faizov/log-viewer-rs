@@ -1,5 +1,5 @@
-use lazy_static::lazy_static;
 use crate::model::guess_date_format::KnownDateFormat;
+use lazy_static::lazy_static;
 
 const TEXT: &str = r#"2022 Feb 12 11:00:00 line1
 2022 Feb 12 11:01:00 line2
@@ -20,16 +20,16 @@ lazy_static! {
 }
 
 mod test_take_line {
-    use chrono::NaiveDateTime;
-    use spectral::prelude::*;
+    use super::{DATE_FORMAT, TEXT};
     use crate::data_source::{Direction, LineSourceImpl, StrBackend};
     use crate::model::go_to_date_model::take_line;
-    use super::{TEXT, DATE_FORMAT};
     use crate::model::guess_date_format::GuessContext;
+    use chrono::NaiveDateTime;
+    use spectral::prelude::*;
 
     #[test]
     fn from_start_forward() {
-        let mut src = LineSourceImpl::new(StrBackend::new(TEXT));
+        let mut src = LineSourceImpl::new(StrBackend::new(TEXT)).into();
         let guess_ctx = GuessContext::with_year(2023);
         let actual = take_line(
             &mut src,
@@ -56,7 +56,7 @@ mod test_take_line {
 
     #[test]
     fn with_offset_forward() {
-        let mut src = LineSourceImpl::new(StrBackend::new(TEXT));
+        let mut src = LineSourceImpl::new(StrBackend::new(TEXT)).into();
         let guess_ctx = GuessContext::with_year(2023);
         let actual = take_line(
             &mut src,
@@ -83,7 +83,7 @@ mod test_take_line {
 
     #[test]
     fn skip_forward() {
-        let mut src = LineSourceImpl::new(StrBackend::new(TEXT));
+        let mut src = LineSourceImpl::new(StrBackend::new(TEXT)).into();
         let guess_ctx = GuessContext::with_year(2023);
         let actual = take_line(
             &mut src,
@@ -110,7 +110,7 @@ mod test_take_line {
 
     #[test]
     fn from_start_backward() {
-        let mut src = LineSourceImpl::new(StrBackend::new(TEXT));
+        let mut src = LineSourceImpl::new(StrBackend::new(TEXT)).into();
         let guess_ctx = GuessContext::with_year(2023);
         let actual = take_line(
             &mut src,
@@ -137,7 +137,7 @@ mod test_take_line {
 
     #[test]
     fn empty_forward() {
-        let mut src = LineSourceImpl::new(StrBackend::new(""));
+        let mut src = LineSourceImpl::new(StrBackend::new("")).into();
         let guess_ctx = GuessContext::with_year(2023);
         let actual = take_line(
             &mut src,
@@ -154,7 +154,7 @@ mod test_take_line {
 
     #[test]
     fn empty_backward() {
-        let mut src = LineSourceImpl::new(StrBackend::new(""));
+        let mut src = LineSourceImpl::new(StrBackend::new("")).into();
         let guess_ctx = GuessContext::with_year(2023);
         let actual = take_line(
             &mut src,
@@ -171,16 +171,16 @@ mod test_take_line {
 }
 
 mod test_bin_search {
-    use chrono::NaiveDateTime;
-    use spectral::prelude::*;
-    use uuid::Uuid;
+    use super::{DATE_FORMAT, TEXT};
     use crate::background_process::task_context::TaskContext;
     use crate::data_source::{LineSourceImpl, StrBackend};
     use crate::model::abstract_go_to_model::GoToResult;
-    use crate::model::go_to_date_model::go_to_date_model_tests::TEXT2;
-    use super::{TEXT, DATE_FORMAT};
     use crate::model::go_to_date_model::bin_search;
+    use crate::model::go_to_date_model::go_to_date_model_tests::TEXT2;
     use crate::model::guess_date_format::GuessContext;
+    use chrono::NaiveDateTime;
+    use spectral::prelude::*;
+    use uuid::Uuid;
 
     #[test]
     fn exact_match() {
@@ -222,8 +222,9 @@ mod test_bin_search {
             .is_ok_containing(&28.into());
     }
 
-    fn do_search(text: &str, date: &str) -> GoToResult {
-        let mut src = LineSourceImpl::new(StrBackend::new(text));
+    fn do_search(text: &'static str, date: &'static str) -> GoToResult {
+        let line_source = LineSourceImpl::new(StrBackend::new(text));
+        let mut src = line_source.into();
         let guess_ctx = GuessContext::with_year(2023);
         let mut ctx = create_task_ctx();
         let target_date = NaiveDateTime::parse_from_str(date, "%Y-%m-%d %H:%M:%S").unwrap();
