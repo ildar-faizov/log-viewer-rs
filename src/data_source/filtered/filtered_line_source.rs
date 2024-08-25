@@ -156,8 +156,11 @@ impl FilteredLineSource {
         Self::new(original, mapper)
     }
 
-    pub fn get_original(&self) -> &ConcreteLineSourceHolder {
-        &self.original
+    pub fn destroy(mut self) -> ConcreteLineSourceHolder {
+        if let Some(handler) = &self.handler.as_mut() {
+            handler.interrupt();
+        }
+        self.original
     }
 
     pub fn get_length(&self) -> Option<Integer> {
@@ -490,14 +493,6 @@ impl<'a> LimitedBuf<'a> {
 
     fn position(&self) -> usize {
         self.p
-    }
-}
-
-impl Drop for FilteredLineSource {
-    fn drop(&mut self) {
-        if let Some(handler) = &self.handler.as_mut() {
-            handler.interrupt();
-        }
     }
 }
 

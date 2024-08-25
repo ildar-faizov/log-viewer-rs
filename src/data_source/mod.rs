@@ -207,7 +207,9 @@ impl<R, B> Clone for LineSourceImpl<R, B>
         B: Clone,
 {
     fn clone(&self) -> Self {
-        Self::new(self.backend.clone())
+        let mut result = Self::new(self.backend.clone());
+        result.track_line_number(self.track_line_no);
+        result
     }
 }
 

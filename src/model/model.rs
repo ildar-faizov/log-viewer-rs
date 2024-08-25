@@ -917,7 +917,7 @@ impl RootModel {
         let ds = self.datasource.take().ok_or(anyhow!("DataSource not set"))?.into_inner();
         let base_ds = match ds {
             LineSourceHolder::Concrete(ds) => ds,
-            LineSourceHolder::Filtered(f) => f.get_original().clone(),
+            LineSourceHolder::Filtered(f) => f.destroy(),
         };
         let filtered = FilteredLineSource::with_substring(base_ds, pattern);
         self.reset(false);
@@ -940,7 +940,7 @@ impl RootModel {
                 return;
             };
             self.reset(false);
-            self.datasource.replace(Shared::new(filtered.get_original().clone().into()));
+            self.datasource.replace(Shared::new(filtered.destroy().into()));
             self.update_viewport_content();
             self.model_sender.emit_event(ModelEvent::Repaint);
             self.model_sender.emit_event(ModelEvent::Hint(String::new()));
