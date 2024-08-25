@@ -1,143 +1,22 @@
 use crate::advanced_io::advanced_buf_reader::BidirectionalBufRead;
 use crate::advanced_io::seek_to::SeekTo;
-use crate::data_source::char_navigation::{next_char, peek_next_char, peek_prev_char, prev_char};
 pub use crate::data_source::custom_highlight::{CustomHighlight, CustomHighlights};
-use crate::data_source::line_registry::{LineRegistry, LineRegistryImpl};
-use crate::interval::Interval;
-use crate::model::rendered::{LineNumberMissingReason, LineNumberResult};
+use crate::data_source::line_registry::LineRegistryImpl;
 use crate::shared::Shared;
-use crate::utils;
 use crate::utils::stat;
 use fluent_integer::Integer;
 use metrics::{describe_histogram, Unit};
 use std::cell::RefMut;
-use std::cmp::Ordering;
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
 use std::path::PathBuf;
 use std::sync::Arc;
+pub use crate::data_source::line::{Line, LineBuilder};
+use crate::data_source::read_delimited::read_delimited;
 
 pub const BUFFER_SIZE: usize = 1024 * 1024; // 1MB
 
 const METRIC_READ_DELIMITED: &str = "read_delimited";
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct Line {
-    pub content: String, // TODO use appropriate type
-    pub start: Integer, // offset of the first symbol in line
-    pub end: Integer, // offset of the first symbol of the next line
-    pub line_no: LineNumberResult,
-    /// Every producer can store additional data along with the line itself
-    pub custom_highlights: CustomHighlights,
-}
-
-impl Line {
-    pub fn new<T, I>(content: T, start: I, end: I) -> Self
-        where T: ToString, I: Into<Integer>
-    {
-        Line {
-            content: content.to_string(),
-            start: start.into(),
-            end: end.into(),
-            line_no: Err(LineNumberMissingReason::LineNumberingTurnedOff),
-            custom_highlights: HashMap::new(),
-        }
-    }
-
-    pub fn new_with_line_no<T, I>(content: T, start: I, end: I, line_no: u64) -> Self
-        where T: ToString, I: Into<Integer>
-    {
-        Line {
-            content: content.to_string(),
-            start: start.into(),
-            end: end.into(),
-            line_no: Ok(line_no),
-            custom_highlights: HashMap::new(),
-        }
-    }
-
-    fn builder() -> LineBuilder {
-        LineBuilder::default()
-    }
-
-    pub fn to_builder(self) -> LineBuilder {
-        LineBuilder::default()
-            .with_start(self.start)
-            .with_end(self.end)
-            .with_line_no(self.line_no)
-            .with_content(self.content)
-    }
-
-    pub fn as_interval(&self) -> Interval<Integer> {
-        Interval::closed(self.start, self.end)
-    }
-}
-
-#[derive(Debug, Default, Clone, Eq, PartialEq)]
-pub struct LineBuilder {
-    content: Option<String>,
-    start: Option<Integer>,
-    end: Option<Integer>,
-    line_no: Option<LineNumberResult>,
-    custom_highlights: Option<CustomHighlights>,
-}
-
-impl LineBuilder {
-
-    pub fn with_content<T: ToString>(mut self, content: T) -> Self {
-        self.content.replace(content.to_string());
-        self
-    }
-
-    pub fn with_start<I: Into<Integer>>(mut self, start: I) -> Self {
-        self.start.replace(start.into());
-        self
-    }
-
-    pub fn with_end<I: Into<Integer>>(mut self, end: I) -> Self {
-        self.end.replace(end.into());
-        self
-    }
-
-    pub fn with_line_no(mut self, n: LineNumberResult) -> Self {
-        self.line_no.replace(n);
-        self
-    }
-
-    pub fn with_custom_highlight(mut self, key: &'static str, value: CustomHighlight) -> Self {
-        self.custom_highlights
-            .get_or_insert_with(|| HashMap::new())
-            .entry(key)
-            .or_default()
-            .push(value);
-        self
-    }
-
-    pub fn with_custom_highlights(mut self, key: &'static str, mut value: Vec<CustomHighlight>) -> Self {
-        self.custom_highlights
-            .get_or_insert_with(|| HashMap::new())
-            .entry(key)
-            .or_default()
-            .append(&mut value);
-        self
-    }
-
-    pub fn build(self) -> Line {
-        let content = self.content.unwrap();
-        let start = self.start.unwrap();
-        let end = self.end.unwrap();
-        let line_no = self.line_no.unwrap_or(Err(LineNumberMissingReason::LineNumberingTurnedOff));
-        let custom_data = self.custom_highlights.unwrap_or_default();
-        Line {
-            content,
-            start,
-            end,
-            line_no,
-            custom_highlights: custom_data,
-        }
-    }
-}
 
 #[derive(Debug, Default)]
 pub struct Data {
@@ -159,179 +38,6 @@ impl From<bool> for Direction {
             Direction::Backward
         }
     }
-}
-
-/// Reads a collection of at most `abs(n)` segments (lines, words, etc.) that are delimited by chars that
-/// satisfy `is_delimiter` in direction denoted by `sign(n)`.
-///
-/// Char `ch` is considered to be a delimiter if and only of `is_delimiter(&ch) == true`.
-///
-/// If `n == 0`, the method returns empty Data with no segments.
-#[profiling::function]
-pub fn read_delimited<R, F>(
-    f: &mut BufReader<R>,
-    offset: Integer,
-    n: Integer,
-    allow_empty_segments: bool,
-    line_registry: Option<Arc<LineRegistryImpl>>,
-    is_delimiter: F) -> std::io::Result<Data>
-    where R: Read + Seek, F: Fn(&char) -> bool
-{
-    if offset < 0 {
-        return Ok(Data::default());
-    }
-
-    let direction = match n.cmp(&0.into()) {
-        Ordering::Equal => return Ok(Data {
-            lines: vec![],
-            start: None,
-            end: None,
-        }),
-        Ordering::Greater => Direction::Forward,
-        Ordering::Less => Direction::Backward
-    };
-
-    let actual_offset: Integer = f.stream_position()?.into();
-    let shift = (offset - actual_offset).as_i64();
-    f.seek_relative(shift)?;
-    let mut current_no = line_registry
-        .zip(Some(&direction))
-        .ok_or(LineNumberMissingReason::LineNumberingTurnedOff)
-        .and_then(move |(r, direction)| {
-            let interval = match direction {
-                Direction::Forward => Interval::closed(0.into(), offset),
-                Direction::Backward => Interval::closed_open(0.into(), offset),
-            };
-            r.count(&interval).map_err(LineNumberMissingReason::Delegate)
-        })
-        .map(|n| n as u64);
-
-    let mut data = vec![];
-    let mut stack = vec![];
-    let flush = |s: &mut Vec<char>| -> (String, u64) {
-        let mut content: String = s.iter().collect();
-        let bytes_trimmed = utils::trim_newline(&mut content);
-        s.clear();
-        (content, bytes_trimmed as u64)
-    };
-
-    match direction {
-        Direction::Forward => {
-            // move to the beginning of current segment
-            while let Some(ch) = peek_prev_char(f)? {
-                if is_delimiter(&ch.get_char()) {
-                    break;
-                } else {
-                    prev_char(f)?;
-                }
-            }
-
-            // read <= n segments
-            let mut start = None;
-            loop {
-                if let Some(ch) = next_char(f)? {
-                    if !is_delimiter(&ch.get_char()) {
-                        stack.push(ch.get_char());
-                        start = start.or(Some(ch.get_offset()));
-                    } else {
-                        let line_no = current_no.clone();
-                        current_no = current_no.map(|n| n + 1);
-                        if !stack.is_empty() || allow_empty_segments {
-                            let (content, bytes_trimmed) = flush(&mut stack);
-                            let line = Line::builder()
-                                .with_content(content)
-                                .with_start(start.unwrap_or(ch.get_offset()))
-                                .with_end(ch.get_offset() - bytes_trimmed)
-                                .with_line_no(line_no)
-                                .build();
-                            data.push(line);
-                            if data.len() == n.abs() {
-                                break;
-                            }
-                        }
-                        start = Some(ch.get_end());
-                    }
-                } else {
-                    // EOF
-                    if !stack.is_empty() || (allow_empty_segments && start.is_some()) {
-                        let (content, bytes_trimmed) = flush(&mut stack);
-                        let line = Line::builder()
-                            .with_content(content)
-                            .with_start(start.unwrap())
-                            .with_end(f.stream_position()? - bytes_trimmed)
-                            .with_line_no(current_no.clone())
-                            .build();
-                        data.push(line);
-                    }
-                    break;
-                }
-            }
-        },
-        Direction::Backward => {
-            // move to the end of current segment
-            while let Some(ch) = peek_next_char(f)? {
-                if is_delimiter(&ch.get_char()) {
-                    break;
-                } else {
-                    next_char(f)?;
-                }
-            }
-
-            // read <= n segments
-            let mut end = None;
-            loop {
-                if let Some(ch) = prev_char(f)? {
-                    if !is_delimiter(&ch.get_char()) {
-                        stack.push(ch.get_char());
-                        end = end.or(Some(ch.get_end()));
-                    } else {
-                        let line_no = current_no.clone();
-                        current_no = current_no.map(|n| n.saturating_sub(1));
-                        if !stack.is_empty() || allow_empty_segments {
-                            stack.reverse();
-                            let (content, bytes_trimmed) = flush(&mut stack);
-                            let line = Line::builder()
-                                .with_content(content)
-                                .with_start(ch.get_offset() + 1)
-                                .with_end(end.unwrap_or(ch.get_end()) - bytes_trimmed)
-                                .with_line_no(line_no)
-                                .build();
-                            data.push(line);
-                            if data.len() == n.abs() {
-                                break;
-                            }
-                        }
-                        end = Some(ch.get_offset());
-                    }
-                } else {
-                    // BOF
-                    if !stack.is_empty() || (allow_empty_segments && end.is_some()) {
-                        stack.reverse();
-                        let (content, bytes_trimmed) = flush(&mut stack);
-                        let line = Line::builder()
-                            .with_content(content)
-                            .with_start(0)
-                            .with_end(end.unwrap() - bytes_trimmed)
-                            .with_line_no(current_no.clone())
-                            .build();
-                        data.push(line);
-                    }
-                    break;
-                }
-            }
-            data.reverse();
-        },
-    }
-
-    log::trace!("current_no = {:?}, offset = {:?}", &current_no, f.stream_position());
-
-    let s = data.first().map(|segment| segment.start);
-    let e = data.last().map(|segment| segment.end);
-    Ok(Data {
-        lines: data,
-        start: s,
-        end: e,
-    })
 }
 
 /// Represents source of lines.
@@ -571,42 +277,6 @@ impl<R, B> LineSource for LineSourceImpl<R, B> where R: Read + Seek, B: LineSour
     }
 }
 
-mod char_navigation {
-    use crate::utils;
-    use crate::utils::utf8::UtfChar;
-    use std::io::{BufReader, Read, Seek};
-
-    pub fn next_char<R: Read + Seek>(reader: &mut BufReader<R>) -> std::io::Result<Option<UtfChar>> {
-        utils::utf8::read_utf_char(reader)
-    }
-
-    pub fn peek_prev_char<R: Read + Seek>(reader: &mut BufReader<R>) -> std::io::Result<Option<UtfChar>> {
-        if reader.stream_position()? == 0 {
-            return Ok(None);
-        }
-        reader.seek_relative(-1)?;
-        next_char(reader)
-    }
-
-    pub fn prev_char<R: Read + Seek>(reader: &mut BufReader<R>) -> std::io::Result<Option<UtfChar>> {
-        let result = peek_prev_char(reader)?;
-        if let Some(ch) = result.as_ref() {
-            let len = ch.get_char().len_utf8() as i64;
-            reader.seek_relative(-len)?;
-        }
-        Ok(result)
-    }
-
-    pub fn peek_next_char<R: Read + Seek>(reader: &mut BufReader<R>) -> std::io::Result<Option<UtfChar>> {
-        let result = next_char(reader)?;
-        if let Some(ch) = result.as_ref() {
-            let len = ch.get_char().len_utf8() as i64;
-            reader.seek_relative(-len)?;
-        }
-        Ok(result)
-    }
-}
-
 // Tests are included according to http://xion.io/post/code/rust-unit-test-placement.html
 #[cfg(test)]
 #[path = "./data_source_tests.rs"]
@@ -617,3 +287,6 @@ pub mod filtered;
 pub mod line_source_holder;
 mod tokenizer;
 mod custom_highlight;
+mod line;
+mod read_delimited;
+mod char_navigation;
