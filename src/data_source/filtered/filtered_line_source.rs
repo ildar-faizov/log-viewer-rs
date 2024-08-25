@@ -355,7 +355,7 @@ impl FilteredLineSource {
             if !matches.is_empty() {
                 self.offset_mapper.add(proxy_offset, OriginalOffset::from(s)).unwrap();
                 self.offset_mapper.confirm(proxy_offset + (e - s));
-                let Line { content, custom_highlights: mut custom_highlights, .. } = next_line;
+                let Line { content, mut custom_highlights, .. } = next_line;
                 custom_highlights.insert(FILTERED_LINE_SOURCE_CUSTOM_DATA_KEY, matches);
                 return Some(Line {
                     content,
