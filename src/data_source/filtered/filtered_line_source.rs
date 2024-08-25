@@ -1,31 +1,26 @@
 use std::cmp::{min, Ordering};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
-use std::ops::{Deref, Sub};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use anyhow::anyhow;
 use mucow::MuCow;
-use regex::Regex;
 use uuid::Uuid;
 
 use crate::background_process::background_process_handler::BackgroundProcessHandler;
 use crate::background_process::buffered_message_sender::BufferedMessageSender;
 use crate::background_process::run_in_background::RunInBackground;
 use crate::background_process::signal::Signal;
-use crate::background_process::task_context::TaskContext;
 use crate::data_source::filtered::offset_mapper::{IOffsetMapper, OffsetEvaluationResult, OffsetMapper, OriginalOffset, ProxyOffset};
 use crate::data_source::line_registry::{LineRegistry, LineRegistryImpl};
 use crate::data_source::line_source_holder::{ConcreteLineSourceHolder, LineSourceHolder};
 use crate::data_source::tokenizer::skip_token;
-use crate::data_source::{CustomHighlight, Data, Direction, Line, LineSource, LineSourceBackend, LineSourceImpl};
-use crate::interval::{Interval, PointLocationWithRespectToInterval};
+use crate::data_source::{CustomHighlight, Data, Direction, Line, LineSource, LineSourceBackend};
+use crate::interval::PointLocationWithRespectToInterval;
 use crate::model::model::RootModel;
 use crate::model::rendered::LineNumberMissingReason;
-use crate::shared::Shared;
 use crate::utils;
 use fluent_integer::Integer;
-use itertools::Itertools;
 
 type LineFilter = Arc<dyn Fn(&str) -> Vec<CustomHighlight> + Sync + Send + 'static>;
 
@@ -462,7 +457,7 @@ impl<'a> LimitedBuf<'a> {
         let slice = &slice[..n];
         match &mut self.buffer {
             MuCow::Borrowed(buffer) => {
-                let mut buffer = &mut buffer[self.p..self.p + n];
+                let buffer = &mut buffer[self.p..self.p + n];
                 buffer.copy_from_slice(slice);
             }
             MuCow::Owned(ref mut vec) => {

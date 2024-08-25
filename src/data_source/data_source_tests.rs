@@ -1,11 +1,11 @@
 mod test_read_delimited {
     extern crate spectral;
 
-    use std::io::{BufReader, Cursor, Seek};
-    use crate::data_source::{Data, Line};
     use crate::data_source::read_delimited;
-    use spectral::prelude::*;
+    use crate::data_source::{Data, Line};
     use crate::test_extensions::*;
+    use spectral::prelude::*;
+    use std::io::{BufReader, Cursor, Seek};
 
     // read lines forward
 
@@ -478,12 +478,12 @@ mod test_read_delimited {
 mod test_read_lines {
     extern crate spectral;
 
-    use std::io::{BufReader, Cursor};
-    use crate::data_source::{Line, LineSource, StrBackend};
-    use crate::data_source::LineSourceImpl;
-    use spectral::prelude::*;
     use crate::data_source::line_registry::LineRegistry;
+    use crate::data_source::LineSourceImpl;
+    use crate::data_source::{Line, LineSource};
     use crate::test_extensions::*;
+    use spectral::prelude::*;
+    use std::io::{BufReader, Cursor};
 
     const LINES_UNIX: &'static str = "AAA\nBBB\nCCC\nDDD";
     const LINES_WINDOWS: &'static str = "AAA\r\nBBB\r\nCCC\r\nDDD";
@@ -576,10 +576,9 @@ mod test_read_lines {
 }
 
 mod test_skip_token {
-    use std::io::Cursor;
-    use spectral::prelude::*;
+    use crate::data_source::{Direction, LineSource, LineSourceImpl};
     use fluent_integer::Integer;
-    use crate::data_source::{Direction, LineSource, LineSourceImpl, StrBackend};
+    use spectral::prelude::*;
 
     #[test]
     fn read_1_token_forward() {

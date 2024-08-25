@@ -1,10 +1,10 @@
-use std::borrow::Cow;
-use std::fmt::{Debug, Formatter};
 use crate::data_source::{FileBackend, LineSource, LineSourceImpl};
-use chrono::{Datelike, DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, Datelike, NaiveDateTime, Utc};
 use lazy_static::lazy_static;
 use phf::{phf_map, phf_ordered_set};
 use regex::{Captures, Match, Regex};
+use std::borrow::Cow;
+use std::fmt::{Debug, Formatter};
 use std::fs::File;
 use std::path::PathBuf;
 use std::time::SystemTime;
@@ -265,13 +265,13 @@ pub struct GuessRating(usize);
 
 #[cfg(test)]
 mod tests {
-    use crate::data_source::{LineSourceImpl, StrBackend};
     use super::guess_date_format0;
+    use crate::data_source::LineSourceImpl;
     use lazy_static::lazy_static;
     use spectral::prelude::*;
-    use std::io::Cursor;
+
+    use crate::model::guess_date_format::{GuessContext, FORMATS};
     use chrono::NaiveDateTime;
-    use crate::model::guess_date_format::{FORMATS, GuessContext};
 
     lazy_static! {
         static ref PARSE_TEST_CASES: Vec<(&'static str, &'static str)> = vec![

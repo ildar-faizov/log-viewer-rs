@@ -57,6 +57,7 @@ where T: Copy {
     result
 }
 
+#[allow(dead_code)]
 pub fn measure<R, F>(descr: &str, f: F) -> R where
         F: FnOnce() -> R {
     measure_l(Level::Trace, descr, f)
@@ -130,7 +131,6 @@ number_of_decimal_digits_impl_unsigned!(u64 u32 u16 u8);
 
 pub mod utf8 {
     use std::io::{BufReader, ErrorKind, Read, Seek};
-    use unicode_segmentation::UnicodeSegmentation;
 
     pub enum UnicodeByteType {
         Single,
@@ -241,52 +241,6 @@ pub mod utf8 {
             }
         } else {
             Ok(None)
-        }
-    }
-
-    pub trait GraphemeIndexLookup {
-        /// Converts `offset` to index of corresponding *grapheme*.
-        ///
-        /// Return `Ok(i)` where `i` is the index of matching grapheme, or `Err(n)` where `n` is
-        /// the total number of graphemes if `offset` is outside of graphemes (usually greater than
-        /// number of graphemes)
-        fn offset_to_grapheme_index(&self, offset: usize) -> Result<usize, usize>;
-
-        /// Converts grapheme `index` into real offset.
-        ///
-        /// # Example
-        ///
-        /// ```
-        /// assert_eq!(3, "€€".grapheme_index_to_offset(1))
-        /// ```
-        ///
-        /// In case index is greater than number of graphemes, returns number of graphemes as Err
-        fn grapheme_index_to_offset(&self, index: usize) -> Result<usize, usize>;
-    }
-
-    impl GraphemeIndexLookup for str {
-        fn offset_to_grapheme_index(&self, offset: usize) -> Result<usize, usize> {
-            let graphemes = self.grapheme_indices(true)
-                .collect::<Vec<(usize, &str)>>();
-            let n = graphemes.len();
-            match graphemes.binary_search_by(|(q, _)| q.cmp(&offset)) {
-                Ok(i) => Ok(i),
-                Err(0) => Err(0),
-                Err(i) => {
-                    if i < n {
-                        Ok(i)
-                    } else {
-                        Err(n)
-                    }
-                }
-            }
-        }
-
-        fn grapheme_index_to_offset(&self, index: usize) -> Result<usize, usize> {
-            self.grapheme_indices(true)
-                .nth(index)
-                .map(|(q, _)| q)
-                .ok_or(self.grapheme_indices(true).count())
         }
     }
 }

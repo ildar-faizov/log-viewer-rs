@@ -11,7 +11,7 @@ const PATTERN_FIELD: &str = "PatternField";
 
 pub fn build_filter_dialog(model: &FilterDialogModel) -> ViewWithCallback {
     let do_filter = |app: &mut Cursive, pattern: &str| {
-        let mut state = &mut *app.get_root_model();
+        let state = &mut *app.get_root_model();
         state.get_filter_dialog_model().set_open(false);
         state.filter(pattern).unwrap();
     };

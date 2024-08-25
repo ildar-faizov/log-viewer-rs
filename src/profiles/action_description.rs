@@ -76,7 +76,7 @@ mod tests {
     use yaml_rust2::YamlLoader;
 
     use crate::profiles::action_description::ActionDescription;
-    use crate::profiles::profile::Profile;
+
     use crate::test_extensions::UniqueElementAssertions;
 
     #[test]

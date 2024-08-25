@@ -1,7 +1,6 @@
 use super::*;
 use crate::data_source::filtered::filtered_line_source::FilteredLineSource;
-use crate::data_source::{Line, LineSourceImpl, StrBackend};
-use clap::builder::IntoResettable;
+use crate::data_source::{Line, LineSourceImpl};
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -147,7 +146,7 @@ mod read_raw {
     use crate::data_source::filtered::FilteredLineSource;
     use crate::data_source::{LineSource, LineSourceImpl};
     use paste::paste;
-    use spectral::prelude::*;
+
 
     macro_rules! test {
         ($n: literal, $from: literal, $to: literal, $expected: literal) => {
@@ -175,13 +174,12 @@ mod read_raw {
 }
 
 mod skip_token {
-    use super::super::LineSourceImpl;
     use super::FilteredLineSource;
     use super::*;
     use super::{filter_each_fifth, ORIGINAL};
     use crate::data_source::{Direction, LineSource};
     use paste::paste;
-    use spectral::prelude::*;
+
 
     macro_rules! test {
         ($name: literal, $offset: literal, $direction: expr, $expected: literal) => {

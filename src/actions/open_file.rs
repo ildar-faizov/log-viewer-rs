@@ -1,12 +1,6 @@
 use cursive::event::{Event, EventResult};
-use cursive::event::Event::CtrlChar;
-use lazy_static::lazy_static;
 use logv_macro::define_action;
-use paste::paste;
 
-use crate::actions::action::Action;
-use crate::actions::action_impl::ActionImpl;
-use crate::actions::pre_action::PreAction;
 use crate::model::model::RootModel;
 
 #[define_action]

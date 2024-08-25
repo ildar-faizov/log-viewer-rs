@@ -1,6 +1,5 @@
 use anyhow::{anyhow, bail};
 use cursive::event::{Event, EventResult, Key};
-use itertools::Itertools;
 use phf::phf_map;
 
 use crate::actions::action_impl::ActionImpl;
@@ -11,6 +10,7 @@ use crate::profiles::ActionDescription;
 
 #[derive(Clone)]
 pub struct Action {
+    #[allow(dead_code)]
     id: String,
     description: String,
     hotkeys: Vec<Event>,

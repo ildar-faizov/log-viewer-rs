@@ -1,6 +1,6 @@
-use std::ops::{Add, Deref, Sub};
 use fluent_integer::Integer;
 use paste::paste;
+use std::ops::{Add, Deref, Sub};
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Debug, Copy, Clone, Default)]
 pub struct ProxyOffset(Integer);
@@ -168,7 +168,7 @@ impl IOffsetMapper for PositiveOffsetMapper {
                 return Err(());
             }
             if x_n < x && y_n == delta {
-                if let Some(&(x_n1, y_n1)) = iter.next() {
+                if let Some(&(_, y_n1)) = iter.next() {
                     if y_n1 == y_n {
                         drop_last = true;
                     }

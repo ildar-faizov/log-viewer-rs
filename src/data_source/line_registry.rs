@@ -1,14 +1,14 @@
-use std::cmp::Ordering;
+use crate::data_source::BUFFER_SIZE;
 use crate::interval::{Interval, IntervalBound};
+use crate::utils::ToUnit;
 use fluent_integer::Integer;
+use metrics::{describe_gauge, describe_histogram, gauge, histogram, Unit};
+use std::cmp::Ordering;
 use std::io::{BufReader, Read, Seek};
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
 use std::vec::IntoIter;
-use metrics::{describe_gauge, describe_histogram, gauge, histogram, Unit};
 use thiserror::Error;
-use crate::data_source::BUFFER_SIZE;
-use crate::utils::ToUnit;
 
 const PROGRESS_REPORT_PERIOD: Duration = Duration::from_millis(100);
 
@@ -125,6 +125,7 @@ impl LineRegistryImpl {
         }
     }
 
+    #[cfg(test)]
     fn with_data<I: Into<Integer> + Copy>(data: Vec<I>) -> Self {
         let line_breaks: Vec<Integer> = data.iter().map(|i| (*i).into()).collect();
         let crawled = *line_breaks.iter().max().unwrap_or(&0.into());
@@ -304,8 +305,8 @@ mod tests {
     use crate::data_source::line_registry::{LineRegistry, LineRegistryImpl};
     use crate::interval::Interval;
     use fluent_integer::Integer;
-    use spectral::prelude::*;
     use paste::paste;
+    use spectral::prelude::*;
 
     const N: usize = 15;
 

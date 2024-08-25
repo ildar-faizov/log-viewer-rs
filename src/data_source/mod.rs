@@ -8,11 +8,8 @@ use crate::model::rendered::{LineNumberMissingReason, LineNumberResult};
 use crate::shared::Shared;
 use crate::utils;
 use crate::utils::stat;
-use crate::utils::utf8::UtfChar;
-use anyhow::anyhow;
 use fluent_integer::Integer;
 use metrics::{describe_histogram, Unit};
-use std::any::Any;
 use std::cell::RefMut;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -494,10 +491,6 @@ impl<R, B> LineSourceImpl<R, B> where R: Read + Seek, B: LineSourceBackend<R> {
     {
         let file_reader = self.reader();
         f(file_reader)
-    }
-
-    fn get_length_internal(&self) -> Integer {
-        self.backend.get_length().into()
     }
 }
 

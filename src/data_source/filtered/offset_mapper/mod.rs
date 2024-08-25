@@ -1,5 +1,5 @@
 mod offset_mapper;
 
 pub use offset_mapper::{
-    OffsetDelta, OffsetEvaluationResult, OffsetMapper, OriginalOffset, ProxyOffset, IOffsetMapper
+    IOffsetMapper, OffsetEvaluationResult, OffsetMapper, OriginalOffset, ProxyOffset
 };

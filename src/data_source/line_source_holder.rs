@@ -7,7 +7,7 @@ use fluent_integer::Integer;
 
 use crate::data_source::filtered::FilteredLineSource;
 use crate::data_source::line_registry::LineRegistryImpl;
-use crate::data_source::{Data, Direction, FileBackend, Line, LineSource, LineSourceBackend, LineSourceImpl, StrBackend};
+use crate::data_source::{Data, Direction, FileBackend, Line, LineSource, LineSourceImpl, StrBackend};
 
 #[derive(Clone)]
 pub enum ConcreteLineSourceHolder {

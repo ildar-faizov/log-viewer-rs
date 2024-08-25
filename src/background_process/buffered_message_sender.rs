@@ -1,6 +1,5 @@
-use std::time::{Duration, Instant};
-use anyhow::Error;
 use crate::background_process::task_context::TaskContext;
+use std::time::{Duration, Instant};
 
 pub struct BufferedMessageSender<'a, M: Send + Sync + 'static, R: Send + Sync + 'static> {
     buffer: Vec<M>,

@@ -2,7 +2,7 @@ use crate::background_process::run_in_background::RunInBackground;
 use crate::background_process::signal::Signal;
 use crate::background_process::task_context::TaskContext;
 use crate::data_source::line_source_holder::ConcreteLineSourceHolder;
-use crate::data_source::{Direction, FileBackend, Line, LineSource, LineSourceImpl};
+use crate::data_source::{Direction, FileBackend, Line, LineSourceImpl};
 use crate::model::abstract_go_to_model::{AbstractGoToModel, GoToError, GoToResult};
 use crate::model::guess_date_format::{GuessContext, KnownDateFormat};
 use crate::model::model::{ModelEvent, RootModel};

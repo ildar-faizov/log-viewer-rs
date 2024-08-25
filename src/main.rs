@@ -61,9 +61,9 @@ mod ui;
 mod data_source;
 mod utils;
 mod shared;
-mod selection;
 mod actions;
 mod highlight;
+#[cfg(test)]
 mod test_extensions;
 mod advanced_io;
 mod search;

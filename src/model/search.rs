@@ -1,12 +1,10 @@
 use std::rc::Rc;
 
 use anyhow::anyhow;
-use clap::builder::Str;
 use crossbeam_channel::{Receiver, Sender};
 use fluent_integer::Integer;
 use uuid::Uuid;
 
-use crate::actions::action::Action;
 // use crate::actions::search_next::SearchNextAction;
 // use crate::actions::search_prev::SearchPrevAction;
 use crate::background_process::background_process_handler::BackgroundProcessHandler;

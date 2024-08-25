@@ -33,6 +33,5 @@ mod go_to_date;
 mod open_file;
 mod application_metrics;
 mod open_filter_dialog;
-mod pre_action;
 mod action_impl;
 mod action_impl_registry;

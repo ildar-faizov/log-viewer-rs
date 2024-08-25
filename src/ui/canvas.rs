@@ -8,11 +8,9 @@ use cursive::views::{Canvas, NamedView};
 use log::Level;
 use metrics::{describe_histogram, Unit};
 
-use crate::actions::action_registry::ActionRegistry;
 use crate::highlight::highlighter_registry::cursive_highlighters;
 use crate::highlight::style_with_priority::StyleWithPriority;
 use crate::model::model::RootModel;
-use crate::profiles::OS_PROFILE;
 use crate::shared::Shared;
 use crate::ui::line_drawer::LineDrawer;
 use crate::ui::ui_elements::UIElementName;

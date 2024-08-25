@@ -1,7 +1,7 @@
+use crate::data_source::filtered::offset_mapper::{IOffsetMapper, OffsetEvaluationResult, OffsetMapper, OriginalOffset, ProxyOffset};
+use fluent_integer::Integer;
 use spectral::prelude::*;
 use spectral::{AssertionFailure, Spec};
-use fluent_integer::Integer;
-use crate::data_source::filtered::offset_mapper::{OffsetEvaluationResult, OffsetMapper, OriginalOffset, ProxyOffset, IOffsetMapper};
 
 #[test]
 fn test_basic_operations_2_points() {
@@ -51,7 +51,7 @@ fn test_negative_input() {
 
 #[test]
 fn test_negative_input_on_empty_mapper() {
-    let mut om = OffsetMapper::default();
+    let om = OffsetMapper::default();
 
     assert_that!(om.eval(ProxyOffset::from(-1))).is_unpredictable();
 }

@@ -1,6 +1,3 @@
-use crossbeam_channel::Sender;
-use uuid::Uuid;
-use fluent_integer::Integer;
 use crate::background_process::background_process_handler::BackgroundProcessHandler;
 use crate::background_process::run_in_background::RunInBackground;
 use crate::background_process::signal::Signal;
@@ -9,6 +6,9 @@ use crate::model::model::{ModelEvent, RootModel};
 use crate::search::searcher::Occurrence;
 use crate::shared::Shared;
 use crate::utils::event_emitter::EventEmitter;
+use crossbeam_channel::Sender;
+use fluent_integer::Integer;
+use uuid::Uuid;
 
 pub struct AbstractGoToModel<R: RunInBackground>
 {
@@ -120,6 +120,7 @@ pub enum GoToError {
     #[error("Operation is cancelled")]
     Cancelled,
     #[error("Total source length is unknown")]
+    #[allow(dead_code)]
     LengthUnknown,
 }
 
