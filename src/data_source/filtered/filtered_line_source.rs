@@ -14,25 +14,27 @@ use crate::background_process::buffered_message_sender::BufferedMessageSender;
 use crate::background_process::run_in_background::RunInBackground;
 use crate::background_process::signal::Signal;
 use crate::background_process::task_context::TaskContext;
-use fluent_integer::Integer;
-
 use crate::data_source::filtered::offset_mapper::{IOffsetMapper, OffsetEvaluationResult, OffsetMapper, OriginalOffset, ProxyOffset};
 use crate::data_source::line_registry::{LineRegistry, LineRegistryImpl};
 use crate::data_source::line_source_holder::{ConcreteLineSourceHolder, LineSourceHolder};
 use crate::data_source::tokenizer::skip_token;
-use crate::data_source::{Data, Direction, Line, LineSource, LineSourceBackend, LineSourceImpl};
-use crate::interval::PointLocationWithRespectToInterval;
+use crate::data_source::{CustomHighlight, Data, Direction, Line, LineSource, LineSourceBackend, LineSourceImpl};
+use crate::interval::{Interval, PointLocationWithRespectToInterval};
 use crate::model::model::RootModel;
 use crate::model::rendered::LineNumberMissingReason;
 use crate::shared::Shared;
 use crate::utils;
+use fluent_integer::Integer;
+use itertools::Itertools;
 
-type LineFilter = Arc<dyn Fn(&str) -> bool + Sync + Send + 'static>;
+type LineFilter = Arc<dyn Fn(&str) -> Vec<CustomHighlight> + Sync + Send + 'static>;
 
 pub type Callback = Box<dyn Fn(&mut RootModel) + 'static>;
 
 const PUSH_INTERVAL: Duration = Duration::from_millis(500);
 const MESSAGE_LIMIT: usize = 1024;
+
+pub const FILTERED_LINE_SOURCE_CUSTOM_DATA_KEY: &str = "FilteredLineSourceCustomData";
 
 pub struct FilteredLineSource
 {
@@ -151,7 +153,11 @@ impl FilteredLineSource {
         pattern: &str
     ) -> Self {
         let pattern = pattern.to_string();
-        let mapper = Arc::new(move |s: &str| s.contains(&pattern));
+        let mapper = Arc::new(move |s: &str|
+            s.match_indices(&pattern)
+                .map(|(i, m)| CustomHighlight::new(i, i + m.len()))
+                .collect()
+        );
         Self::new(original, mapper)
     }
 
@@ -208,7 +214,7 @@ impl FilteredLineSource {
                         break;
                     }
                     let trimmed = utils::trim_newline(&mut line);
-                    if filter(&line) {
+                    if !filter(&line).is_empty() {
                         message_sender.push(Message {
                             proxy_offset,
                             original_offset,
@@ -292,11 +298,13 @@ impl FilteredLineSource {
                         .and_then(|line| {
                             let s = OriginalOffset::from(line.start) - d;
                             let e = OriginalOffset::from(line.end) - d;
+                            let matches = (*self.filter)(&line.content);
                             Some(
                                 line.to_builder()
                                     .with_start(*s)
                                     .with_end(*e)
                                     .with_line_no(Err(LineNumberMissingReason::LineNumberingTurnedOff)) // todo
+                                    .with_custom_highlights(FILTERED_LINE_SOURCE_CUSTOM_DATA_KEY, matches)
                                     .build()
                             )
                         })
@@ -343,14 +351,18 @@ impl FilteredLineSource {
             let s = next_line.start;
             let e = next_line.end;
             self.highest_scanned_original_offset = OriginalOffset::from(e);
-            if (*self.filter)(&next_line.content) {
+            let matches = (*self.filter)(&next_line.content);
+            if !matches.is_empty() {
                 self.offset_mapper.add(proxy_offset, OriginalOffset::from(s)).unwrap();
                 self.offset_mapper.confirm(proxy_offset + (e - s));
+                let Line { content, custom_highlights: mut custom_highlights, .. } = next_line;
+                custom_highlights.insert(FILTERED_LINE_SOURCE_CUSTOM_DATA_KEY, matches);
                 return Some(Line {
-                    content: next_line.content,
+                    content,
                     start: *proxy_offset,
                     end: e - s + *proxy_offset,
                     line_no: Err(LineNumberMissingReason::LineNumberingTurnedOff), // todo
+                    custom_highlights
                 });
             }
             ox = e + 1;

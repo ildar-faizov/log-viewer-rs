@@ -1,8 +1,8 @@
-use fluent_integer::Integer;
 use crate::model::model::RootModel;
+use crate::model::rendered::LineRender;
 
 pub trait Highlighter<T> {
-    fn process(&self, str: &str, offset: Integer, model: &RootModel) -> Vec<Highlight<T>>;
+    fn process(&self, line: &LineRender, model: &RootModel) -> Vec<Highlight<T>>;
 }
 
 pub struct Highlight<T> {

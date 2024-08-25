@@ -1,6 +1,7 @@
 use crate::advanced_io::advanced_buf_reader::BidirectionalBufRead;
 use crate::advanced_io::seek_to::SeekTo;
 use crate::data_source::char_navigation::{next_char, peek_next_char, peek_prev_char, prev_char};
+pub use crate::data_source::custom_highlight::{CustomHighlight, CustomHighlights};
 use crate::data_source::line_registry::{LineRegistry, LineRegistryImpl};
 use crate::interval::Interval;
 use crate::model::rendered::{LineNumberMissingReason, LineNumberResult};
@@ -11,8 +12,10 @@ use crate::utils::utf8::UtfChar;
 use anyhow::anyhow;
 use fluent_integer::Integer;
 use metrics::{describe_histogram, Unit};
+use std::any::Any;
 use std::cell::RefMut;
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
 use std::path::PathBuf;
@@ -28,6 +31,8 @@ pub struct Line {
     pub start: Integer, // offset of the first symbol in line
     pub end: Integer, // offset of the first symbol of the next line
     pub line_no: LineNumberResult,
+    /// Every producer can store additional data along with the line itself
+    pub custom_highlights: CustomHighlights,
 }
 
 impl Line {
@@ -39,6 +44,7 @@ impl Line {
             start: start.into(),
             end: end.into(),
             line_no: Err(LineNumberMissingReason::LineNumberingTurnedOff),
+            custom_highlights: HashMap::new(),
         }
     }
 
@@ -50,6 +56,7 @@ impl Line {
             start: start.into(),
             end: end.into(),
             line_no: Ok(line_no),
+            custom_highlights: HashMap::new(),
         }
     }
 
@@ -76,6 +83,7 @@ pub struct LineBuilder {
     start: Option<Integer>,
     end: Option<Integer>,
     line_no: Option<LineNumberResult>,
+    custom_highlights: Option<CustomHighlights>,
 }
 
 impl LineBuilder {
@@ -100,16 +108,36 @@ impl LineBuilder {
         self
     }
 
+    pub fn with_custom_highlight(mut self, key: &'static str, value: CustomHighlight) -> Self {
+        self.custom_highlights
+            .get_or_insert_with(|| HashMap::new())
+            .entry(key)
+            .or_default()
+            .push(value);
+        self
+    }
+
+    pub fn with_custom_highlights(mut self, key: &'static str, mut value: Vec<CustomHighlight>) -> Self {
+        self.custom_highlights
+            .get_or_insert_with(|| HashMap::new())
+            .entry(key)
+            .or_default()
+            .append(&mut value);
+        self
+    }
+
     pub fn build(self) -> Line {
         let content = self.content.unwrap();
         let start = self.start.unwrap();
         let end = self.end.unwrap();
-        let line_no = self.line_no.unwrap();
+        let line_no = self.line_no.unwrap_or(Err(LineNumberMissingReason::LineNumberingTurnedOff));
+        let custom_data = self.custom_highlights.unwrap_or_default();
         Line {
             content,
             start,
             end,
             line_no,
+            custom_highlights: custom_data,
         }
     }
 }
@@ -595,3 +623,4 @@ pub mod line_registry;
 pub mod filtered;
 pub mod line_source_holder;
 mod tokenizer;
+mod custom_highlight;

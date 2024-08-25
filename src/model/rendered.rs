@@ -1,8 +1,8 @@
+use crate::data_source::line_registry::LineRegistryError;
+use crate::data_source::{CustomHighlights, Data, Line, LineBuilder};
+use crate::utils::GraphemeRender;
 use fluent_integer::Integer;
 use thiserror::Error;
-use crate::data_source::{Data, Line, LineBuilder};
-use crate::data_source::line_registry::LineRegistryError;
-use crate::utils::GraphemeRender;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct LineRender {
@@ -10,6 +10,7 @@ pub struct LineRender {
     pub start: Integer, // offset of the first symbol in line
     pub end: Integer, // offset of the first symbol of the next line
     pub line_no: LineNumberResult,
+    pub custom_highlights: CustomHighlights,
     pub render: Vec<GraphemeRender>
 }
 
@@ -21,6 +22,7 @@ impl LineRender {
             start: line.start,
             end: line.end,
             line_no: line.line_no,
+            custom_highlights: line.custom_highlights,
             render,
         }
     }
@@ -62,6 +64,7 @@ impl LineRender {
             .with_start(self.start)
             .with_end(self.end)
             .with_line_no(self.line_no.clone())
+            .with_custom_highlights(self.custom_highlights.clone())
     }
 }
 
@@ -92,6 +95,13 @@ impl LineRenderBuilder {
         self
     }
 
+    pub fn with_custom_highlights(mut self, custom_highlights: CustomHighlights) -> Self {
+        for (key, value) in custom_highlights {
+            self.line_builder = self.line_builder.with_custom_highlights(key, value);
+        }
+        self
+    }
+
     pub fn build(self) -> LineRender {
         LineRender::new(self.line_builder.build())
     }
@@ -113,6 +123,7 @@ impl DataRender {
     }
 }
 
+// TODO move it to line
 #[derive(Error, Debug, Clone, Eq, PartialEq)]
 pub enum LineNumberMissingReason {
     #[error("Line numbering is turned off")]

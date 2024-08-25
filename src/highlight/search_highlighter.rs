@@ -1,10 +1,10 @@
-use cursive::theme::{Color, ColorStyle, ColorType, Style};
-use fluent_integer::Integer;
 use crate::highlight::highlight::{Highlight, Highlighter};
 use crate::highlight::style_with_priority::StyleWithPriority;
 use crate::immediate::Immediate;
 use crate::interval::Interval;
 use crate::model::model::RootModel;
+use crate::model::rendered::LineRender;
+use cursive::theme::{Color, ColorStyle, ColorType, Style};
 
 pub struct SearchHighlighter<T> {
     current_occurrence_style: T,
@@ -21,7 +21,9 @@ impl <T> SearchHighlighter<T> {
 }
 
 impl<T: Clone> Highlighter<T> for SearchHighlighter<T> {
-    fn process(&self, str: &str, offset: Integer, model: &RootModel) -> Vec<Highlight<T>> {
+    fn process(&self, line_render: &LineRender, model: &RootModel) -> Vec<Highlight<T>> {
+        let str = &line_render.content;
+        let offset = line_render.start;
         if let Some(search) = model.get_current_search().as_mut() {
             let viewport = model.data().map(|dr|
                 Interval::closed(dr.start.unwrap(), dr.end.unwrap())
