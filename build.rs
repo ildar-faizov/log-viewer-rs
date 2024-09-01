@@ -24,6 +24,7 @@ fn main() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("action_impl_registry.rs");
     let file = File::options()
+        .create(true)
         .write(true)
         .truncate(true)
         .open(dest_path)
