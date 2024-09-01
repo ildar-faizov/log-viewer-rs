@@ -16,7 +16,7 @@ use crate::data_source::line_registry::{LineRegistry, LineRegistryImpl};
 use crate::data_source::line_source_holder::{ConcreteLineSourceHolder, LineSourceHolder};
 use crate::data_source::tokenizer::skip_token;
 use crate::data_source::{CustomHighlight, Data, Direction, Line, LineSource, LineSourceBackend};
-use crate::interval::PointLocationWithRespectToInterval;
+use crate::interval::{Interval, PointLocationWithRespectToInterval};
 use crate::model::model::RootModel;
 use crate::model::rendered::LineNumberMissingReason;
 use crate::utils;
@@ -297,12 +297,13 @@ impl FilteredLineSource {
                             let s = OriginalOffset::from(line.start) - d;
                             let e = OriginalOffset::from(line.end) - d;
                             let matches = (*self.filter)(&line.content);
+                            let line_no = self.line_registry.count(&Interval::closed(0_u64, s.as_u64()));
                             Some(
                                 line.to_builder()
                                     .with_start(*s)
                                     .with_end(*e)
-                                    .with_line_no(Err(LineNumberMissingReason::LineNumberingTurnedOff)) // todo
-                                    .with_custom_highlights(FILTERED_LINE_SOURCE_CUSTOM_DATA_KEY, matches)
+                                    .with_line_no(line_no.map_err(LineNumberMissingReason::from)) // todo
+                                    .with_multiple_custom_highlights(FILTERED_LINE_SOURCE_CUSTOM_DATA_KEY, matches)
                                     .build()
                             )
                         })
@@ -323,7 +324,14 @@ impl FilteredLineSource {
                         PointLocationWithRespectToInterval::Less => {
                             current_offset = ProxyOffset::from(next_line.start - 1);
                         }
-                        PointLocationWithRespectToInterval::Belongs => return Some(next_line),
+                        PointLocationWithRespectToInterval::Belongs => {
+                            let line_no = self.line_registry
+                                .count(&Interval::closed(0.into(), next_line.start));
+                            let result = next_line.to_builder()
+                                .with_line_no(line_no.map_err(LineNumberMissingReason::from))
+                                .build();
+                            return Some(result)
+                        },
                         PointLocationWithRespectToInterval::Greater => {
                             current_offset = ProxyOffset::from(next_line.end + 1);
                         }

@@ -49,6 +49,7 @@ impl Line {
             .with_end(self.end)
             .with_line_no(self.line_no)
             .with_content(self.content)
+            .with_custom_highlights(self.custom_highlights)
     }
 
     pub fn as_interval(&self) -> Interval<Integer> {
@@ -96,12 +97,17 @@ impl LineBuilder {
         self
     }
 
-    pub fn with_custom_highlights(mut self, key: &'static str, mut value: Vec<CustomHighlight>) -> Self {
+    pub fn with_multiple_custom_highlights(mut self, key: &'static str, mut value: Vec<CustomHighlight>) -> Self {
         self.custom_highlights
             .get_or_insert_with(|| HashMap::new())
             .entry(key)
             .or_default()
             .append(&mut value);
+        self
+    }
+
+    pub fn with_custom_highlights(mut self, value: CustomHighlights) -> Self {
+        self.custom_highlights.replace(value);
         self
     }
 

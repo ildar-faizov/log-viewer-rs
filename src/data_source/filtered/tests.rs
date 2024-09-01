@@ -35,6 +35,7 @@ fn expected(n: usize) -> (Vec<Line>, usize) {
             .with_content(str)
             .with_start(len)
             .with_end(len + n)
+            .with_line_no(Ok(i as u64))
             .with_custom_highlight(FILTERED_LINE_SOURCE_CUSTOM_DATA_KEY, CustomHighlight::new(5_usize, n))
             .build();
         arr.push(line);
@@ -51,6 +52,7 @@ fn test_read_next_line() {
         .with_content("Line 5")
         .with_start(0)
         .with_end(6)
+        .with_line_no(Ok(0))
         .with_custom_highlight(FILTERED_LINE_SOURCE_CUSTOM_DATA_KEY, CustomHighlight::new(5_usize, 6_usize))
         .build();
 
@@ -90,6 +92,7 @@ fn test_read_prev_line() {
         .with_content("Line 5")
         .with_start(0)
         .with_end(6)
+        .with_line_no(Ok(0))
         .with_custom_highlight(FILTERED_LINE_SOURCE_CUSTOM_DATA_KEY, CustomHighlight::new(5_usize, 6_usize))
         .build();
     assert_that!(proxy.read_prev_line(0.into()))
@@ -100,6 +103,7 @@ fn test_read_prev_line() {
         .with_content("Line 10")
         .with_start(7)
         .with_end(14)
+        .with_line_no(Ok(1))
         .with_custom_highlight(FILTERED_LINE_SOURCE_CUSTOM_DATA_KEY, CustomHighlight::new(5_usize, 7_usize))
         .build();
     assert_that!(proxy.read_prev_line(7.into()))

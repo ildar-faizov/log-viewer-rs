@@ -26,7 +26,7 @@ pub trait LineRegistry {
     where
         I: Into<Integer>;
 
-    fn count<I>(&self, range: &Interval<I>) -> LineRegistryResult<usize>
+    fn count<I>(&self, range: &Interval<I>) -> LineRegistryResult<u64>
     where
         I: Into<Integer> + Copy + Ord;
 
@@ -152,7 +152,7 @@ impl LineRegistry for LineRegistryImpl {
         }
     }
 
-    fn count<I>(&self, range: &Interval<I>) -> LineRegistryResult<usize>
+    fn count<I>(&self, range: &Interval<I>) -> LineRegistryResult<u64>
     where
         I: Into<Integer> + Copy + Ord,
     {
@@ -200,7 +200,11 @@ impl LineRegistry for LineRegistryImpl {
                 }
             }
         };
-        Ok(s.zip(e).map(|(s, e)| e - s + Integer::from(1_i32)).map(|u| u.as_usize()).unwrap_or(0))
+        Ok(s.zip(e)
+            .map(|(s, e)| e - s + Integer::from(1_i32))
+            .as_ref()
+            .map(Integer::as_u64)
+            .unwrap_or(0))
     }
 
     fn find_offset_by_line_number<I>(&self, line_no: I) -> Result<Integer, Integer>
@@ -340,7 +344,7 @@ mod tests {
         test_count(Interval::open(1, 6), 3);
     }
 
-    fn test_count(interval: Interval<i32>, expected: usize) {
+    fn test_count(interval: Interval<i32>, expected: u64) {
         let registry = create_registry();
         let actual = registry.count(&interval);
         let descr = format!(

@@ -96,9 +96,7 @@ impl LineRenderBuilder {
     }
 
     pub fn with_custom_highlights(mut self, custom_highlights: CustomHighlights) -> Self {
-        for (key, value) in custom_highlights {
-            self.line_builder = self.line_builder.with_custom_highlights(key, value);
-        }
+        self.line_builder = self.line_builder.with_custom_highlights(custom_highlights);
         self
     }
 
