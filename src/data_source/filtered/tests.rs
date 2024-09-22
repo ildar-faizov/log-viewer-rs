@@ -27,15 +27,28 @@ fn filter_each_fifth(line: &str) -> Vec<CustomHighlight> {
         .collect_vec()
 }
 
+fn create_filtered() -> FilteredLineSource {
+    let mut line_source = LineSourceImpl::from_str(&ORIGINAL);
+    line_source.track_line_number(true);
+    for (p, ch) in ORIGINAL.chars().enumerate() {
+        if ch == '\n' {
+            line_source.get_line_registry().push(p);
+        }
+    }
+    let original = ConcreteLineSourceHolder::from(line_source);
+    FilteredLineSource::new(original, Arc::new(filter_each_fifth), 0)
+}
+
 fn expected(n: usize) -> (Vec<Line>, usize) {
     (0..n).fold((vec![], 0_usize), |(mut arr, len), i| {
-        let str = format!("Line {}", 5 * (i + 1));
+        let k = 5 * (i + 1) as u64;
+        let str = format!("Line {}", k);
         let n = str.len();
         let line = Line::builder()
             .with_content(str)
             .with_start(len)
             .with_end(len + n)
-            .with_line_no(Ok(i as u64))
+            .with_line_no(Ok(k))
             .with_custom_highlight(FILTERED_LINE_SOURCE_CUSTOM_DATA_KEY, CustomHighlight::new(5_usize, n))
             .build();
         arr.push(line);
@@ -45,14 +58,13 @@ fn expected(n: usize) -> (Vec<Line>, usize) {
 
 #[test]
 fn test_read_next_line() {
-    let original = ConcreteLineSourceHolder::from(LineSourceImpl::from_str(&ORIGINAL));
-    let mut proxy = FilteredLineSource::new(original, Arc::new(filter_each_fifth));
+    let mut proxy = create_filtered();
 
     let expected = Line::builder()
         .with_content("Line 5")
         .with_start(0)
         .with_end(6)
-        .with_line_no(Ok(0))
+        .with_line_no(Ok(5))
         .with_custom_highlight(FILTERED_LINE_SOURCE_CUSTOM_DATA_KEY, CustomHighlight::new(5_usize, 6_usize))
         .build();
 
@@ -63,8 +75,7 @@ fn test_read_next_line() {
 
 #[test]
 fn test_read_10_lines_forward() {
-    let original = ConcreteLineSourceHolder::from(LineSourceImpl::from_str(&ORIGINAL));
-    let mut proxy = FilteredLineSource::new(original, Arc::new(filter_each_fifth));
+    let mut proxy = create_filtered();
 
     let expected = expected(10).0;
 
@@ -74,25 +85,23 @@ fn test_read_10_lines_forward() {
 
 #[test]
 fn test_read_10_lines_backward() {
-    let original = ConcreteLineSourceHolder::from(LineSourceImpl::from_str(&ORIGINAL));
-    let mut proxy = FilteredLineSource::new(original, Arc::new(filter_each_fifth));
+    let mut proxy = create_filtered();
 
-    let (expected, last_offset) = expected(10);
+    let (expected, last_offset) = expected(2);
 
-    let data = proxy.read_lines(last_offset.saturating_sub(1).into(), (-10).into());
+    let data = proxy.read_lines(last_offset.saturating_sub(1).into(), (-2).into());
     assert_that!(&data.lines).equals_iterator(&expected.iter());
 }
 
 #[test]
 fn test_read_prev_line() {
-    let original = ConcreteLineSourceHolder::from(LineSourceImpl::from_str(&ORIGINAL));
-    let mut proxy = FilteredLineSource::new(original, Arc::new(filter_each_fifth));
+    let mut proxy = create_filtered();
 
     let expected1 = Line::builder()
         .with_content("Line 5")
         .with_start(0)
         .with_end(6)
-        .with_line_no(Ok(0))
+        .with_line_no(Ok(5))
         .with_custom_highlight(FILTERED_LINE_SOURCE_CUSTOM_DATA_KEY, CustomHighlight::new(5_usize, 6_usize))
         .build();
     assert_that!(proxy.read_prev_line(0.into()))
@@ -103,7 +112,7 @@ fn test_read_prev_line() {
         .with_content("Line 10")
         .with_start(7)
         .with_end(14)
-        .with_line_no(Ok(1))
+        .with_line_no(Ok(10))
         .with_custom_highlight(FILTERED_LINE_SOURCE_CUSTOM_DATA_KEY, CustomHighlight::new(5_usize, 7_usize))
         .build();
     assert_that!(proxy.read_prev_line(7.into()))
@@ -116,7 +125,7 @@ fn test_read_prev_line() {
 #[test]
 fn test_none_match() {
     let original = ConcreteLineSourceHolder::from(LineSourceImpl::from_str(&ORIGINAL));
-    let mut proxy = FilteredLineSource::new(original, Arc::new(|_: &str| Vec::default()));
+    let mut proxy = FilteredLineSource::new(original, Arc::new(|_: &str| Vec::default()), 0);
 
     assert_that!(proxy.read_next_line(0.into())).is_none();
     assert_that!(proxy.read_next_line(100.into())).is_none();
@@ -132,8 +141,7 @@ fn test_none_match() {
 
 #[test]
 fn test_line_registry() {
-    let original = ConcreteLineSourceHolder::from(LineSourceImpl::from_str(&ORIGINAL));
-    let mut proxy = FilteredLineSource::new(original, Arc::new(filter_each_fifth));
+    let mut proxy = create_filtered();
     let registry = proxy.get_line_registry();
 
     let n = 10_usize;
@@ -146,19 +154,15 @@ fn test_line_registry() {
 
 mod read_raw {
     use super::*;
-    use crate::data_source::filtered::filtered_line_source::tests::{filter_each_fifth, ORIGINAL};
-    use crate::data_source::filtered::FilteredLineSource;
-    use crate::data_source::{LineSource, LineSourceImpl};
+    use crate::data_source::LineSource;
     use paste::paste;
-
 
     macro_rules! test {
         ($n: literal, $from: literal, $to: literal, $expected: literal) => {
             paste!{
                 #[test]
                 fn [<test $n>]() {
-                    let original = ConcreteLineSourceHolder::from(LineSourceImpl::from_str(&ORIGINAL));
-                    let mut proxy = FilteredLineSource::new(original, Arc::new(filter_each_fifth));
+                    let mut proxy = create_filtered();
 
                     let actual = proxy.read_raw($from.into(), $to.into());
                     assert_that!(actual).is_ok_containing(String::from($expected));
@@ -178,20 +182,16 @@ mod read_raw {
 }
 
 mod skip_token {
-    use super::FilteredLineSource;
     use super::*;
-    use super::{filter_each_fifth, ORIGINAL};
     use crate::data_source::{Direction, LineSource};
     use paste::paste;
-
 
     macro_rules! test {
         ($name: literal, $offset: literal, $direction: expr, $expected: literal) => {
             paste!{
                 #[test]
                 fn [<test_ $name>]() {
-                    let original = ConcreteLineSourceHolder::from(LineSourceImpl::from_str(&ORIGINAL));
-                    let mut proxy = FilteredLineSource::new(original, Arc::new(filter_each_fifth));
+                    let mut proxy = create_filtered();
 
                     let actual = proxy.skip_token($offset.into(), $direction);
                     let expected = $expected;

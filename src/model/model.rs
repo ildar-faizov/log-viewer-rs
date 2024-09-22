@@ -6,6 +6,7 @@ use std::fs::File;
 use std::io::{Read, Seek};
 use std::option::Option::Some;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -913,13 +914,20 @@ impl RootModel {
         self.filter_dialog_model.get_mut_ref()
     }
 
-    pub fn filter(&mut self, pattern: &str) -> anyhow::Result<()> {
+    pub fn filter(&mut self) -> anyhow::Result<()> {
+        let (pattern, neighbourhood) = {
+            let filter_dialog_model = &*self.filter_dialog_model.get_ref();
+            let pattern = filter_dialog_model.get_pattern();
+            let neighbourhood = u8::from_str(filter_dialog_model.get_neighbourhood())?;
+            (pattern.to_string(), neighbourhood)
+        };
+
         let ds = self.datasource.take().ok_or(anyhow!("DataSource not set"))?.into_inner();
         let base_ds = match ds {
             LineSourceHolder::Concrete(ds) => ds,
             LineSourceHolder::Filtered(f) => f.destroy(),
         };
-        let filtered = FilteredLineSource::with_substring(base_ds, pattern);
+        let filtered = FilteredLineSource::with_substring(base_ds, &pattern, neighbourhood);
         self.reset(false);
         self.datasource = Some(Shared::new(LineSourceHolder::from(filtered)));
         self.update_viewport_content();

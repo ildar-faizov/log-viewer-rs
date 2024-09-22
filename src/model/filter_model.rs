@@ -12,6 +12,7 @@ pub struct FilterDialogModel {
     is_open: bool,
     pattern: String,
     is_regexp: bool,
+    neighbourhood: String,
 }
 
 impl FilterDialogModel {
@@ -21,6 +22,7 @@ impl FilterDialogModel {
             is_open: false,
             pattern: String::new(),
             is_regexp: false,
+            neighbourhood: 0.to_string(),
         }
     }
 
@@ -39,8 +41,20 @@ impl FilterDialogModel {
         &self.pattern
     }
 
+    pub fn set_pattern(&mut self, pattern: impl ToString) {
+        self.pattern = pattern.to_string();
+    }
+
     pub fn is_regexp(&self) -> bool {
         self.is_regexp
+    }
+
+    pub fn get_neighbourhood(&self) -> &str {
+        &self.neighbourhood
+    }
+
+    pub fn set_neighbourhood(&mut self, neighbourhood: impl ToString) {
+        self.neighbourhood = neighbourhood.to_string();
     }
 
     fn emit_event(&self, evt: FilterDialogModelEvent) {

@@ -1,4 +1,5 @@
 use std::cmp::{min, Ordering};
+use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,18 +12,18 @@ use crate::background_process::background_process_handler::BackgroundProcessHand
 use crate::background_process::buffered_message_sender::BufferedMessageSender;
 use crate::background_process::run_in_background::RunInBackground;
 use crate::background_process::signal::Signal;
-use crate::data_source::filtered::offset_mapper::{IOffsetMapper, OffsetEvaluationResult, OffsetMapper, OriginalOffset, ProxyOffset};
+use crate::data_source::filtered::offset_mapper::{IOffsetMapper, OffsetDelta, OffsetEvaluationResult, OffsetMapper, OriginalOffset, ProxyOffset};
 use crate::data_source::line_registry::{LineRegistry, LineRegistryImpl};
 use crate::data_source::line_source_holder::{ConcreteLineSourceHolder, LineSourceHolder};
 use crate::data_source::tokenizer::skip_token;
 use crate::data_source::{CustomHighlight, Data, Direction, Line, LineSource, LineSourceBackend};
-use crate::interval::{Interval, PointLocationWithRespectToInterval};
+use crate::interval::PointLocationWithRespectToInterval;
 use crate::model::model::RootModel;
-use crate::model::rendered::LineNumberMissingReason;
 use crate::utils;
 use fluent_integer::Integer;
+use crate::data_source::filtered::foreseeing_filter::{ForeseeingFilter, ForeseeingFilterResult};
 
-type LineFilter = Arc<dyn Fn(&str) -> Vec<CustomHighlight> + Sync + Send + 'static>;
+pub type LineFilter = Arc<dyn Fn(&str) -> Vec<CustomHighlight> + Sync + Send + 'static>;
 
 pub type Callback = Box<dyn Fn(&mut RootModel) + 'static>;
 
@@ -35,7 +36,9 @@ pub struct FilteredLineSource
 {
     id: Uuid,
     original: ConcreteLineSourceHolder,
-    filter: LineFilter,
+    original_filter: LineFilter,
+    filter: ForeseeingFilter,
+    neighbourhood: u8,
     offset_mapper: OffsetMapper,
     track_line_number: bool,
     line_registry: Arc<LineRegistryImpl>,
@@ -129,12 +132,16 @@ impl LineSource for FilteredLineSource {
 impl FilteredLineSource {
     pub fn new(
         original: ConcreteLineSourceHolder,
-        mapper: LineFilter,
+        filter: LineFilter,
+        neighbourhood: u8,
     ) -> Self {
+        let foreseeing_filter = ForeseeingFilter::new(Arc::clone(&filter), neighbourhood);
         FilteredLineSource {
             id: Uuid::new_v4(),
             original,
-            filter: mapper,
+            original_filter: filter,
+            filter: foreseeing_filter,
+            neighbourhood,
             offset_mapper: OffsetMapper::default(),
             track_line_number: true,
             line_registry: Arc::new(LineRegistryImpl::new()),
@@ -145,7 +152,8 @@ impl FilteredLineSource {
 
     pub fn with_substring(
         original: ConcreteLineSourceHolder,
-        pattern: &str
+        pattern: &str,
+        neighbourhood: u8,
     ) -> Self {
         let pattern = pattern.to_string();
         let mapper = Arc::new(move |s: &str|
@@ -153,7 +161,7 @@ impl FilteredLineSource {
                 .map(|(i, m)| CustomHighlight::new(i, i + m.len()))
                 .collect()
         );
-        Self::new(original, mapper)
+        Self::new(original, mapper, neighbourhood)
     }
 
     pub fn destroy(mut self) -> ConcreteLineSourceHolder {
@@ -194,7 +202,9 @@ impl FilteredLineSource {
             return;
         }
         let self_id = self.id.clone();
-        let filter = Arc::clone(&self.filter);
+        // TODO: account neighbourhood
+        let filter = Arc::clone(&self.original_filter);
+        let neighbourhood = self.neighbourhood as usize;
         let handler = runner.background_process_builder::<Vec<Message>, _, anyhow::Result<Integer>, _>()
             .with_title("Scanning...")
             .with_description("Building complete filtered output")
@@ -206,19 +216,37 @@ impl FilteredLineSource {
                 let mut original_offset = OriginalOffset::from(0);
 
                 let mut reader = backend.new_reader();
+                let mut cache: VecDeque<CacheItem> = VecDeque::with_capacity(neighbourhood + 1);
                 let mut line = String::new();
+                let mut echo = 0;
                 while let Ok(bytes_read) = reader.read_line(&mut line) {
                     if bytes_read == 0 {
                         break;
                     }
                     let trimmed = utils::trim_newline(&mut line);
-                    if !filter(&line).is_empty() {
-                        message_sender.push(Message {
-                            proxy_offset,
-                            original_offset,
-                            line_length: (bytes_read - trimmed).into(),
-                        })?;
-                        proxy_offset = proxy_offset + bytes_read;
+                    cache.push_back(CacheItem {
+                        original_offset,
+                        line_length: bytes_read - trimmed,
+                        bytes_read,
+                    });
+                    while cache.len() > neighbourhood + 1 {
+                        cache.pop_front();
+                    }
+                    let is_match = !filter(&line).is_empty();
+                    if is_match || echo > 0 {
+                        if is_match {
+                            echo = neighbourhood;
+                        } else {
+                            echo -= 1;
+                        }
+                        while let Some(item) = cache.pop_front() {
+                            message_sender.push(Message {
+                                proxy_offset,
+                                original_offset: item.original_offset,
+                                line_length: item.line_length.into(),
+                            })?;
+                            proxy_offset = proxy_offset + item.bytes_read;
+                        }
                     }
                     original_offset = original_offset + bytes_read;
                     ctx.update_progress_u64(original_offset.as_u64(), total);
@@ -292,21 +320,14 @@ impl FilteredLineSource {
             let next_line = match self.offset_mapper.eval(current_offset) {
                 OffsetEvaluationResult::Exact(original_offset) => {
                     let d = original_offset - current_offset;
-                    self.original.read_next_line(*original_offset)
-                        .and_then(|line| {
-                            let s = OriginalOffset::from(line.start) - d;
-                            let e = OriginalOffset::from(line.end) - d;
-                            let matches = (*self.filter)(&line.content);
-                            let line_no = self.line_registry.count(&Interval::closed(0_u64, s.as_u64()));
-                            Some(
-                                line.to_builder()
-                                    .with_start(*s)
-                                    .with_end(*e)
-                                    .with_line_no(line_no.map_err(LineNumberMissingReason::from)) // todo
-                                    .with_multiple_custom_highlights(FILTERED_LINE_SOURCE_CUSTOM_DATA_KEY, matches)
-                                    .build()
-                            )
-                        })
+                    let filter_result = self.filter.apply(&mut self.original, *original_offset);
+                    match filter_result {
+                        ForeseeingFilterResult::PreciseMatch(ln, matches) =>
+                            Some(self.convert_line(ln, matches, d)),
+                        ForeseeingFilterResult::NeighbourMatch(ln) =>
+                            Some(self.convert_line(ln, Vec::new(), d)),
+                        _ => None,
+                    }
                 }
                 OffsetEvaluationResult::LastConfirmed(po, oo) => {
                     self.seek_next_line(po + 1, oo + 1)
@@ -325,12 +346,7 @@ impl FilteredLineSource {
                             current_offset = ProxyOffset::from(next_line.start - 1);
                         }
                         PointLocationWithRespectToInterval::Belongs => {
-                            let line_no = self.line_registry
-                                .count(&Interval::closed(0.into(), next_line.start));
-                            let result = next_line.to_builder()
-                                .with_line_no(line_no.map_err(LineNumberMissingReason::from))
-                                .build();
-                            return Some(result)
+                            return Some(next_line)
                         },
                         PointLocationWithRespectToInterval::Greater => {
                             current_offset = ProxyOffset::from(next_line.end + 1);
@@ -339,6 +355,16 @@ impl FilteredLineSource {
                 }
             }
         }
+    }
+
+    fn convert_line(&self, line: Line, matches: Vec<CustomHighlight>, d: OffsetDelta) -> Line {
+        let s = OriginalOffset::from(line.start) - d;
+        let e = OriginalOffset::from(line.end) - d;
+        line.to_builder()
+            .with_start(*s)
+            .with_end(*e)
+            .with_multiple_custom_highlights(FILTERED_LINE_SOURCE_CUSTOM_DATA_KEY, matches)
+            .build()
     }
 
     fn seek_next_line(&mut self, proxy_offset: ProxyOffset, original_offset: OriginalOffset) -> Option<Line> {
@@ -353,29 +379,35 @@ impl FilteredLineSource {
 
     fn do_seek_next_line(&mut self, proxy_offset: ProxyOffset, original_offset: OriginalOffset) -> Option<Line> {
         let mut ox: Integer = *original_offset;
-        while let Some(next_line) = self.original.read_next_line(ox) {
-            let s = next_line.start;
-            let e = next_line.end;
-            self.highest_scanned_original_offset = OriginalOffset::from(e);
-            let matches = (*self.filter)(&next_line.content);
-            if !matches.is_empty() {
-                self.offset_mapper.add(proxy_offset, OriginalOffset::from(s)).unwrap();
-                self.offset_mapper.confirm(proxy_offset + (e - s));
-                let Line { content, mut custom_highlights, .. } = next_line;
-                custom_highlights.insert(FILTERED_LINE_SOURCE_CUSTOM_DATA_KEY, matches);
-                return Some(Line {
-                    content,
-                    start: *proxy_offset,
-                    end: e - s + *proxy_offset,
-                    line_no: Err(LineNumberMissingReason::LineNumberingTurnedOff), // todo
-                    custom_highlights
-                });
+        loop {
+            match self.filter.apply(&mut self.original, ox) {
+                ForeseeingFilterResult::PreciseMatch(line, matches) => {
+                    break Some(self.accept_line(proxy_offset, line, matches))
+                }
+                ForeseeingFilterResult::NeighbourMatch(line) => {
+                    break Some(self.accept_line(proxy_offset, line, Vec::new()))
+                }
+                ForeseeingFilterResult::NoMatch(offset) => {
+                    self.highest_scanned_original_offset = OriginalOffset::from(offset);
+                    ox = offset;
+                },
+                ForeseeingFilterResult::EOF => break None,
             }
-            ox = e + 1;
         }
+    }
 
-        // todo: do I need to map proxy_offset -> +Infinity
-        None
+    fn accept_line(&mut self, proxy_offset: ProxyOffset, line: Line, matches: Vec<CustomHighlight>) -> Line {
+        let s = line.start;
+        let e = line.end;
+        self.highest_scanned_original_offset = OriginalOffset::from(e);
+        self.offset_mapper.add(proxy_offset, OriginalOffset::from(s)).unwrap();
+        let e1 = proxy_offset + (e - s);
+        self.offset_mapper.confirm(e1);
+        line.to_builder()
+            .with_start(*proxy_offset)
+            .with_end(*e1)
+            .with_multiple_custom_highlights(FILTERED_LINE_SOURCE_CUSTOM_DATA_KEY, matches)
+            .build()
     }
 
     fn read_raw_internal(&mut self, start: Integer, buffer: &mut LimitedBuf) {
@@ -508,6 +540,12 @@ struct Message {
     proxy_offset: ProxyOffset,
     original_offset: OriginalOffset,
     line_length: Integer,
+}
+
+struct CacheItem {
+    original_offset: OriginalOffset,
+    line_length: usize,
+    bytes_read: usize,
 }
 
 fn perform_on_self<F>(id: Uuid, model: &mut RootModel, f: F)

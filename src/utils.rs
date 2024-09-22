@@ -6,6 +6,7 @@ use metrics::{histogram, Unit};
 use stopwatch::Stopwatch;
 use unicode_segmentation::UnicodeSegmentation;
 use fluent_integer::Integer;
+use paste::paste;
 
 pub fn sign(n: Integer) -> (Integer, i8) {
     if n >= 0 {
@@ -14,6 +15,24 @@ pub fn sign(n: Integer) -> (Integer, i8) {
         (-n, -1)
     }
 }
+
+macro_rules! bool_to_num {
+    ($($t: ty)*) => {
+        $(
+            paste! {
+                #[allow(dead_code)]
+                pub fn [<bool_to_ $t>](value: bool) -> $t {
+                    if value {
+                        1 as $t
+                    } else {
+                        0 as $t
+                    }
+                }
+            }
+        )*
+    };
+}
+bool_to_num!(u8 u16 u32 u64 usize i8 i16 i32 i64 i128);
 
 pub fn trim_newline(s: &mut String) -> usize {
     let mut bytes_removed = 0;

@@ -43,16 +43,11 @@ where R: Read + Seek, F: Fn(&char) -> bool
     let shift = (offset - actual_offset).as_i64();
     f.seek_relative(shift)?;
     let mut current_no = line_registry
-        .zip(Some(&direction))
         .ok_or(LineNumberMissingReason::LineNumberingTurnedOff)
-        .and_then(move |(r, direction)| {
-            let interval = match direction {
-                Direction::Forward => Interval::closed(0.into(), offset),
-                Direction::Backward => Interval::closed_open(0.into(), offset),
-            };
+        .and_then(|r| {
+            let interval = Interval::closed_open(0.into(), offset);
             r.count(&interval).map_err(LineNumberMissingReason::Delegate)
-        })
-        .map(|n| n as u64);
+        });
 
     let mut data = vec![];
     let mut stack = vec![];
