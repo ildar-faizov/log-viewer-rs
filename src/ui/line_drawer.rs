@@ -147,8 +147,11 @@ impl<'a> LineDrawer<'a> {
                 .flat_map(|highlighter| highlighter.process(&line, state))
                 .for_each(|h| {
                     let s = line.find_grapheme_index_by_offset(h.get_start().into());
-                    let e = line.find_grapheme_index_by_offset(h.get_end().into());
-                    if let Some((s, e)) = s.zip(e) {
+                    let e = line.find_grapheme_by_offset(h.get_end().into());
+                    if let Some((s, (mut e, g))) = s.zip(e) {
+                        if g.original_offset < h.get_end() {
+                            e += 1;
+                        }
                         intervals.add_interval(s, e, h.get_payload());
                     }
                 });
