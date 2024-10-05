@@ -34,9 +34,17 @@ impl<'a, M: Send + Sync + 'static, R: Send + Sync + 'static> BufferedMessageSend
         let elapsed = now - self.last_flush_time;
         let n = self.buffer.len();
         if n >= self.buffer_size || elapsed > self.flush_interval {
+            self.do_flush()?;
+            self.last_flush_time = now;
+        }
+        Ok(())
+    }
+
+    fn do_flush(&mut self) -> Result<(), anyhow::Error> {
+        let n = self.buffer.len();
+        if n > 0 {
             log::debug!("Flushing {} elements", n);
             self.ctx.send_message(self.buffer.drain(0..n).collect())?;
-            self.last_flush_time = now;
         }
         Ok(())
     }
@@ -44,7 +52,7 @@ impl<'a, M: Send + Sync + 'static, R: Send + Sync + 'static> BufferedMessageSend
 
 impl<'a, M: Send + Sync + 'static, R: Send + Sync + 'static> Drop for BufferedMessageSender<'a, M, R> {
     fn drop(&mut self) {
-        self.flush().unwrap_or_else(|err|
+        self.do_flush().unwrap_or_else(|err|
             log::warn!("Error occurred during last flush {}", err)
         );
     }

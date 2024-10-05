@@ -4,7 +4,7 @@ use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Error};
 use mucow::MuCow;
 use uuid::Uuid;
 
@@ -21,6 +21,7 @@ use crate::interval::PointLocationWithRespectToInterval;
 use crate::model::model::RootModel;
 use crate::utils;
 use fluent_integer::Integer;
+use crate::background_process::task_context::TaskContext;
 use crate::data_source::filtered::foreseeing_filter::{ForeseeingFilter, ForeseeingFilterResult};
 
 pub type LineFilter = Arc<dyn Fn(&str) -> Vec<CustomHighlight> + Sync + Send + 'static>;
@@ -202,61 +203,13 @@ impl FilteredLineSource {
             return;
         }
         let self_id = self.id.clone();
-        // TODO: account neighbourhood
         let filter = Arc::clone(&self.original_filter);
         let neighbourhood = self.neighbourhood as usize;
         let handler = runner.background_process_builder::<Vec<Message>, _, anyhow::Result<Integer>, _>()
             .with_title("Scanning...")
             .with_description("Building complete filtered output")
             .with_task(move |ctx| {
-                let mut message_sender = BufferedMessageSender::new(MESSAGE_LIMIT, PUSH_INTERVAL, ctx);
-
-                let total = backend.get_length();
-                let mut proxy_offset = ProxyOffset::from(0);
-                let mut original_offset = OriginalOffset::from(0);
-
-                let mut reader = backend.new_reader();
-                let mut cache: VecDeque<CacheItem> = VecDeque::with_capacity(neighbourhood + 1);
-                let mut line = String::new();
-                let mut echo = 0;
-                while let Ok(bytes_read) = reader.read_line(&mut line) {
-                    if bytes_read == 0 {
-                        break;
-                    }
-                    let trimmed = utils::trim_newline(&mut line);
-                    cache.push_back(CacheItem {
-                        original_offset,
-                        line_length: bytes_read - trimmed,
-                        bytes_read,
-                    });
-                    while cache.len() > neighbourhood + 1 {
-                        cache.pop_front();
-                    }
-                    let is_match = !filter(&line).is_empty();
-                    if is_match || echo > 0 {
-                        if is_match {
-                            echo = neighbourhood;
-                        } else {
-                            echo -= 1;
-                        }
-                        while let Some(item) = cache.pop_front() {
-                            message_sender.push(Message {
-                                proxy_offset,
-                                original_offset: item.original_offset,
-                                line_length: item.line_length.into(),
-                            })?;
-                            proxy_offset = proxy_offset + item.bytes_read;
-                        }
-                    }
-                    original_offset = original_offset + bytes_read;
-                    ctx.update_progress_u64(original_offset.as_u64(), total);
-                    if ctx.interrupted_debounced(PUSH_INTERVAL) {
-                        return Err(anyhow!("Cancelled"));
-                    }
-                    line.clear();
-                }
-
-                Ok(*original_offset)
+                Self::full_scan(backend, filter, neighbourhood, ctx)
             })
             .with_listener(move |model, msg, id| {
                 match msg {
@@ -272,6 +225,66 @@ impl FilteredLineSource {
             })
             .run();
         self.handler = Some(handler);
+    }
+
+    fn full_scan<R, B>(
+        backend: B,
+        filter: Arc<dyn Fn(&str) -> Vec<CustomHighlight> + Sync + Send>,
+        neighbourhood: usize,
+        ctx: &mut TaskContext<Vec<Message>, anyhow::Result<Integer>>
+    ) -> Result<Integer, Error>
+    where
+        R: Read + Seek,
+        B: LineSourceBackend<R> + Send + 'static
+    {
+        let mut message_sender = BufferedMessageSender::new(MESSAGE_LIMIT, PUSH_INTERVAL, ctx);
+
+        let total = backend.get_length();
+        let mut proxy_offset = ProxyOffset::from(0);
+        let mut original_offset = OriginalOffset::from(0);
+
+        let mut reader = backend.new_reader();
+        let mut cache: VecDeque<CacheItem> = VecDeque::with_capacity(neighbourhood + 1);
+        let mut line = String::new();
+        let mut echo = 0;
+        while let Ok(bytes_read) = reader.read_line(&mut line) {
+            if bytes_read == 0 {
+                break;
+            }
+            let trimmed = utils::trim_newline(&mut line);
+            cache.push_back(CacheItem {
+                original_offset,
+                line_length: bytes_read - trimmed,
+                bytes_read,
+            });
+            while cache.len() > neighbourhood + 1 {
+                cache.pop_front();
+            }
+            let is_match = !filter(&line).is_empty();
+            if is_match || echo > 0 {
+                if is_match {
+                    echo = neighbourhood;
+                } else {
+                    echo -= 1;
+                }
+                while let Some(item) = cache.pop_front() {
+                    message_sender.push(Message {
+                        proxy_offset,
+                        original_offset: item.original_offset,
+                        line_length: item.line_length.into(),
+                    })?;
+                    proxy_offset = proxy_offset + item.bytes_read;
+                }
+            }
+            original_offset = original_offset + bytes_read;
+            ctx.update_progress_u64(original_offset.as_u64(), total);
+            if ctx.interrupted_debounced(PUSH_INTERVAL) {
+                return Err(anyhow!("Cancelled"));
+            }
+            line.clear();
+        }
+
+        Ok(*original_offset)
     }
 
     fn accept_offset_mapper(&mut self, msgs: Vec<Message>, id: &Uuid) {
@@ -536,6 +549,7 @@ impl<'a> LimitedBuf<'a> {
     }
 }
 
+#[derive(Eq, PartialEq, Debug)]
 struct Message {
     proxy_offset: ProxyOffset,
     original_offset: OriginalOffset,

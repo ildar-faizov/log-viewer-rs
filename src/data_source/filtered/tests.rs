@@ -6,8 +6,10 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use spectral::prelude::*;
 
+const ORIGINAL_LINE_COUNT: i32 = 1000;
+
 lazy_static! {
-    static ref ORIGINAL: String = (0..1000).map(|i| format!("Line {}", i)).join("\n");
+    static ref ORIGINAL: String = (0..ORIGINAL_LINE_COUNT).map(|i| format!("Line {}", i)).join("\n");
     static ref LINE_NUMBER_PATTERN: Regex = Regex::new(r"^Line (?P<N>\d+)$").unwrap();
 }
 
@@ -210,4 +212,55 @@ mod skip_token {
     test!(7, 11, Direction::Backward, 10);
     test!(8, 12, Direction::Backward, 10);
     // todo more tests
+}
+
+mod full_scan {
+    use spectral::prelude::*;
+    use crate::background_process::task_context::TaskContext;
+    use crate::data_source::StrBackend;
+    use super::*;
+
+    #[test]
+    fn test_neighbourhood_1() {
+        let neighbourhood: i32 = 1;
+        let (tx, rx) = crossbeam_channel::unbounded();
+        let backend = StrBackend::new(&ORIGINAL);
+        let filter = Arc::new(filter_each_fifth);
+        let is_interrupted = crossbeam_channel::never();
+        let mut ctx = TaskContext::new(tx, is_interrupted, Uuid::new_v4());
+        let result = FilteredLineSource::full_scan(backend, filter, neighbourhood as usize, &mut ctx);
+        drop(ctx);
+
+        assert_that!(result).contains(Integer::from(ORIGINAL.len()));
+
+        let mut messages = rx.into_iter()
+            .filter_map(|s| {
+                match s {
+                    Signal::Custom(msgs) => Some(msgs),
+                    _ => None,
+                }
+            })
+            .flatten();
+
+        let mut proxy_offset = ProxyOffset::from(0);
+        let mut original_offset = OriginalOffset::from(0);
+        for i in 0..ORIGINAL_LINE_COUNT {
+            let line = format!("Line {}", i);
+            if i > neighbourhood
+                && i < ORIGINAL_LINE_COUNT - neighbourhood
+                && (i % 5 <= neighbourhood || i % 5 >= 5 - neighbourhood)
+            {
+                asserting!(&line).that(&messages.next())
+                    .contains(&Message {
+                        proxy_offset,
+                        original_offset,
+                        line_length: Integer::from(line.len()),
+                    });
+                proxy_offset = proxy_offset + line.len() + 1;
+            }
+            original_offset = original_offset + line.len() + 1;
+        }
+
+        assert_that!(messages.next()).is_none();
+    }
 }
