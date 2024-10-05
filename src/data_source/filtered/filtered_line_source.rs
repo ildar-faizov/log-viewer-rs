@@ -328,6 +328,9 @@ impl FilteredLineSource {
     }
 
     fn poll(&mut self, offset: ProxyOffset) -> Option<Line> {
+        if offset < 0.into() {
+            return None
+        }
         let mut current_offset = offset.clone();
         loop {
             let next_line = match self.offset_mapper.eval(current_offset) {
