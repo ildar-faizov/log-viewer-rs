@@ -10,7 +10,7 @@ const ORIGINAL_LINE_COUNT: i32 = 1000;
 
 lazy_static! {
     static ref ORIGINAL: String = (0..ORIGINAL_LINE_COUNT).map(|i| format!("Line {}", i)).join("\n");
-    static ref LINE_NUMBER_PATTERN: Regex = Regex::new(r"^Line (?P<N>\d+)$").unwrap();
+    static ref LINE_NUMBER_PATTERN: Regex = Regex::new(r"^Line (?P<N>\d+)\n?$").unwrap();
 }
 
 fn filter_each_fifth(line: &str) -> Vec<CustomHighlight> {
@@ -262,5 +262,115 @@ mod full_scan {
         }
 
         assert_that!(messages.next()).is_none();
+    }
+}
+
+mod filtered_reader {
+    
+    use std::io::{BufReader, Cursor, Read};
+    use std::sync::Arc;
+    use itertools::Itertools;
+    use spectral::prelude::*;
+    use crate::data_source::CustomHighlight;
+    use crate::data_source::filtered::filtered_line_source::tests::{filter_each_fifth, ORIGINAL, ORIGINAL_LINE_COUNT};
+    use crate::data_source::filtered::filtered_reader::FilteredReader;
+
+    #[test]
+    fn test_read_neighbourhood_0_none_match() {
+        test_read_none_match(0);
+    }
+
+    #[test]
+    fn test_read_neighbourhood_1_none_match() {
+        test_read_none_match(1);
+    }
+
+    #[test]
+    fn test_read_neighbourhood_2_none_match() {
+        test_read_none_match(2);
+    }
+
+    fn test_read_none_match(neighbourhood: u8) {
+        let reader = BufReader::new(Cursor::new(ORIGINAL.as_bytes()));
+        let mut filtered_reader = FilteredReader::new(reader, Arc::new(none_match), neighbourhood);
+        let mut buf = [0_u8; 100];
+        let result = filtered_reader.read(&mut buf);
+        assert_that!(result).is_ok_containing(0);
+    }
+
+    #[test]
+    fn test_read_neighbourhood_0_all_match() {
+        test_read_all_match(0);
+    }
+
+    #[test]
+    fn test_read_neighbourhood_1_all_match() {
+        test_read_all_match(1);
+    }
+
+    #[test]
+    fn test_read_neighbourhood_2_all_match() {
+        test_read_all_match(2);
+    }
+
+    fn test_read_all_match(neighbourhood: u8) {
+        let test_data = ORIGINAL.split_inclusive('\n')
+            .map(|line| TestData::new(line.len(), line))
+            .collect_vec();
+        let mut filtered_reader = test_read(neighbourhood, all_match, test_data);
+        let mut buf = [0_u8; 100];
+        let result = filtered_reader.read(&mut buf);
+        assert_that!(result).is_ok_containing(0);
+    }
+
+    #[test]
+    fn test_read_neighbourhood_1_each_fifth() {
+        test_read(1, filter_each_fifth, vec![
+            TestData::new(10, "Line 4\nLin"),
+            TestData::new(1, "e"),
+            TestData::new(16, " 5\nLine 6\nLine 9"),
+            TestData::new(1, "\n"),
+            TestData::new(8, "Line 10\n"),
+            TestData::new(16, "Line 11\nLine 14\n"),
+        ]);
+    }
+
+    fn test_read(neighbourhood: u8, filter: fn(&str) -> Vec<CustomHighlight>, data: Vec<TestData>) -> FilteredReader<Cursor<&'static [u8]>> {
+        let reader = BufReader::new(Cursor::new(ORIGINAL.as_bytes()));
+        let mut filtered_reader = FilteredReader::new(reader, Arc::new(filter), neighbourhood);
+        let mut i = 0;
+        for test_data in data {
+            i += 1;
+            let mut buf = vec![0_u8; test_data.buf_size];
+            let r = filtered_reader.read(&mut buf);
+            let descr = format!("#{}| {:?}", i, &test_data);
+            asserting!(&descr).that(&r).is_ok_containing(test_data.expected.len());
+            let actual = String::from_utf8_lossy(&buf).to_string();
+            asserting!(&descr).that(&actual).is_equal_to(&test_data.expected);
+        }
+        filtered_reader
+    }
+
+    #[derive(Debug, Clone)]
+    struct TestData {
+        buf_size: usize,
+        expected: String,
+    }
+
+    impl TestData {
+        fn new(buf_size: usize, expected: impl ToString) -> Self {
+            TestData {
+                buf_size,
+                expected: expected.to_string(),
+            }
+        }
+    }
+
+    fn none_match(_: &str) -> Vec<CustomHighlight> {
+        vec![]
+    }
+
+    fn all_match(s: &str) -> Vec<CustomHighlight> {
+        vec![CustomHighlight::new(0, s.len().saturating_sub(1))]
     }
 }

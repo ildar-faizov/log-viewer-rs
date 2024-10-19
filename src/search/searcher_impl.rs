@@ -69,9 +69,7 @@ impl<R> SearcherImpl<R> where R: Read + Seek {
         let delta = n.saturating_sub(m) as i128;
         if delta > 0 {
             self.f.read_fluently(delta, |chunk| {
-                for ch in chunk {
-                    self.buffer.push_back(*ch);
-                }
+                self.buffer.extend(chunk);
             }).map_err(IO)?;
         }
         if self.buffer.len() < n {

@@ -3,12 +3,22 @@ use std::io::{BufReader, Read, Seek};
 
 pub trait BidirectionalBufRead {
     fn read_fluently<I, F>(&mut self, n: I, consumer: F) -> std::io::Result<u64>
-        where I: Into<i128>, F: FnMut(&[u8]);
+    where
+        I: Into<i128>,
+        F: FnMut(&[u8]);
+
+    fn read_backwards_until<P, C>(&mut self, predicate: P, collector: C) -> std::io::Result<usize>
+    where
+        P: Fn(u8) -> bool,
+        C: FnMut(u8);
 }
 
-impl<R: Seek + Read> BidirectionalBufRead for BufReader<R>  {
+impl<R: Seek + Read> BidirectionalBufRead for BufReader<R> {
     fn read_fluently<I, F>(&mut self, n: I, mut consumer: F) -> std::io::Result<u64>
-        where I: Into<i128>, F: FnMut(&[u8]) {
+    where
+        I: Into<i128>,
+        F: FnMut(&[u8]),
+    {
         let mut n = n.into();
         let mut buffer = [0_u8; 8192];
         let bytes_to_read = if n < 0 {
@@ -34,6 +44,29 @@ impl<R: Seek + Read> BidirectionalBufRead for BufReader<R>  {
         }
         if n < 0 {
             self.seek_relative(-(bytes_read as i64))?;
+        }
+        Ok(bytes_read)
+    }
+
+    fn read_backwards_until<P, C>(&mut self, predicate: P, mut collector: C) -> std::io::Result<usize>
+    where
+        P: Fn(u8) -> bool,
+        C: FnMut(u8),
+    {
+        let mut bytes_read = 0;
+        let mut buf = [0_u8; 1];
+        loop {
+            if self.stream_position()? == 0 {
+                break;
+            }
+            self.seek_relative(-1)?;
+            if self.read(&mut buf)? == 1 && !predicate(buf[0]) {
+                collector(buf[0]);
+                bytes_read += 1;
+                self.seek_relative(-1)?;
+            } else {
+                break;
+            }
         }
         Ok(bytes_read)
     }

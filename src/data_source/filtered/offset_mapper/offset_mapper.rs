@@ -1,6 +1,6 @@
 use fluent_integer::Integer;
 use paste::paste;
-use std::ops::{Add, Deref, Sub};
+use std::ops::{Add, AddAssign, Deref, Sub};
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Debug, Copy, Clone, Default)]
 pub struct ProxyOffset(Integer);
@@ -62,6 +62,15 @@ macro_rules! offset_impl {
 
                 fn add(self, rhs: I) -> Self::Output {
                     paste! { [<$t>](self.0 + rhs.into()) }
+                }
+            }
+
+            impl<I> AddAssign<I> for $t
+            where
+                I: Into<Integer>
+            {
+                fn add_assign(&mut self, rhs: I) {
+                    self.0 += rhs.into();
                 }
             }
         };
