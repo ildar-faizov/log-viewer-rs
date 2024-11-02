@@ -74,6 +74,7 @@ mod welcome;
 mod application_metrics;
 mod args;
 mod profiles;
+mod bounded_vec_deque;
 
 const METRIC_APP_CYCLE: &str = "app_cycle";
 const PROFILER_FLUSH_PERIOD: Duration = Duration::from_secs(5);

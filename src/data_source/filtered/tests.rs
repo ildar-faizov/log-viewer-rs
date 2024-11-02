@@ -267,12 +267,12 @@ mod full_scan {
 
 mod filtered_reader {
     
-    use std::io::{BufReader, Cursor, Read};
+    use std::io::{BufReader, Cursor, Read, Seek};
     use std::sync::Arc;
     use itertools::Itertools;
     use spectral::prelude::*;
     use crate::data_source::CustomHighlight;
-    use crate::data_source::filtered::filtered_line_source::tests::{filter_each_fifth, ORIGINAL, ORIGINAL_LINE_COUNT};
+    use crate::data_source::filtered::filtered_line_source::tests::{filter_each_fifth, ORIGINAL};
     use crate::data_source::filtered::filtered_reader::FilteredReader;
 
     #[test]
@@ -339,14 +339,19 @@ mod filtered_reader {
         let reader = BufReader::new(Cursor::new(ORIGINAL.as_bytes()));
         let mut filtered_reader = FilteredReader::new(reader, Arc::new(filter), neighbourhood);
         let mut i = 0;
+        let mut bytes_read = 0;
         for test_data in data {
             i += 1;
             let mut buf = vec![0_u8; test_data.buf_size];
             let r = filtered_reader.read(&mut buf);
             let descr = format!("#{}| {:?}", i, &test_data);
-            asserting!(&descr).that(&r).is_ok_containing(test_data.expected.len());
+            let expected_read = test_data.expected.len();
+            bytes_read += expected_read as u64;
+            asserting!(&descr).that(&r).is_ok_containing(expected_read);
             let actual = String::from_utf8_lossy(&buf).to_string();
             asserting!(&descr).that(&actual).is_equal_to(&test_data.expected);
+            let stream_position = filtered_reader.stream_position();
+            asserting!(&descr).that(&stream_position).is_ok_containing(bytes_read);
         }
         filtered_reader
     }

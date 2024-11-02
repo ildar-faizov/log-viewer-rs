@@ -1,20 +1,14 @@
-use crate::advanced_io::advanced_buf_reader::BidirectionalBufRead;
 use crate::advanced_io::seek_to::SeekTo;
+use crate::bounded_vec_deque::BoundedVecDeque;
 use crate::data_source::filtered::filtered_line_source::LineFilter;
-use crate::data_source::filtered::offset_mapper::{OriginalOffset, ProxyOffset};
-use std::cmp::{max, min, Ordering};
-use std::collections::VecDeque;
+use std::cmp::{min, Ordering};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::sync::Arc;
 use thiserror::Error;
 
-pub struct FilteredReader<R>
-where R: Read + Seek
-{
-    reader: BufReader<R>,
-    current_position: ProxyOffset,
-    original_offset: Option<OriginalOffset>,
-    cache: Cache,
+pub struct FilteredReader<R: Read + Seek> {
+    cache: Cache<R>,
+    p: usize, // number of bytes read from next line in cache
 }
 
 impl<R> FilteredReader<R>
@@ -22,71 +16,36 @@ where R: Read + Seek
 {
     pub fn new(reader: BufReader<R>, filter: LineFilter, neighbourhood: u8) -> Self {
         FilteredReader {
-            reader,
-            current_position: ProxyOffset::from(0),
-            original_offset: None,
-            cache: Cache::new(neighbourhood as usize, Arc::clone(&filter)),
+            cache: Cache::new(neighbourhood as usize, Arc::clone(&filter), reader),
+            p: 0,
         }
-    }
-
-    fn ensure_original_offset(&mut self) -> Result<OriginalOffset, FilterError> {
-        if self.original_offset.is_none() {
-            let next_line = self.next_line()?;
-            self.original_offset = Some(OriginalOffset::from(next_line.offset));
-            self.cache.push_front(next_line);
-        }
-        self.original_offset.ok_or(FilterError::EOF)
-    }
-
-    fn next_line(&mut self) -> Result<CacheItem, FilterError> {
-        self.cache.next(&mut self.reader)
     }
 
     fn reset(&mut self) -> std::io::Result<()> {
-        self.reader.seek(SeekFrom::Start(0))?;
-        self.cache.reset();
-        self.current_position = ProxyOffset::from(0);
-        self.original_offset = None;
+        self.cache.reset()?;
         Ok(())
     }
 
     fn do_read(&mut self, limit: usize, mut collector: impl FnMut(&[u8])) -> std::io::Result<usize> {
-        let mut original_offset: u64 = match self.ensure_original_offset() {
-            Ok(t) => t,
-            Err(FilterError::IO(err)) => return Err(err),
-            Err(FilterError::EOF) => return Ok(0),
-        }.as_u64();
-        self.reader.seek_to(original_offset)?;
-        self.reader.read_backwards_until(is_newline, drop)?;
-
         let mut bytes_read = 0;
         while bytes_read < limit {
-            let CacheItem {
-                offset, bytes, is_ok
-            } = match self.next_line() {
+            let item = match self.cache.next() {
                 Ok(t) => t,
                 Err(FilterError::IO(err)) => return Err(err),
                 Err(FilterError::EOF) => return Ok(bytes_read),
             };
-            original_offset = max(original_offset, offset);
+            let bytes : &[u8] = &item.bytes[self.p..];
             let m = bytes.len();
-            if original_offset <= offset + m as u64 {
-                let d = (original_offset - offset) as usize;
-                let n = min(limit - bytes_read, m - d);
-                if n > 0 {
-                    collector(&bytes[d..d + n]);
-                    bytes_read += n;
-                    original_offset += n as u64;
-                    self.current_position += bytes_read;
-                    if d + n < m {
-                        // current line was not read fully, so return it to cache
-                        self.cache.push_front(CacheItem::new(offset, bytes, is_ok));
-                    }
-                } else {
-                    break
-                }
+            let n = min(limit - bytes_read, m);
+            collector(&bytes[..n]);
+            bytes_read += n;
+            if n < m {
+                // line not read fully
+                self.cache.restore();
+                self.p += n;
+            } else {
+                self.p = 0;
             }
-            self.original_offset = Some(OriginalOffset::from(original_offset));
         }
 
         Ok(bytes_read)
@@ -115,12 +74,12 @@ where R: Read + Seek
                 self.reset()?;
                 self.do_read(from_start as usize, |_| {}).map(|b| b as u64)
             }
-            SeekFrom::End(from_end) => {todo!()}
+            SeekFrom::End(_from_end) => {todo!()}
             SeekFrom::Current(delta) => {
                 match delta.cmp(&0) {
                     Ordering::Less => {todo!()}
                     Ordering::Equal =>
-                        Ok(self.current_position.as_u64()),
+                        Ok(self.cache.pos() + self.p as u64),
                     Ordering::Greater =>
                         self.do_read(delta as usize, |_| {}).map(|b| b as u64),
                 }
@@ -158,43 +117,45 @@ impl CacheItem {
     }
 }
 
-struct Cache {
+struct Cache<R: Read + Seek> {
     neighbourhood: usize,
-    cache: VecDeque<CacheItem>,
+    future: BoundedVecDeque<CacheItem>,
+    history: BoundedVecDeque<CacheItem>,
     echo: usize,
     has_match: bool,
     filter: LineFilter,
+    reader: BufReader<R>,
+    pos: u64,
 }
 
-impl Cache {
-    fn new(neighbourhood: usize, filter: LineFilter) -> Self {
+impl<R: Read + Seek> Cache<R> {
+    fn new(neighbourhood: usize, filter: LineFilter, reader: BufReader<R>) -> Self {
         Cache {
             neighbourhood,
-            cache: VecDeque::with_capacity(2 * neighbourhood + 1),
+            future: BoundedVecDeque::with_capacity(neighbourhood + 1),
+            history: BoundedVecDeque::with_capacity(neighbourhood),
             echo: 0,
             has_match: false,
             filter,
+            reader,
+            pos: 0,
         }
     }
 
-    fn next<R>(&mut self, reader: &mut BufReader<R>) -> Result<CacheItem, FilterError>
-    where
-        R: Read + Seek
-    {
-        loop {
+    fn next(&mut self) -> Result<CacheItem, FilterError> {
+        let res = loop {
             if self.has_match {
-                if let Some(item) = self.cache.pop_front() {
+                if let Some(item) = self.future.pop_front() {
                     if item.is_ok {
                         self.has_match = false;
                     }
-                    reader.seek(SeekFrom::Start(item.offset + item.bytes.len() as u64))?;
                     break Ok(item);
                 }
             }
 
             let mut buf = vec![];
-            let offset = reader.stream_position()?;
-            let bytes_read = reader.read_until(b'\n', &mut buf)?;
+            let offset = self.reader.stream_position()?;
+            let bytes_read = self.reader.read_until(b'\n', &mut buf)?;
             if bytes_read == 0 {
                 break Err(FilterError::EOF);
             }
@@ -205,9 +166,6 @@ impl Cache {
             };
 
             let cache_item = CacheItem::new(offset, buf, is_ok);
-            while self.cache.len() > self.neighbourhood {
-                self.cache.pop_front();
-            }
 
             if is_ok {
                 self.echo = self.neighbourhood;
@@ -216,21 +174,47 @@ impl Cache {
                 self.echo -= 1;
                 break Ok(cache_item);
             }
-            self.cache.push_back(cache_item);
-        }
+            if let Some(el) = self.future.push_back(cache_item) {
+                self.history.push_back(el);
+            }
+        };
+        let item = res?;
+        self.pos += item.bytes.len() as u64;
+        self.history.push_back(item.clone());
+        Ok(item)
     }
 
-    fn push_front(&mut self, item: CacheItem) {
+    // fn prev(&mut self) -> Result<CacheItem, FilterError> {
+    //     let mut reader = &mut self.reader;
+    //     let mut reverse_echo = self.cache.iter()
+    //         .find_position(|item| item.is_ok)
+    //         .map(|(p, _)| self.neighbourhood.saturating_sub(p))
+    //         .unwrap_or(0);
+    //     loop {
+    //
+    //     }
+    // }
+
+    fn restore(&mut self) {
+        let Some(item) = self.history.pop_back() else { return; };
         if item.is_ok {
             self.has_match = true;
             self.echo = self.neighbourhood;
         }
-        self.cache.push_front(item);
+        self.pos -= item.bytes.len() as u64;
+        self.future.push_front(item);
     }
 
-    fn reset(&mut self) {
-        self.cache.clear();
+    fn reset(&mut self) -> std::io::Result<()> {
+        self.future.clear();
+        self.history.clear();
         self.echo = 0;
         self.has_match = false;
+        self.pos = 0;
+        self.reader.seek(SeekFrom::Start(0)).map(|_| ())
+    }
+
+    fn pos(&self) -> u64 {
+        self.pos
     }
 }
