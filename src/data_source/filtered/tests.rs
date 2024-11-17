@@ -3,13 +3,16 @@ use crate::data_source::filtered::filtered_line_source::FilteredLineSource;
 use crate::data_source::{Line, LineSourceImpl};
 use itertools::Itertools;
 use lazy_static::lazy_static;
+use num_traits::Euclid;
 use regex::Regex;
 use spectral::prelude::*;
 
 const ORIGINAL_LINE_COUNT: i32 = 1000;
 
 lazy_static! {
-    static ref ORIGINAL: String = (0..ORIGINAL_LINE_COUNT).map(|i| format!("Line {}", i)).join("\n");
+    static ref ORIGINAL: String = (0..ORIGINAL_LINE_COUNT)
+        .map(|i| format!("Line {}", i))
+        .join("\n");
     static ref LINE_NUMBER_PATTERN: Regex = Regex::new(r"^Line (?P<N>\d+)\n?$").unwrap();
 }
 
@@ -51,11 +54,37 @@ fn expected(n: usize) -> (Vec<Line>, usize) {
             .with_start(len)
             .with_end(len + n)
             .with_line_no(Ok(k))
-            .with_custom_highlight(FILTERED_LINE_SOURCE_CUSTOM_DATA_KEY, CustomHighlight::new(5_usize, n))
+            .with_custom_highlight(
+                FILTERED_LINE_SOURCE_CUSTOM_DATA_KEY,
+                CustomHighlight::new(5_usize, n),
+            )
             .build();
         arr.push(line);
         (arr, len + n + 1)
     })
+}
+
+fn get_filtered_each_fifth(neighbourhood: usize, src: &str) -> String {
+    let n = src.lines().count();
+    src.split_inclusive('\n')
+        .filter(|line| {
+            LINE_NUMBER_PATTERN
+                .captures(line)
+                .and_then(|caps| caps.name("N"))
+                .iter()
+                .find(|m| {
+                    m.as_str()
+                        .parse::<usize>()
+                        .map(|line_no| {
+                            let (q, r) = line_no.div_rem_euclid(&5);
+                            (5 - r <= neighbourhood && q < (n - 1) / 5)
+                                || (q > 0 && r <= neighbourhood)
+                        })
+                        .unwrap_or_default()
+                })
+                .is_some()
+        })
+        .join("")
 }
 
 #[test]
@@ -67,7 +96,10 @@ fn test_read_next_line() {
         .with_start(0)
         .with_end(6)
         .with_line_no(Ok(5))
-        .with_custom_highlight(FILTERED_LINE_SOURCE_CUSTOM_DATA_KEY, CustomHighlight::new(5_usize, 6_usize))
+        .with_custom_highlight(
+            FILTERED_LINE_SOURCE_CUSTOM_DATA_KEY,
+            CustomHighlight::new(5_usize, 6_usize),
+        )
         .build();
 
     assert_that!(proxy.read_next_line(0.into()))
@@ -104,7 +136,10 @@ fn test_read_prev_line() {
         .with_start(0)
         .with_end(6)
         .with_line_no(Ok(5))
-        .with_custom_highlight(FILTERED_LINE_SOURCE_CUSTOM_DATA_KEY, CustomHighlight::new(5_usize, 6_usize))
+        .with_custom_highlight(
+            FILTERED_LINE_SOURCE_CUSTOM_DATA_KEY,
+            CustomHighlight::new(5_usize, 6_usize),
+        )
         .build();
     assert_that!(proxy.read_prev_line(0.into()))
         .is_some()
@@ -115,7 +150,10 @@ fn test_read_prev_line() {
         .with_start(7)
         .with_end(14)
         .with_line_no(Ok(10))
-        .with_custom_highlight(FILTERED_LINE_SOURCE_CUSTOM_DATA_KEY, CustomHighlight::new(5_usize, 7_usize))
+        .with_custom_highlight(
+            FILTERED_LINE_SOURCE_CUSTOM_DATA_KEY,
+            CustomHighlight::new(5_usize, 7_usize),
+        )
         .build();
     assert_that!(proxy.read_prev_line(7.into()))
         .is_some()
@@ -161,7 +199,7 @@ mod read_raw {
 
     macro_rules! test {
         ($n: literal, $from: literal, $to: literal, $expected: literal) => {
-            paste!{
+            paste! {
                 #[test]
                 fn [<test $n>]() {
                     let mut proxy = create_filtered();
@@ -180,7 +218,6 @@ mod read_raw {
     test!(5, 0, 22, "Line 5\nLine 10\nLine 15");
     test!(6, 0, 38, "Line 5\nLine 10\nLine 15\nLine 20\nLine 25");
     test!("empty", 0, 0, "");
-
 }
 
 mod skip_token {
@@ -190,7 +227,7 @@ mod skip_token {
 
     macro_rules! test {
         ($name: literal, $offset: literal, $direction: expr, $expected: literal) => {
-            paste!{
+            paste! {
                 #[test]
                 fn [<test_ $name>]() {
                     let mut proxy = create_filtered();
@@ -215,10 +252,9 @@ mod skip_token {
 }
 
 mod full_scan {
-    use spectral::prelude::*;
+    use super::*;
     use crate::background_process::task_context::TaskContext;
     use crate::data_source::StrBackend;
-    use super::*;
 
     #[test]
     fn test_neighbourhood_1() {
@@ -228,17 +264,17 @@ mod full_scan {
         let filter = Arc::new(filter_each_fifth);
         let is_interrupted = crossbeam_channel::never();
         let mut ctx = TaskContext::new(tx, is_interrupted, Uuid::new_v4());
-        let result = FilteredLineSource::full_scan(backend, filter, neighbourhood as usize, &mut ctx);
+        let result =
+            FilteredLineSource::full_scan(backend, filter, neighbourhood as usize, &mut ctx);
         drop(ctx);
 
         assert_that!(result).contains(Integer::from(ORIGINAL.len()));
 
-        let mut messages = rx.into_iter()
-            .filter_map(|s| {
-                match s {
-                    Signal::Custom(msgs) => Some(msgs),
-                    _ => None,
-                }
+        let mut messages = rx
+            .into_iter()
+            .filter_map(|s| match s {
+                Signal::Custom(msgs) => Some(msgs),
+                _ => None,
             })
             .flatten();
 
@@ -250,12 +286,11 @@ mod full_scan {
                 && i < ORIGINAL_LINE_COUNT - neighbourhood
                 && (i % 5 <= neighbourhood || i % 5 >= 5 - neighbourhood)
             {
-                asserting!(&line).that(&messages.next())
-                    .contains(&Message {
-                        proxy_offset,
-                        original_offset,
-                        line_length: Integer::from(line.len()),
-                    });
+                asserting!(&line).that(&messages.next()).contains(&Message {
+                    proxy_offset,
+                    original_offset,
+                    line_length: Integer::from(line.len()),
+                });
                 proxy_offset = proxy_offset + line.len() + 1;
             }
             original_offset = original_offset + line.len() + 1;
@@ -266,14 +301,14 @@ mod full_scan {
 }
 
 mod filtered_reader {
-    
-    use std::io::{BufReader, Cursor, Read, Seek};
-    use std::sync::Arc;
-    use itertools::Itertools;
-    use spectral::prelude::*;
-    use crate::data_source::CustomHighlight;
-    use crate::data_source::filtered::filtered_line_source::tests::{filter_each_fifth, ORIGINAL};
+    use super::{filter_each_fifth, get_filtered_each_fifth, ORIGINAL};
     use crate::data_source::filtered::filtered_reader::FilteredReader;
+    use crate::data_source::CustomHighlight;
+    use itertools::Itertools;
+    use sif::{ide, parameterized};
+    use spectral::prelude::*;
+    use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
+    use std::sync::Arc;
 
     #[test]
     fn test_read_neighbourhood_0_none_match() {
@@ -314,7 +349,8 @@ mod filtered_reader {
     }
 
     fn test_read_all_match(neighbourhood: u8) {
-        let test_data = ORIGINAL.split_inclusive('\n')
+        let test_data = ORIGINAL
+            .split_inclusive('\n')
             .map(|line| TestData::new(line.len(), line))
             .collect_vec();
         let mut filtered_reader = test_read(neighbourhood, all_match, test_data);
@@ -325,17 +361,25 @@ mod filtered_reader {
 
     #[test]
     fn test_read_neighbourhood_1_each_fifth() {
-        test_read(1, filter_each_fifth, vec![
-            TestData::new(10, "Line 4\nLin"),
-            TestData::new(1, "e"),
-            TestData::new(16, " 5\nLine 6\nLine 9"),
-            TestData::new(1, "\n"),
-            TestData::new(8, "Line 10\n"),
-            TestData::new(16, "Line 11\nLine 14\n"),
-        ]);
+        test_read(
+            1,
+            filter_each_fifth,
+            vec![
+                TestData::new(10, "Line 4\nLin"),
+                TestData::new(1, "e"),
+                TestData::new(16, " 5\nLine 6\nLine 9"),
+                TestData::new(1, "\n"),
+                TestData::new(8, "Line 10\n"),
+                TestData::new(16, "Line 11\nLine 14\n"),
+            ],
+        );
     }
 
-    fn test_read(neighbourhood: u8, filter: fn(&str) -> Vec<CustomHighlight>, data: Vec<TestData>) -> FilteredReader<Cursor<&'static [u8]>> {
+    fn test_read(
+        neighbourhood: u8,
+        filter: fn(&str) -> Vec<CustomHighlight>,
+        data: Vec<TestData>,
+    ) -> FilteredReader<Cursor<&'static [u8]>> {
         let reader = BufReader::new(Cursor::new(ORIGINAL.as_bytes()));
         let mut filtered_reader = FilteredReader::new(reader, Arc::new(filter), neighbourhood);
         let mut i = 0;
@@ -349,11 +393,86 @@ mod filtered_reader {
             bytes_read += expected_read as u64;
             asserting!(&descr).that(&r).is_ok_containing(expected_read);
             let actual = String::from_utf8_lossy(&buf).to_string();
-            asserting!(&descr).that(&actual).is_equal_to(&test_data.expected);
+            asserting!(&descr)
+                .that(&actual)
+                .is_equal_to(&test_data.expected);
             let stream_position = filtered_reader.stream_position();
-            asserting!(&descr).that(&stream_position).is_ok_containing(bytes_read);
+            asserting!(&descr)
+                .that(&stream_position)
+                .is_ok_containing(bytes_read);
         }
         filtered_reader
+    }
+
+    // #[test]
+    // fn debug_test_seek_after_read() {
+    //     let filtered_src = get_filtered_each_fifth(1, &ORIGINAL);
+    //     println!("{}", &filtered_src);
+    //     println!("{}", filtered_src.as_bytes().len());
+    //     test_seek_after_read(
+    //         1,
+    //         filter_each_fifth,
+    //         0,
+    //         SeekFrom::End(-20),
+    //         filtered_src.as_bytes().len() as u64 - 20,
+    //     );
+    // }
+
+    ide!();
+
+    #[parameterized]
+    #[case(0, all_match, 7, SeekFrom::Current(3), 10)]
+    #[case(1, all_match, 7, SeekFrom::Current(3), 10)]
+    #[case(1, all_match, 7, SeekFrom::Current(20), 27)]
+    #[case(5, all_match, 7, SeekFrom::Current(20), 27)]
+    #[case(0, all_match, 7, SeekFrom::Current(-3), 4)]
+    #[case(1, all_match, 7, SeekFrom::Current(-3), 4)]
+    #[case(1, all_match, 20, SeekFrom::Current(-10), 10)]
+    #[case(5, all_match, 20, SeekFrom::Current(-20), 0)]
+    #[case(0, filter_each_fifth, 7, SeekFrom::Current(3), 10)]
+    #[case(0, filter_each_fifth, 7, SeekFrom::Current(3), 10)]
+    #[case(1, filter_each_fifth, 7, SeekFrom::Current(3), 10)]
+    #[case(1, filter_each_fifth, 7, SeekFrom::Current(20), 27)]
+    #[case(5, filter_each_fifth, 7, SeekFrom::Current(20), 27)]
+    #[case(0, filter_each_fifth, 7, SeekFrom::Current(-3), 4)]
+    #[case(1, filter_each_fifth, 7, SeekFrom::Current(-3), 4)]
+    #[case(1, filter_each_fifth, 20, SeekFrom::Current(-10), 10)]
+    #[case(5, filter_each_fifth, 20, SeekFrom::Current(-10), 10)]
+    #[case(0, filter_each_fifth, 7, SeekFrom::Current(-7), 0)]
+    #[case(1, filter_each_fifth, 20, SeekFrom::Current(-20), 0)]
+    #[case(5, filter_each_fifth, 20, SeekFrom::Current(-20), 0)]
+    //
+    #[case(0, filter_each_fifth, 0, SeekFrom::End(-20), get_filtered_each_fifth(0, &ORIGINAL).as_bytes().len() as u64 - 20)]
+    #[case(1, filter_each_fifth, 0, SeekFrom::End(-20), get_filtered_each_fifth(1, &ORIGINAL).as_bytes().len() as u64 - 20)]
+    #[case(5, filter_each_fifth, 0, SeekFrom::End(-20), get_filtered_each_fifth(5, &ORIGINAL).as_bytes().len() as u64 - 20)]
+    #[case(0, filter_each_fifth, 0, SeekFrom::End(-100), get_filtered_each_fifth(0, &ORIGINAL).as_bytes().len() as u64 - 100)]
+    #[case(1, filter_each_fifth, 0, SeekFrom::End(-100), get_filtered_each_fifth(1, &ORIGINAL).as_bytes().len() as u64 - 100)]
+    #[case(5, filter_each_fifth, 0, SeekFrom::End(-100), get_filtered_each_fifth(5, &ORIGINAL).as_bytes().len() as u64 - 100)]
+    fn test_seek_after_read(
+        neighbourhood: u8,
+        filter: fn(&str) -> Vec<CustomHighlight>,
+        read: usize,
+        seek_from: SeekFrom,
+        expected: u64,
+    ) {
+        println!(
+            "Test input: neighbourhood={}, filter={:?}, read={}, seek={:?}, expected={}",
+            &neighbourhood,
+            get_function_name(filter),
+            &read,
+            &seek_from,
+            &expected
+        );
+
+        let reader = BufReader::new(Cursor::new(ORIGINAL.as_bytes()));
+        let mut filtered_reader = FilteredReader::new(reader, Arc::new(filter), neighbourhood);
+
+        let mut buf = vec![0_u8; read];
+        let bytes_read = filtered_reader.read(&mut buf);
+        assert_that!(&bytes_read).is_ok_containing(read);
+
+        let result = filtered_reader.seek(seek_from);
+        assert_that!(&result).is_ok_containing(expected);
     }
 
     #[derive(Debug, Clone)]
@@ -377,5 +496,17 @@ mod filtered_reader {
 
     fn all_match(s: &str) -> Vec<CustomHighlight> {
         vec![CustomHighlight::new(0, s.len().saturating_sub(1))]
+    }
+
+    fn get_function_name(f: fn(&str) -> Vec<CustomHighlight>) -> &'static str {
+        if f == all_match {
+            "all_match"
+        } else if f == none_match {
+            "none_match"
+        } else if f == filter_each_fifth {
+            "filter_each_fifth"
+        } else {
+            "<UNKNOWN>"
+        }
     }
 }

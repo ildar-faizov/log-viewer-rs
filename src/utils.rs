@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::fmt::Debug;
 use std::time::Duration;
 use cursive::utils::span::IndexedCow;
 use log::Level;
@@ -335,5 +336,30 @@ pub mod event_emitter {
             self.send(evt)
                 .unwrap_or_else(|_| { panic!("{}", msg) });
         }
+    }
+}
+
+#[cfg(not(test))]
+pub fn print_debug<D, F>(_: F)
+    where
+    D: Debug,
+    F: FnOnce() -> D
+{
+    // no op
+}
+
+#[cfg(test)]
+pub fn print_debug<D, F>(f: F)
+where
+    D: Debug,
+    F: FnOnce() -> D
+{
+    println!("{:?}", f());
+}
+
+#[macro_export]
+macro_rules! tout {
+    ($fmt:expr, $($args:tt)*) => {
+        crate::utils::print_debug(|| format!($fmt, $($args)*));
     }
 }

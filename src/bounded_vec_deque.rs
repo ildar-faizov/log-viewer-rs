@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::fmt::{Debug, Formatter};
 
 pub struct BoundedVecDeque<T> {
     vec: VecDeque<T>,
@@ -37,6 +38,7 @@ impl<T> BoundedVecDeque<T> {
         self.vec.pop_front()
     }
 
+    #[allow(dead_code)]
     pub fn pop_back(&mut self) -> Option<T> {
         self.vec.pop_back()
     }
@@ -55,5 +57,11 @@ impl<T> BoundedVecDeque<T> {
 
     pub fn clear(&mut self) {
         self.vec.clear();
+    }
+}
+
+impl<T: Debug> Debug for BoundedVecDeque<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{:?}", &self.vec))
     }
 }

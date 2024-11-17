@@ -858,6 +858,7 @@ dependencies = [
  "puffin",
  "puffin_http",
  "regex",
+ "sif",
  "spectral",
  "stopwatch",
  "thiserror",
@@ -1605,6 +1606,26 @@ dependencies = [
  "ryu",
  "serde",
  "unsafe-libyaml",
+]
+
+[[package]]
+name = "sif"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f63ec563107b37d8c4326ccda261ba085dd95ecaaa8d2854b30b54dbe3caf9f"
+dependencies = [
+ "sif_macro",
+]
+
+[[package]]
+name = "sif_macro"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "632555718692f7bdfe1b34897e79a6b66f7001d8d43be7acadc719a83792c85c"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
 ]
 
 [[package]]

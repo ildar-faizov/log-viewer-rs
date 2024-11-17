@@ -2,7 +2,7 @@ use std::cmp::{max, min};
 use std::io::{BufReader, Read, Seek};
 
 pub trait BidirectionalBufRead {
-    fn read_fluently<I, F>(&mut self, n: I, consumer: F) -> std::io::Result<u64>
+    fn read_fluently<I, F>(&mut self, n: I, consumer: F) -> std::io::Result<usize>
     where
         I: Into<i128>,
         F: FnMut(&[u8]);
@@ -14,7 +14,7 @@ pub trait BidirectionalBufRead {
 }
 
 impl<R: Seek + Read> BidirectionalBufRead for BufReader<R> {
-    fn read_fluently<I, F>(&mut self, n: I, mut consumer: F) -> std::io::Result<u64>
+    fn read_fluently<I, F>(&mut self, n: I, mut consumer: F) -> std::io::Result<usize>
     where
         I: Into<i128>,
         F: FnMut(&[u8]),
@@ -25,18 +25,18 @@ impl<R: Seek + Read> BidirectionalBufRead for BufReader<R> {
             let stream_position = self.stream_position()? as i128;
             n = max(n, -stream_position);
             self.seek_relative(n as i64)?;
-            -n as u64
+            -n
         } else {
-            n as u64
-        };
-        let mut bytes_read = 0_u64;
+            n
+        } as usize;
+        let mut bytes_read = 0_usize;
         while bytes_read < bytes_to_read {
             let d = min((bytes_to_read - bytes_read) as usize, buffer.len());
             let b = self.read(&mut buffer[0..d])?;
             if b == 0 {
                 break;
             }
-            bytes_read += b as u64;
+            bytes_read += b;
             if n < 0 {
                 let _ = &buffer[0..b].reverse();
             }
