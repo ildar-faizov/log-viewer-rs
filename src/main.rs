@@ -18,7 +18,7 @@ use std::time::Duration;
 use anyhow::anyhow;
 use clap::Parser;
 use crossbeam_channel::{Receiver, Sender, unbounded};
-use cursive::{Cursive, CursiveRunnable, CursiveRunner, View};
+use cursive::{Cursive, CursiveRunner, View};
 use cursive::direction::Direction;
 use cursive::event::Event;
 use cursive::event::Event::Key;
@@ -79,7 +79,7 @@ mod bounded_vec_deque;
 const METRIC_APP_CYCLE: &str = "app_cycle";
 const PROFILER_FLUSH_PERIOD: Duration = Duration::from_secs(5);
 
-fn main() -> std::io::Result<()> {
+fn main() -> anyhow::Result<()> {
 	let args = Args::parse();
 
 	init_logging(&args)?;
@@ -90,8 +90,7 @@ fn main() -> std::io::Result<()> {
 	let (sender, receiver) = unbounded();
 	let (model, background_process_registry) = create_model(&args, sender, metrics.ok());
 
-    run_ui(receiver, model, background_process_registry);
-	Ok(())
+    run_ui(receiver, model, background_process_registry)
 }
 
 fn init_logging(args: &Args) -> std::io::Result<()> {
@@ -167,10 +166,13 @@ fn create_model(args: &Args, sender: Sender<ModelEvent>, metrics_holder: Option<
 	(model, background_process_registry)
 }
 
-fn run_ui(receiver: Receiver<ModelEvent>, model_ref: Shared<RootModel>, background_process_registry: Shared<BackgroundProcessRegistry>) {
+fn run_ui(receiver: Receiver<ModelEvent>, model_ref: Shared<RootModel>, background_process_registry: Shared<BackgroundProcessRegistry>) -> anyhow::Result<()> {
 	describe_histogram!(METRIC_APP_CYCLE, Unit::Milliseconds, "Application cycle");
 
-	let mut app = cursive::default().into_runner();
+	let backend = cursive::backends::crossterm::Backend::init()?;
+	let buffered_backend = cursive_buffered_backend::BufferedBackend::new(backend);
+
+	let mut app = Cursive::default().into_runner(Box::new(buffered_backend));
 	app.clear_global_callbacks(Event::CtrlChar('c')); // Ctrl+C is for copy
 
 	app.add_global_callback(Key(Esc), |t: &mut Cursive| {
@@ -212,10 +214,11 @@ fn run_ui(receiver: Receiver<ModelEvent>, model_ref: Shared<RootModel>, backgrou
 			}
 		})
 	}
+	Ok(())
 }
 
 #[profiling::function]
-fn handle_model_update(app: &mut CursiveRunner<CursiveRunnable>, model: Shared<RootModel>, event: ModelEvent) -> Result<bool, &'static str> {
+fn handle_model_update(app: &mut CursiveRunner<Cursive>, model: Shared<RootModel>, event: ModelEvent) -> Result<bool, &'static str> {
 	match event {
 		OpenFileDialog(show) => {
 			if show {

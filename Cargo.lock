@@ -184,15 +184,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "casey"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "614586263949597dcc18675da12ef9b429135e13628d92eb8b8c6fa50ca5656b"
-dependencies = [
- "syn 1.0.109",
-]
-
-[[package]]
 name = "cc"
 version = "1.0.98"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -367,6 +358,19 @@ dependencies = [
  "libc",
  "log",
  "signal-hook",
+ "unicode-segmentation",
+ "unicode-width",
+]
+
+[[package]]
+name = "cursive_buffered_backend"
+version = "0.6.2"
+source = "git+https://github.com/agavrilov/cursive_buffered_backend#f22e0e825bb00d273732370d814dc5eed818f2c7"
+dependencies = [
+ "cursive_core",
+ "enumset",
+ "log",
+ "smallvec",
  "unicode-segmentation",
  "unicode-width",
 ]
@@ -858,12 +862,12 @@ name = "logv"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "casey",
  "chrono",
  "clap",
  "copypasta",
  "crossbeam-channel",
  "cursive",
+ "cursive_buffered_backend",
  "cursive_table_view",
  "derive_builder",
  "fluent-integer",

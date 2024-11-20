@@ -42,10 +42,10 @@ profiling = { version = "1.0.13", features = ["profile-with-puffin"] }
 linked-hash-map = "0.5.6"
 mucow = "0.1.0"
 yaml-rust2 = "0.8.1"
-casey = "0.4.0"
 trim-margin = "0.1.0"
 copypasta = "0.10.1"
 sif = "0.1.0"
+cursive_buffered_backend = { git = "https://github.com/agavrilov/cursive_buffered_backend" }
 
 [dev-dependencies]
 paste = "*"
