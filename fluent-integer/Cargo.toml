@@ -1,0 +1,13 @@
+[package]
+name = "fluent-integer"
+version = "0.1.0"
+authors = ["Ildar Faizov <ildar.faizov@gmail.com>"]
+edition = "2018"
+license = "MIT"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+paste = "*"
+num-integer = "*"
+num-traits = "*"
