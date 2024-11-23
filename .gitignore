@@ -1,4 +1,4 @@
-/target
-logv/.idea
+**/target
+**/.idea
 logv.log
 deps.txt
