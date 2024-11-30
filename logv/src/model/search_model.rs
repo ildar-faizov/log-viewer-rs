@@ -4,6 +4,7 @@ use crossbeam_channel::Sender;
 use fluent_integer::Integer;
 use crate::background_process::run_in_background::RunInBackground;
 use crate::data_source::Direction;
+use crate::data_source::reader_factory::ReaderFactory;
 use crate::model::model::ModelEvent;
 use crate::model::navigable_searcher_constructor::NavigableSearcherConstructorBuilder;
 use crate::model::search::Search;
@@ -61,11 +62,11 @@ impl<R: RunInBackground + 'static> SearchModel<R> {
         self.pattern.as_str()
     }
 
-    pub fn start_search(&mut self) -> anyhow::Result<Search> {
+    pub fn start_search(&mut self, reader: Box<dyn ReaderFactory>) -> anyhow::Result<Search> {
         let background_process_registry = self.runner.clone();
         let background_process_registry = &mut *background_process_registry.get_mut_ref();
         let constructor = NavigableSearcherConstructorBuilder::default()
-            .file_name(self.file_name.clone())
+            .reader_factory(reader)
             .pattern(self.pattern.clone())
             .is_regexp(self.is_regexp)
             .initial_offset(self.cursor_pos.filter(|_| self.is_from_cursor))

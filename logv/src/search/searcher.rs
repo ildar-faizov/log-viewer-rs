@@ -1,8 +1,9 @@
-use std::io::{Read, Seek};
+use std::io::{BufReader, Read, Seek};
 use std::ops::Add;
 use regex::{Match, Regex};
+use thiserror::Error;
 use fluent_integer::Integer;
-use crate::data_source::{Direction, LineSourceBackend};
+use crate::data_source::Direction;
 use crate::interval::Interval;
 use crate::search::regex_searcher_impl::RegexSearcherImpl;
 use crate::search::searcher_impl::SearcherImpl;
@@ -18,19 +19,21 @@ pub trait Searcher {
     fn search(&mut self, direction: Direction, range: Interval<Integer>) -> SearchResult;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum SearchError {
+    #[error("Pattern not found")]
     NotFound,
-    IO(std::io::Error)
+    #[error(transparent)]
+    IO(#[from] std::io::Error)
 }
 
 pub type SearchResult = Result<Occurrence, SearchError>;
 
-pub fn create_searcher<R: Read + Seek + 'static, B: LineSourceBackend<R> + 'static>(backend: B, pattern: String, is_regex: bool) -> Box<dyn Searcher> {
+pub fn create_searcher<R: Read + Seek + 'static>(reader: BufReader<R>, pattern: String, is_regex: bool) -> Box<dyn Searcher> {
     if is_regex {
-        Box::new(RegexSearcherImpl::new(backend, Regex::new(pattern.as_str()).unwrap()))
+        Box::new(RegexSearcherImpl::new(reader, Regex::new(pattern.as_str()).unwrap()))
     } else {
-        Box::new(SearcherImpl::new(backend, pattern))
+        Box::new(SearcherImpl::new(reader, pattern))
     }
 }
 

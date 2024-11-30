@@ -3,7 +3,7 @@ use std::io::{BufReader, Read, Seek};
 use fluent_integer::Integer;
 use SearchError::IO;
 use crate::advanced_io::advanced_buf_reader::BidirectionalBufRead;
-use crate::data_source::{Direction, LineSourceBackend};
+use crate::data_source::Direction;
 use crate::interval::Interval;
 use crate::search::search_utils::calculate_offset_and_boundary;
 use crate::search::searcher::{Occurrence, Searcher, SearchError, SearchResult};
@@ -20,8 +20,7 @@ pub struct SearcherImpl<R>
 impl<R> SearcherImpl<R>
     where R: Read + Seek
 {
-    pub fn new<B: LineSourceBackend<R>>(backend: B, pattern: String) -> SearcherImpl<R> {
-        let reader = backend.new_reader();
+    pub fn new(reader: BufReader<R>, pattern: String) -> SearcherImpl<R> {
         SearcherImpl {
             f: reader,
             pattern,

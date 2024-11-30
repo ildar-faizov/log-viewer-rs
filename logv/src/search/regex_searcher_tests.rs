@@ -1,7 +1,7 @@
 use regex::Regex;
 use spectral::prelude::*;
 use fluent_integer::Integer;
-use crate::data_source::{Direction, StrBackend};
+use crate::data_source::{Direction, LineSourceBackend, StrBackend};
 use crate::interval::Interval;
 use crate::search::regex_searcher_impl::RegexSearcherImpl;
 use crate::search::searcher::{Occurrence, Searcher, SearchError};
@@ -13,7 +13,7 @@ fn test_basic_regex() {
     let source = "Foo bar\nbar baz\n\nfoo bar";
     let regex = Regex::new(r"ba.")
         .expect("Failed to parse regex");
-    let mut searcher = RegexSearcherImpl::new(StrBackend::new(source), regex);
+    let mut searcher = RegexSearcherImpl::new(StrBackend::new(source).new_reader(), regex);
 
     let occurrence = searcher.search(Direction::Forward, Interval::all());
     asserting("").that(&occurrence)
@@ -92,7 +92,7 @@ fn test_regex_searcher_backward_not_found() {
 
 fn test_regex(source: &str, pattern: &str, direction: Direction, range: Interval<Integer>, expected: Option<Occurrence>) {
     let regex = Regex::new(pattern).expect("Failed to parse regex");
-    let mut searcher = RegexSearcherImpl::new(StrBackend::new(source), regex);
+    let mut searcher = RegexSearcherImpl::new(StrBackend::new(source).new_reader(), regex);
     let result = searcher.search(direction, range);
     let description = format!("Search '{}' in '{}', range {}", pattern, source, range);
     match expected {

@@ -11,8 +11,11 @@ use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
 use std::path::PathBuf;
 use std::sync::Arc;
+use crate::data_source::reader_factory::ReaderFactory;
 pub use crate::data_source::line::{Line, LineBuilder};
 use crate::data_source::read_delimited::read_delimited;
+use crate::data_source::reader_factory::file::FileBasedReaderFactory;
+use crate::data_source::reader_factory::string::StringBasedReaderFactory;
 
 pub const BUFFER_SIZE: usize = 1024 * 1024; // 1MB
 
@@ -99,10 +102,12 @@ pub trait LineSource {
     fn get_line_registry(&self) -> Arc<LineRegistryImpl>;
 }
 
-pub trait LineSourceBackend<R: Read> {
+pub trait LineSourceBackend<R: Read + Seek> {
     fn get_length(&self) -> u64;
 
     fn new_reader(&self) -> BufReader<R>;
+
+    fn reader_factory(&self) -> Box<dyn ReaderFactory>;
 }
 
 #[derive(Clone)]
@@ -123,6 +128,10 @@ impl LineSourceBackend<File> for FileBackend {
 
     fn new_reader(&self) -> BufReader<File> {
         BufReader::new(File::open(&self.file_name).unwrap())
+    }
+
+    fn reader_factory(&self) -> Box<dyn ReaderFactory> {
+        Box::new(FileBasedReaderFactory::new(self.file_name.clone()))
     }
 }
 
@@ -146,9 +155,14 @@ impl<'a> LineSourceBackend<Cursor<&'a [u8]>> for StrBackend<'a> {
         let cursor = Cursor::new(self.s.get_ref().as_bytes());
         BufReader::new(cursor)
     }
+
+    fn reader_factory(&self) -> Box<dyn ReaderFactory> {
+        let content = self.s.get_ref().to_string();
+        Box::new(StringBasedReaderFactory::new(content))
+    }
 }
 
-pub struct LineSourceImpl<R, B> where R: Read, B: LineSourceBackend<R> {
+pub struct LineSourceImpl<R, B> where R: Read + Seek, B: LineSourceBackend<R> {
     backend: B,
     file_reader: Option<Shared<BufReader<R>>>,
     track_line_no: bool,
@@ -287,6 +301,7 @@ mod data_source_tests;
 pub mod line_registry;
 pub mod filtered;
 pub mod line_source_holder;
+pub mod reader_factory;
 mod tokenizer;
 mod custom_highlight;
 mod line;

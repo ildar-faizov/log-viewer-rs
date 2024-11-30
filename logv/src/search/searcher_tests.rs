@@ -1,4 +1,4 @@
-use crate::data_source::{Direction, StrBackend};
+use crate::data_source::{Direction, LineSourceBackend, StrBackend};
 use crate::search::searcher::{Occurrence, Searcher};
 use spectral::prelude::*;
 use crate::interval::Interval;
@@ -56,7 +56,7 @@ fn test_search_backward_exhaustive() {
 #[test]
 fn test_search_backward_with_failure() {
     let backend = StrBackend::new("bar foo");
-    let mut searcher = SearcherImpl::new(backend, "foo".to_string());
+    let mut searcher = SearcherImpl::new(backend.new_reader(), "foo".to_string());
     let result = searcher.search(Direction::Backward, Interval::builder().left_unbounded().right_bound_inclusive(3.into()).build());
     assert_that(&result).is_err();
 }
@@ -67,7 +67,7 @@ fn test_search(src: &'static str, pattern: &'static str, direction: Direction, n
         Direction::Forward => 0_usize,
         Direction::Backward => src.len(),
     };
-    let mut searcher = SearcherImpl::new(backend, pattern.to_string());
+    let mut searcher = SearcherImpl::new(backend.new_reader(), pattern.to_string());
     let find = |p: usize| {
         match direction {
             Direction::Forward => src[p..].find(pattern).map(|r| r + p),

@@ -23,6 +23,8 @@ use crate::utils;
 use fluent_integer::Integer;
 use crate::background_process::task_context::TaskContext;
 use crate::data_source::filtered::foreseeing_filter::{ForeseeingFilter, ForeseeingFilterResult};
+use crate::data_source::reader_factory::filtered::FilteredReaderFactory;
+use crate::data_source::reader_factory::{HasReaderFactory, ReaderFactory};
 
 pub type LineFilter = Arc<dyn Fn(&str) -> Vec<CustomHighlight> + Sync + Send + 'static>;
 
@@ -170,6 +172,15 @@ impl FilteredLineSource {
             handler.interrupt();
         }
         self.original
+    }
+
+    pub fn reader_factory(&self) -> Box<dyn ReaderFactory> {
+        let factory = FilteredReaderFactory::new(
+            self.original.reader_factory(),
+            self.original_filter.clone(),
+            self.neighbourhood
+        );
+        Box::new(factory)
     }
 
     pub fn get_length(&self) -> Option<Integer> {
