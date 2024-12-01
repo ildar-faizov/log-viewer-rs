@@ -1,5 +1,7 @@
 use crossbeam_channel::Sender;
-use crate::model::model::ModelEvent;
+use crate::model::escape_handler::{CompoundEscapeHandler, EscapeHandlerManager, EscapeHandlerResult};
+use crate::model::model::{ModelEvent, RootModel};
+use crate::shared::Shared;
 use crate::utils::event_emitter::EventEmitter;
 
 #[derive(Debug)]
@@ -13,16 +15,18 @@ pub struct FilterDialogModel {
     pattern: String,
     is_regexp: bool,
     neighbourhood: String,
+    escape_handler_manager: EscapeHandlerManager,
 }
 
 impl FilterDialogModel {
-    pub fn new(model_sender: Sender<ModelEvent>) -> Self {
+    pub fn new(model_sender: Sender<ModelEvent>, escape_handler: Shared<CompoundEscapeHandler>) -> Self {
         FilterDialogModel {
             model_sender,
             is_open: false,
             pattern: String::new(),
             is_regexp: false,
             neighbourhood: 0.to_string(),
+            escape_handler_manager: EscapeHandlerManager::new(escape_handler, Self::on_esc),
         }
     }
 
@@ -33,6 +37,7 @@ impl FilterDialogModel {
     pub fn set_open(&mut self, is_open: bool) {
         if self.is_open != is_open {
             self.is_open = is_open;
+            self.escape_handler_manager.toggle(is_open);
             self.emit_event(FilterDialogModelEvent::VisibilityChanged(is_open));
         }
     }
@@ -59,5 +64,15 @@ impl FilterDialogModel {
 
     fn emit_event(&self, evt: FilterDialogModelEvent) {
         self.model_sender.emit_event(ModelEvent::FilterEvent(evt));
+    }
+
+    fn on_esc(root_model: &mut RootModel) -> EscapeHandlerResult {
+        let me = &mut *root_model.get_filter_dialog_model();
+        if me.is_open() {
+            me.set_open(false);
+            EscapeHandlerResult::Dismiss
+        } else {
+            EscapeHandlerResult::Ignore
+        }
     }
 }

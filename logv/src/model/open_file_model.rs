@@ -7,13 +7,16 @@ use std::time::SystemTime;
 use anyhow::anyhow;
 use crossbeam_channel::Sender;
 use itertools::Itertools;
-use crate::model::model::ModelEvent;
+use crate::model::escape_handler::{CompoundEscapeHandler, EscapeHandlerManager, EscapeHandlerResult};
+use crate::model::model::{ModelEvent, RootModel};
+use crate::shared::Shared;
 use crate::utils::event_emitter::EventEmitter;
 
 const GO_UP: &str = "..";
 
 pub struct OpenFileModel {
     sender: Sender<ModelEvent>,
+    escape_handler_manager: EscapeHandlerManager,
     is_open: bool,
     current_location: PathBuf,
     files: Vec<DirEntry0>,
@@ -45,9 +48,10 @@ pub struct EntryInfo {
 }
 
 impl OpenFileModel {
-    pub fn new(sender: Sender<ModelEvent>) -> Self {
+    pub fn new(sender: Sender<ModelEvent>, escape_handler: Shared<CompoundEscapeHandler>) -> Self {
         OpenFileModel {
             sender,
+            escape_handler_manager: EscapeHandlerManager::new(escape_handler, Self::on_esc),
             is_open: false,
             current_location: PathBuf::new(),
             files: vec![],
@@ -59,6 +63,7 @@ impl OpenFileModel {
     pub fn set_open(&mut self, is_open: bool) {
         if self.is_open != is_open {
             self.is_open = is_open;
+            self.escape_handler_manager.toggle(is_open);
             self.sender.emit_event(ModelEvent::OpenFileDialog(is_open));
         }
     }
@@ -187,6 +192,16 @@ impl OpenFileModel {
 
             files
         })
+    }
+
+    fn on_esc(root_model: &mut RootModel) -> EscapeHandlerResult {
+        let open_file_model = &mut *root_model.get_open_file_model();
+        if open_file_model.is_open() {
+            open_file_model.set_open(false);
+            EscapeHandlerResult::Dismiss
+        } else {
+            EscapeHandlerResult::Ignore
+        }
     }
 }
 

@@ -15,6 +15,7 @@ use log::Level;
 use std::cmp::Ordering;
 use std::path::PathBuf;
 use uuid::Uuid;
+use crate::model::escape_handler::{CompoundEscapeHandler, EscapeHandlerResult};
 
 pub const DATE_FORMAT: &str = "%d-%b-%Y %T";
 
@@ -27,11 +28,14 @@ impl<R: RunInBackground + 'static> GoToDateModel<R> {
     pub fn new(
         model_sender: Sender<ModelEvent>,
         background_process_registry: Shared<R>,
+        escape_handler: Shared<CompoundEscapeHandler>,
     ) -> Self {
         let go_to_model = AbstractGoToModel::new(
             model_sender,
             background_process_registry,
             Box::new(ModelEvent::GoToDateOpen),
+            escape_handler,
+            Self::on_esc,
         );
         Self {
             go_to_model,
@@ -79,6 +83,16 @@ impl<R: RunInBackground + 'static> GoToDateModel<R> {
     fn handle_result(root_model: &mut RootModel, pid: Uuid, msg: Signal<(), Result<Integer, GoToError>>) -> Result<(), GoToError> {
         let m = &mut root_model.get_go_to_date_model().go_to_model;
         m.handle_result(pid, msg)
+    }
+
+    fn on_esc(root_model: &mut RootModel) -> EscapeHandlerResult {
+        let me = &mut *root_model.get_go_to_date_model();
+        if me.is_open() {
+            me.set_is_open(false);
+            EscapeHandlerResult::Dismiss
+        } else {
+            EscapeHandlerResult::Ignore
+        }
     }
 }
 

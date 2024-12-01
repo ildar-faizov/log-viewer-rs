@@ -9,6 +9,7 @@ use crate::utils::event_emitter::EventEmitter;
 use crossbeam_channel::Sender;
 use fluent_integer::Integer;
 use uuid::Uuid;
+use crate::model::escape_handler::{CompoundEscapeHandler, EscapeHandlerManager, EscapeHandlerResult};
 
 pub struct AbstractGoToModel<R: RunInBackground>
 {
@@ -17,6 +18,7 @@ pub struct AbstractGoToModel<R: RunInBackground>
     current_process: Option<BackgroundProcessHandler>,
     is_open: bool,
     open_event_producer: Box<dyn Fn(bool) -> ModelEvent>,
+    escape_handler_manager: EscapeHandlerManager,
 }
 
 impl<R: RunInBackground> AbstractGoToModel<R>
@@ -25,6 +27,8 @@ impl<R: RunInBackground> AbstractGoToModel<R>
         model_sender: Sender<ModelEvent>,
         background_process_registry: Shared<R>,
         open_event_producer: Box<dyn Fn(bool) -> ModelEvent>,
+        escape_handler: Shared<CompoundEscapeHandler>,
+        on_esc: fn(&mut RootModel) -> EscapeHandlerResult,
     ) -> Self {
         AbstractGoToModel {
             model_sender,
@@ -32,12 +36,14 @@ impl<R: RunInBackground> AbstractGoToModel<R>
             current_process: None,
             is_open: false,
             open_event_producer,
+            escape_handler_manager: EscapeHandlerManager::new(escape_handler, on_esc),
         }
     }
 
     pub fn set_is_open(&mut self, is_open: bool) {
         if self.is_open != is_open {
             self.is_open = is_open;
+            self.escape_handler_manager.toggle(is_open);
             let evt = (*self.open_event_producer)(self.is_open);
             self.model_sender.emit_event(evt);
         }

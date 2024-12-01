@@ -9,9 +9,10 @@ use metrics_util::registry::{AtomicStorage, Registry};
 use num_traits::FromPrimitive;
 use ordered_float::OrderedFloat;
 use crate::application_metrics::{Description, MetricType};
+use crate::model::escape_handler::{CompoundEscapeHandler, EscapeHandlerManager, EscapeHandlerResult};
 use crate::shared::Shared;
 use crate::utils::event_emitter::EventEmitter;
-use super::model::ModelEvent;
+use super::model::{ModelEvent, RootModel};
 
 const PERCENTILES: [u8; 4] = [50, 90, 99, 100];
 
@@ -20,6 +21,7 @@ pub struct MetricsModel {
     registry: Option<Rc<Registry<Key, AtomicStorage>>>,
     descriptions: Option<Shared<HashMap<KeyName, Description>>>,
     is_open: bool,
+    escape_handler_manager: EscapeHandlerManager,
 }
 
 #[derive(Debug)]
@@ -41,13 +43,18 @@ pub struct SingleMetrics {
 }
 
 impl MetricsModel {
-    pub fn new(sender: Sender<ModelEvent>, metrics_holder: Option<MetricsHolder>) -> Self {
+    pub fn new(
+        sender: Sender<ModelEvent>,
+        metrics_holder: Option<MetricsHolder>,
+        escape_handler: Shared<CompoundEscapeHandler>,
+    ) -> Self {
         let (registry, descriptions) = metrics_holder.unzip();
         Self {
             sender,
             registry,
             descriptions,
             is_open: false,
+            escape_handler_manager: EscapeHandlerManager::new(escape_handler, Self::on_esc),
         }
     }
 
@@ -58,6 +65,7 @@ impl MetricsModel {
     pub fn set_open(&mut self, is_open: bool) {
         if self.is_open != is_open {
             self.is_open = is_open;
+            self.escape_handler_manager.toggle(is_open);
             self.emit_event(MetricsModelEvent::Open(is_open));
         }
     }
@@ -87,6 +95,16 @@ impl MetricsModel {
 
     fn emit_event(&self, evt: MetricsModelEvent) {
         self.sender.emit_event(ModelEvent::MetricsEvent(evt));
+    }
+
+    fn on_esc(root_model: &mut RootModel) -> EscapeHandlerResult {
+        let me = &mut *root_model.get_metrics_model();
+        if me.is_open() {
+            me.set_open(false);
+            EscapeHandlerResult::Dismiss
+        } else {
+            EscapeHandlerResult::Ignore
+        }
     }
 }
 

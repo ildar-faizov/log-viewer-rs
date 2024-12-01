@@ -17,3 +17,4 @@ pub mod filter_model;
 mod navigable_searcher_constructor;
 mod abstract_go_to_model;
 mod guess_date_format;
+mod escape_handler;

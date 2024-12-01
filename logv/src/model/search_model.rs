@@ -5,7 +5,8 @@ use fluent_integer::Integer;
 use crate::background_process::run_in_background::RunInBackground;
 use crate::data_source::Direction;
 use crate::data_source::reader_factory::ReaderFactory;
-use crate::model::model::ModelEvent;
+use crate::model::escape_handler::{CompoundEscapeHandler, EscapeHandlerManager, EscapeHandlerResult};
+use crate::model::model::{ModelEvent, RootModel};
 use crate::model::navigable_searcher_constructor::NavigableSearcherConstructorBuilder;
 use crate::model::search::Search;
 use crate::shared::Shared;
@@ -14,6 +15,7 @@ use crate::utils::event_emitter::EventEmitter;
 pub struct SearchModel<R: RunInBackground> {
     model_sender: Sender<ModelEvent>,
     runner: Shared<R>,
+    escape_handler_manager: EscapeHandlerManager,
     file_name: Option<PathBuf>,
     visible: bool,
     pattern: String,
@@ -24,10 +26,15 @@ pub struct SearchModel<R: RunInBackground> {
 }
 
 impl<R: RunInBackground + 'static> SearchModel<R> {
-    pub fn new(model_sender: Sender<ModelEvent>, runner: Shared<R>) -> Self {
+    pub fn new(
+        model_sender: Sender<ModelEvent>,
+        runner: Shared<R>,
+        escape_handler: Shared<CompoundEscapeHandler>,
+    ) -> Self {
         SearchModel {
             model_sender,
             runner,
+            escape_handler_manager: EscapeHandlerManager::new(escape_handler, Self::on_esc),
             file_name: None,
             visible: false,
             pattern: String::new(),
@@ -45,6 +52,7 @@ impl<R: RunInBackground + 'static> SearchModel<R> {
     pub fn set_visible(&mut self, visible: bool) {
         if self.visible != visible {
             self.visible = visible;
+            self.escape_handler_manager.toggle(visible);
             let evt = ModelEvent::SearchOpen(visible);
             self.model_sender.emit_event(evt);
         }
@@ -116,5 +124,15 @@ impl<R: RunInBackground + 'static> SearchModel<R> {
 
     pub fn set_regexp(&mut self, is_regexp: bool) {
         self.is_regexp = is_regexp;
+    }
+
+    fn on_esc(root_model: &mut RootModel) -> EscapeHandlerResult {
+        let mut search_model = root_model.get_search_model();
+        if search_model.is_visible() {
+            search_model.set_visible(false);
+            EscapeHandlerResult::Dismiss
+        } else {
+            EscapeHandlerResult::Ignore
+        }
     }
 }

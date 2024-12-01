@@ -4,6 +4,7 @@ use std::env::current_dir;
 use std::fmt::Debug;
 use std::fs::File;
 use std::io::{Read, Seek};
+use std::mem;
 use std::option::Option::Some;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -35,6 +36,7 @@ use crate::model::bgp_model::{BGPModel, BGPModelEvent};
 use crate::model::cursor_helper;
 use crate::model::cursor_shift::CursorShift;
 use crate::model::dimension::Dimension;
+use crate::model::escape_handler::{CompoundEscapeHandler, EscapeHandler, EscapeHandlerResult};
 use crate::model::filter_model::{FilterDialogModel, FilterDialogModelEvent};
 use crate::model::go_to_date_model::GoToDateModel;
 use crate::model::go_to_line_model::GoToLineModel;
@@ -59,6 +61,7 @@ const OFFSET_THRESHOLD: u64 = 8192;
 pub struct RootModel {
     model_sender: Sender<ModelEvent>,
     background_process_registry: Shared<BackgroundProcessRegistry>,
+    escape_handler: Shared<CompoundEscapeHandler>,
     action_registry: Shared<ActionRegistry>,
     open_file_model: Shared<OpenFileModel>,
     file_name: Option<String>,
@@ -129,24 +132,24 @@ impl RootModel {
         metrics_holder: Option<MetricsHolder>,
     ) -> Shared<RootModel> {
         let action_registry = Shared::new(ActionRegistry::new(&OS_PROFILE));
-        let action_registry2 = action_registry.clone();
-        let sender = model_sender.clone();
-        let sender2 = model_sender.clone();
-        let sender3 = model_sender.clone();
-        let sender4 = model_sender.clone();
-        let sender5 = model_sender.clone();
-        let sender6 = model_sender.clone();
-        let sender7 = model_sender.clone();
-        let sender8 = model_sender.clone();
-        let sender9 = model_sender.clone();
-        let registry5 = background_process_registry.clone();
-        let registry6 = background_process_registry.clone();
-        let bgp_model = Shared::new(BGPModel::new(sender8, registry6));
+        let bgp_model = Shared::new(BGPModel::new(model_sender.clone(), background_process_registry.clone()));
+        let escape_handler = Shared::new(CompoundEscapeHandler::new());
+
+        let open_file_model = OpenFileModel::new(model_sender.clone(), escape_handler.clone());
+        let search_model = SearchModel::new(model_sender.clone(), bgp_model.clone(), escape_handler.clone());
+        let help_model = HelpModel::new(model_sender.clone(), &*action_registry.get_ref(), escape_handler.clone());
+        let metrics_model = MetricsModel::new(model_sender.clone(), metrics_holder, escape_handler.clone());
+        let go_to_line_model = GoToLineModel::new(model_sender.clone(), bgp_model.clone(), escape_handler.clone());
+        let go_to_date_model = GoToDateModel::new(model_sender.clone(), bgp_model.clone(), escape_handler.clone());
+        let filter_dialog_model = FilterDialogModel::new(model_sender.clone(), escape_handler.clone());
+        let progress_model = ProgressModel::new(model_sender.clone(), background_process_registry.clone());
+
         let root_model = RootModel {
             model_sender,
             background_process_registry,
+            escape_handler,
             action_registry,
-            open_file_model: Shared::new(OpenFileModel::new(sender5)),
+            open_file_model: Shared::new(open_file_model),
             file_name: None,
             is_file_loaded: false,
             data: None,
@@ -160,14 +163,14 @@ impl RootModel {
             error: None,
             show_line_numbers: true,
             date_format: None,
-            search_model: Shared::new(SearchModel::new(sender, bgp_model.clone())),
+            search_model: Shared::new(search_model),
             current_search: Shared::new(None),
-            go_to_line_model: Shared::new(GoToLineModel::new(sender3, bgp_model.clone())),
-            go_to_date_model: Shared::new(GoToDateModel::new(sender4, bgp_model.clone())),
-            filter_dialog_model: Shared::new(FilterDialogModel::new(sender9)),
-            help_model: Shared::new(HelpModel::new(sender2, &*action_registry2.get_ref())),
-            metrics_model: Shared::new(MetricsModel::new(sender6, metrics_holder)),
-            progress_model: Shared::new(ProgressModel::new(sender7, registry5)),
+            go_to_line_model: Shared::new(go_to_line_model),
+            go_to_date_model: Shared::new(go_to_date_model),
+            filter_dialog_model: Shared::new(filter_dialog_model),
+            help_model: Shared::new(help_model),
+            metrics_model: Shared::new(metrics_model),
+            progress_model: Shared::new(progress_model),
             bgp_model,
         };
 
@@ -898,6 +901,13 @@ impl RootModel {
         let mut r = self.current_search.get_mut_ref();
         *r = search;
 
+        if r.is_some() {
+            self.escape_handler.get_mut_ref().add_fn(|root_model| {
+                root_model.set_current_search(None);
+                EscapeHandlerResult::Dismiss
+            });
+        }
+
         let hint = r.as_ref().map(Search::get_hint).unwrap_or_default();
         self.model_sender.emit_event(Hint(hint));
     }
@@ -933,10 +943,17 @@ impl RootModel {
         self.update_viewport_content();
         self.model_sender.emit_event(ModelEvent::Repaint);
         self.model_sender.emit_event(ModelEvent::Hint(String::from("Press ESC to return to original")));
+        self.escape_handler.get_mut_ref().add_fn(|root_model| {
+            if root_model.reset_filter() {
+                EscapeHandlerResult::Dismiss
+            } else {
+                EscapeHandlerResult::Ignore
+            }
+        });
         Ok(())
     }
 
-    pub fn reset_filter(&mut self) {
+    pub fn reset_filter(&mut self) -> bool {
         let filtered = self.datasource
             .as_ref()
             .filter(|ds| matches!(&*ds.get_ref(), LineSourceHolder::Filtered(_)))
@@ -945,7 +962,7 @@ impl RootModel {
             let ds = self.datasource.take().unwrap().into_inner();
             let LineSourceHolder::Filtered(filtered) = ds else {
                 self.datasource.replace(Shared::new(ds));
-                return;
+                return true;
             };
             self.reset(false);
             self.datasource.replace(Shared::new(filtered.destroy().into()));
@@ -953,6 +970,7 @@ impl RootModel {
             self.model_sender.emit_event(ModelEvent::Repaint);
             self.model_sender.emit_event(ModelEvent::Hint(String::new()));
         }
+        filtered
     }
 
     pub fn get_help_model(&self) -> RefMut<HelpModel> {
@@ -989,69 +1007,9 @@ impl RootModel {
             return;
         }
 
-        {
-            let mut open_file_model = self.open_file_model.get_mut_ref();
-            if open_file_model.is_open() {
-                open_file_model.set_open(false);
-                return;
-            }
-        }
-
-        {
-            let mut search_model = self.search_model.get_mut_ref();
-            if search_model.is_visible() {
-                search_model.set_visible(false);
-                return;
-            }
-        }
-
-        {
-            let current_search = self.current_search.get_mut_ref();
-            if current_search.is_some() {
-                drop(current_search);
-                self.set_current_search(None);
-                return;
-            }
-        }
-
-        {
-            let mut help_model = self.help_model.get_mut_ref();
-            if help_model.is_open() {
-                help_model.set_open(false);
-            }
-        }
-
-        {
-            let mut metrics_model = self.metrics_model.get_mut_ref();
-            if metrics_model.is_open() {
-                metrics_model.set_open(false);
-            }
-        }
-
-        {
-            let mut go_to_model = self.go_to_line_model.get_mut_ref();
-            if go_to_model.is_open() {
-                go_to_model.set_is_open(false);
-            }
-        }
-
-        {
-            let mut go_to_date_model = self.go_to_date_model.get_mut_ref();
-            if go_to_date_model.is_open() {
-                go_to_date_model.set_is_open(false);
-            }
-        }
-
-        {
-            let mut filter_dialog_model = self.filter_dialog_model.get_mut_ref();
-            if filter_dialog_model.is_open() {
-                filter_dialog_model.set_open(false);
-            }
-        }
-
-        {
-            self.reset_filter();
-        }
+        let escape_handler = mem::replace(&mut self.escape_handler, Shared::new(CompoundEscapeHandler::new()));
+        escape_handler.get_mut_ref().on_esc(self);
+        let _ = mem::replace(&mut self.escape_handler, escape_handler);
     }
 
     fn build_line_registry<R: Read + Seek + 'static, B: LineSourceBackend<R> + Send + 'static>(

@@ -2,6 +2,7 @@ use std::rc::Rc;
 use std::cell::{Ref, RefCell, RefMut};
 use std::borrow::Borrow;
 
+#[derive(Debug)]
 pub struct Shared<T: ?Sized> {
     v: Rc<RefCell<T>>
 }

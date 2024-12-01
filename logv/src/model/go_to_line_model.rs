@@ -14,6 +14,7 @@ use crate::background_process::run_in_background::RunInBackground;
 use crate::background_process::signal::Signal;
 use crate::data_source::line_registry::{LineRegistry, LineRegistryImpl};
 use crate::model::abstract_go_to_model::{AbstractGoToModel, GoToError};
+use crate::model::escape_handler::{CompoundEscapeHandler, EscapeHandlerResult};
 
 pub struct GoToLineModel<R: RunInBackground> {
     go_to_model: AbstractGoToModel<R>,
@@ -25,11 +26,14 @@ impl<R: RunInBackground> GoToLineModel<R> {
     pub fn new(
         model_sender: Sender<ModelEvent>,
         background_process_registry: Shared<R>,
+        escape_handler: Shared<CompoundEscapeHandler>,
     ) -> Self {
         let go_to_model = AbstractGoToModel::new(
             model_sender,
             background_process_registry,
             Box::new(ModelEvent::GoToOpen),
+            escape_handler,
+            Self::on_esc,
         );
         GoToLineModel {
             go_to_model,
@@ -130,5 +134,15 @@ impl<R: RunInBackground> GoToLineModel<R> {
             }
         );
         Ok(())
+    }
+
+    fn on_esc(root_model: &mut RootModel) -> EscapeHandlerResult {
+        let me = &mut *root_model.get_go_to_line_model();
+        if me.is_open() {
+            me.set_is_open(false);
+            EscapeHandlerResult::Dismiss
+        } else {
+            EscapeHandlerResult::Ignore
+        }
     }
 }
