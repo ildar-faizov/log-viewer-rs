@@ -1,5 +1,4 @@
 use crate::background_process::run_in_background::RunInBackground;
-use crate::background_process::signal::Signal;
 use crate::background_process::task_context::TaskContext;
 use crate::data_source::line_source_holder::ConcreteLineSourceHolder;
 use crate::data_source::{Direction, FileBackend, Line, LineSourceImpl};
@@ -80,7 +79,7 @@ impl<R: RunInBackground + 'static> GoToDateModel<R> {
         Ok(())
     }
 
-    fn handle_result(root_model: &mut RootModel, pid: Uuid, msg: Signal<(), Result<Integer, GoToError>>) -> Result<(), GoToError> {
+    fn handle_result(root_model: &mut RootModel, pid: Uuid, msg: Result<Integer, GoToError>) -> Result<(), GoToError> {
         let m = &mut root_model.get_go_to_date_model().go_to_model;
         m.handle_result(pid, msg)
     }

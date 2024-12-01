@@ -1,25 +1,22 @@
-use crate::data_source::BUFFER_SIZE;
-use crate::model::model::{ModelEvent, RootModel};
-use crate::shared::Shared;
-use anyhow::anyhow;
-use crossbeam_channel::Sender;
-use fluent_integer::Integer;
-use std::fs::File;
-use std::io::{BufReader, Read};
-use std::path::PathBuf;
-use std::str::FromStr;
-use std::sync::Arc;
-use uuid::Uuid;
 use crate::background_process::run_in_background::RunInBackground;
-use crate::background_process::signal::Signal;
 use crate::data_source::line_registry::{LineRegistry, LineRegistryImpl};
+use crate::data_source::reader_factory::ReaderFactory;
+use crate::data_source::BUFFER_SIZE;
 use crate::model::abstract_go_to_model::{AbstractGoToModel, GoToError};
 use crate::model::escape_handler::{CompoundEscapeHandler, EscapeHandlerResult};
+use crate::model::model::{ModelEvent, RootModel};
+use crate::shared::Shared;
+use anyhow::bail;
+use crossbeam_channel::Sender;
+use fluent_integer::Integer;
+use std::io::{BufReader, Read};
+use std::sync::Arc;
 
 pub struct GoToLineModel<R: RunInBackground> {
     go_to_model: AbstractGoToModel<R>,
     value: String,
     line_registry: Option<Arc<LineRegistryImpl>>,
+    warning: Option<String>,
 }
 
 impl<R: RunInBackground> GoToLineModel<R> {
@@ -39,6 +36,7 @@ impl<R: RunInBackground> GoToLineModel<R> {
             go_to_model,
             value: String::new(),
             line_registry: None,
+            warning: None,
         }
     }
 
@@ -62,47 +60,46 @@ impl<R: RunInBackground> GoToLineModel<R> {
         self.line_registry = line_registry;
     }
 
-    pub fn submit(&mut self, file_name: &str) -> Result<(), anyhow::Error> {
+    pub fn set_warning(&mut self, warning: Option<impl ToString>) {
+        self.warning = warning.map(|arg| arg.to_string());
+    }
+
+    pub fn get_warning(&self) -> Option<&str> {
+        self.warning.as_ref().map(String::as_str)
+    }
+
+    pub fn submit(
+        &mut self,
+        reader_factory: Box<dyn ReaderFactory>,
+        total: Option<Integer>
+    ) -> Result<(), anyhow::Error> {
         let line = self.value.parse::<u64>()?;
         if line < 1 {
-            return Err(anyhow!("Line number must not be less than 1"));
+            bail!("Line number must not be less than 1")
         }
-
-        let file = PathBuf::from_str(file_name)?;
-        let total = std::fs::metadata(file.as_path())
-            .map(|m| m.len())
-            .unwrap_or(u64::MAX);
 
         if let Some(line_registry) = &self.line_registry {
             let offset = line_registry.find_offset_by_line_number(line - 1);
-            match offset {
-                Ok(offset) => {
-                    self.go_to_model.complete(Ok(offset))?;
-                    return Ok(());
-                }
-                Err(crawled) => {
-                    if crawled >= total {
-                        self.go_to_model.complete(Err(GoToError::NotReachable))?;
-                        return Ok(());
-                    }
-                    // TODO: wait for crawling to complete
-                }
-            };
-
+            if let Ok(offset) = offset {
+                self.set_is_open(false);
+                self.go_to_model.complete(Ok(offset))?;
+                return Ok(());
+            }
         }
         self.go_to_model.submit(
-            |root_model: &mut RootModel, pid: Uuid, msg: Signal<(), Result<Integer, GoToError>>| {
+            |root_model, pid, msg| {
                 let m = &mut root_model.get_go_to_line_model().go_to_model;
                 m.handle_result(pid, msg)
             },
             move |ctx| {
                 let mut progress = 0_u8;
-                let mut reader = BufReader::new(File::open(file)?);
+                let mut reader = BufReader::new(reader_factory.new_reader()?);
                 let mut offset = 0;
                 let mut buf = [0_u8; BUFFER_SIZE];
                 let mut line = line - 1;
                 loop {
                     if line == 0 {
+                        ctx.update_progress(100);
                         return Ok(offset.into());
                     }
                     if ctx.interrupted() {
@@ -124,13 +121,15 @@ impl<R: RunInBackground> GoToLineModel<R> {
                         }
                     }
 
-                    let new_progress = (offset * 100 / total) as u8;
+                    let new_progress = match total {
+                        None => 50_u8,
+                        Some(total) => (offset * 100 / total.as_u64()) as u8,
+                    };
                     if new_progress > progress {
                         ctx.update_progress(new_progress);
                         progress = new_progress;
                     }
                 }
-
             }
         );
         Ok(())

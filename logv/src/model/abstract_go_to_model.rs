@@ -57,7 +57,7 @@ impl<R: RunInBackground> AbstractGoToModel<R>
         where
             F: FnOnce(&mut TaskContext<(), GoToResult>) -> GoToResult,
             F: Send + 'static,
-            G: Fn(&mut RootModel, Uuid, Signal<(), GoToResult>) -> Result<(), GoToError>,
+            G: Fn(&mut RootModel, Uuid, GoToResult) -> Result<(), GoToError>,
             G: Send + 'static,
     {
         self.set_is_open(false);
@@ -69,9 +69,11 @@ impl<R: RunInBackground> AbstractGoToModel<R>
             .with_description("Go to")
             .with_task(task)
             .with_listener(move |model, msg, id| {
-                let handle_result = result_handler(&mut *model, *id, msg);
-                if let Err(err) = handle_result {
-                    model.set_error(Box::new(err))
+                if let Signal::Complete(r) = msg {
+                    let handle_result = result_handler(&mut *model, *id, r);
+                    if let Err(err) = handle_result {
+                        model.set_error(Box::new(err))
+                    }
                 }
             })
             .run();
@@ -87,14 +89,12 @@ impl<R: RunInBackground> AbstractGoToModel<R>
     pub fn handle_result(
         &mut self,
         pid: Uuid,
-        msg: Signal<(), GoToResult>,
+        result: GoToResult,
     ) -> Result<(), GoToError> {
         let h = self.current_process.take();
         if let Some(h) = h {
             if *h.get_id() == pid {
-                if let Signal::Complete(result) = msg {
-                    return self.complete(result);
-                }
+                return self.complete(result);
             } else {
                 log::trace!("Result of GoToLine {} has been ignored, because different process {} is started", pid, h.get_id());
             }
