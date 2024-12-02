@@ -684,6 +684,7 @@ impl RootModel {
         self.scroll_position = ScrollPosition::default();
         self.horizontal_scroll = 0.into();
         self.datasource = None;
+        self.reset_selection();
         if reset_date_format {
             self.date_format = None;
         }
