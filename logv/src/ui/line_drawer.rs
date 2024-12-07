@@ -12,7 +12,7 @@ use crate::model::model::RootModel;
 use crate::model::rendered::{LineNumberMissingReason, LineRender};
 use crate::ui::span_producer::SpanProducer;
 
-const LINE_NO_DELIMITER: &str = " | ";
+const LINE_NO_DELIMITER: &str = " \u{2502}";
 const LINE_NO_DELIMITER_WIDTH: usize = LINE_NO_DELIMITER.len();
 const LINE_NO_DELIMITER_BYTE_WIDTH: usize = LINE_NO_DELIMITER.as_bytes().len();
 // const LOADING_INDICATOR: &str = "⌛"; TODO for some reason printing line with this symbol drops one space
@@ -220,7 +220,7 @@ impl<'a> LineDrawer<'a> {
         prefix += LINE_NO_DELIMITER;
         let spans = vec![
             indexed_span(0, line_number_offset, line_number_width, self.line_number_style.unwrap().get_style()),
-            indexed_span(line_number_offset, line_number_offset + LINE_NO_DELIMITER_BYTE_WIDTH, LINE_NO_DELIMITER_WIDTH, self.regular_style.unwrap().get_style())
+            indexed_span(line_number_offset, line_number_offset + LINE_NO_DELIMITER_BYTE_WIDTH, LINE_NO_DELIMITER_WIDTH, self.line_number_style.unwrap().get_style())
         ];
         Ok(SpannedString::with_spans(prefix, spans))
     }

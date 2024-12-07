@@ -1,9 +1,9 @@
+use crate::app_theme::app_theme::{AppTheme, AppThemeKey};
 use crate::data_source::filtered::FILTERED_LINE_SOURCE_CUSTOM_DATA_KEY;
 use crate::highlight::highlight::{Highlight, Highlighter};
 use crate::highlight::style_with_priority::StyleWithPriority;
 use crate::model::model::RootModel;
 use crate::model::rendered::LineRender;
-use cursive::theme::{Color, ColorStyle, ColorType, Style};
 use itertools::Itertools;
 
 pub struct CustomHighlighter<T> {
@@ -34,10 +34,9 @@ impl<T: Clone> Highlighter<T> for CustomHighlighter<T> {
     }
 }
 
-pub fn create_filtered_highlighter() -> CustomHighlighter<StyleWithPriority> {
-    let style = Style::from(ColorStyle::new(ColorType::InheritParent, ColorType::Color(Color::Rgb(175, 255, 255))));
+pub fn create_filtered_highlighter(app_theme: &AppTheme) -> CustomHighlighter<StyleWithPriority> {
     CustomHighlighter::new(
         FILTERED_LINE_SOURCE_CUSTOM_DATA_KEY,
-        StyleWithPriority::new(style, 0, 10)
+        app_theme[AppThemeKey::Filter]
     )
 }

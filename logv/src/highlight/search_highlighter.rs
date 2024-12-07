@@ -1,10 +1,10 @@
+use crate::app_theme::app_theme::{AppTheme, AppThemeKey};
 use crate::highlight::highlight::{Highlight, Highlighter};
 use crate::highlight::style_with_priority::StyleWithPriority;
 use crate::immediate::Immediate;
 use crate::interval::Interval;
 use crate::model::model::RootModel;
 use crate::model::rendered::LineRender;
-use cursive::theme::{Color, ColorStyle, ColorType, Style};
 
 pub struct SearchHighlighter<T> {
     current_occurrence_style: T,
@@ -51,11 +51,9 @@ impl<T: Clone> Highlighter<T> for SearchHighlighter<T> {
     }
 }
 
-pub fn create_search_highlighter() -> SearchHighlighter<StyleWithPriority> {
-    let current_occurrences_style = Style::from(ColorStyle::new(ColorType::InheritParent, ColorType::Color(Color::Rgb(6, 152, 154))));
-    let other_occurrences_style = Style::from(ColorStyle::new(ColorType::InheritParent, ColorType::Color(Color::Rgb(114, 159, 207))));
+pub fn create_search_highlighter(app_theme: &AppTheme) -> SearchHighlighter<StyleWithPriority> {
     SearchHighlighter::new(
-        StyleWithPriority::new(current_occurrences_style, 0, 0),
-        StyleWithPriority::new(other_occurrences_style, 0, 0),
+        app_theme[AppThemeKey::SearchCurrentOccurrence],
+        app_theme[AppThemeKey::SearchAnotherOccurrence],
     )
 }

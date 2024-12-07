@@ -35,3 +35,4 @@ mod application_metrics;
 mod open_filter_dialog;
 mod action_impl;
 mod action_impl_registry;
+mod switch_theme;

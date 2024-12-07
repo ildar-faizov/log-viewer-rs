@@ -2,7 +2,7 @@ use crate::highlight::highlight::{Highlight, Highlighter};
 use crate::highlight::style_with_priority::StyleWithPriority;
 use crate::model::model::RootModel;
 use crate::model::rendered::LineRender;
-use cursive::theme::{Color, ColorStyle, ColorType, Style};
+use crate::app_theme::app_theme::{AppTheme, AppThemeKey};
 
 pub struct DateHighlighter<T> {
     payload: T,
@@ -28,7 +28,6 @@ impl <T> Highlighter<T> for DateHighlighter<T> where T: Clone {
     }
 }
 
-pub fn create_date_highlighter() -> DateHighlighter<StyleWithPriority> {
-    let style = Style::from(ColorStyle::new(ColorType::Color(Color::Rgb(0, 0, 0xff)), ColorType::InheritParent));
-    DateHighlighter::new(StyleWithPriority::new(style, 0xfe, 0))
+pub fn create_date_highlighter(app_theme: &AppTheme) -> DateHighlighter<StyleWithPriority> {
+    DateHighlighter::new(app_theme[AppThemeKey::Date])
 }

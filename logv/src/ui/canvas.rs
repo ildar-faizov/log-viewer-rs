@@ -1,15 +1,11 @@
 use cursive::event::EventResult;
-use cursive::reexports::enumset::EnumSet;
-use cursive::theme::{ColorStyle, Effect, Style, Theme};
-use cursive::theme::PaletteColor::{Background, HighlightText, Primary};
 use cursive::utils::span::SpannedStr;
 use cursive::view::Nameable;
 use cursive::views::{Canvas, NamedView};
 use log::Level;
 use metrics::{describe_histogram, Unit};
-
+use crate::app_theme::app_theme::AppThemeKey;
 use crate::highlight::highlighter_registry::cursive_highlighters;
-use crate::highlight::style_with_priority::StyleWithPriority;
 use crate::model::model::RootModel;
 use crate::shared::Shared;
 use crate::ui::line_drawer::LineDrawer;
@@ -23,18 +19,16 @@ pub fn build_canvas(model: Shared<RootModel>) -> NamedView<Canvas<Shared<RootMod
     describe_histogram!(METRIC_DRAW, Unit::Microseconds, "Time to draw canvas");
     describe_histogram!(METRIC_ACTION, Unit::Microseconds, "UI action");
 
-    let palette = Theme::default().palette;
-    let highlighters = cursive_highlighters(&palette);
-    let regular_style = StyleWithPriority::new(Style::from(ColorStyle::new(palette[Primary], palette[HighlightText])), 0, 0);
-    let cursor_style = StyleWithPriority::new(Style::from(ColorStyle::new(palette[HighlightText], palette[Primary])), 0xff, 0xff);
-    let selection_style = StyleWithPriority::new(Style::from(ColorStyle::new(palette[HighlightText], palette[Background])), 1, 0xff);
-    let line_number_style = StyleWithPriority::new(Style {
-        color: ColorStyle::new(palette[Primary], palette[HighlightText]),
-        effects: EnumSet::only(Effect::Italic)
-    }, 1, 0xff);
     Canvas::new(model)
         .with_draw(move |state, printer| stat(METRIC_DRAW, &Unit::Milliseconds, || {
             let mut state = state.get_mut_ref();
+
+            let app_theme = &state.app_theme;
+            let highlighters = cursive_highlighters(app_theme);
+            let regular_style = app_theme[AppThemeKey::Regular];
+            let cursor_style = app_theme[AppThemeKey::Cursor];
+            let selection_style = app_theme[AppThemeKey::Selection];
+            let line_number_style = app_theme[AppThemeKey::LineNumber];
 
             state.set_viewport_height(printer.size.y); // fetches data
 

@@ -15,7 +15,7 @@ use std::fs::OpenOptions;
 use std::panic;
 use std::time::Duration;
 
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 use clap::Parser;
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use cursive::{Cursive, CursiveRunner, View};
@@ -23,6 +23,7 @@ use cursive::direction::Direction;
 use cursive::event::Event;
 use cursive::event::Event::Key;
 use cursive::event::Key::Esc;
+use cursive::theme::Theme;
 use cursive::views::{Canvas, Checkbox, TextView, ViewRef};
 use human_bytes::human_bytes;
 use log4rs::append::file::FileAppender;
@@ -31,7 +32,7 @@ use log4rs::config::{Appender, Root};
 use log4rs::encode::pattern::PatternEncoder;
 use log::LevelFilter;
 use metrics::{describe_histogram, Unit};
-
+use crate::app_theme::app_theme::{AppTheme, AppThemeName};
 use crate::application_metrics::ApplicationRecorder;
 use crate::args::Args;
 use crate::background_process::background_process_registry::BackgroundProcessRegistry;
@@ -75,6 +76,7 @@ mod application_metrics;
 mod args;
 mod profiles;
 mod bounded_vec_deque;
+mod app_theme;
 
 const METRIC_APP_CYCLE: &str = "app_cycle";
 const PROFILER_FLUSH_PERIOD: Duration = Duration::from_secs(5);
@@ -87,10 +89,13 @@ fn main() -> anyhow::Result<()> {
 	let metrics = init_metrics();
 	init_profiler(&args);
 
+	let Ok((app_theme, theme)) = AppTheme::load(AppThemeName::SolarizedLight) else {
+		bail!("Failed to load theme");
+	};
 	let (sender, receiver) = unbounded();
-	let (model, background_process_registry) = create_model(&args, sender, metrics.ok());
+	let (model, background_process_registry) = create_model(&args, sender, metrics.ok(), app_theme);
 
-    run_ui(receiver, model, background_process_registry)
+    run_ui(receiver, model, background_process_registry, theme)
 }
 
 fn init_logging(args: &Args) -> std::io::Result<()> {
@@ -159,20 +164,31 @@ fn init_profiler(args: &Args) {
 	}
 }
 
-fn create_model(args: &Args, sender: Sender<ModelEvent>, metrics_holder: Option<MetricsHolder>) -> (Shared<RootModel>, Shared<BackgroundProcessRegistry>) {
+fn create_model(
+	args: &Args,
+	sender: Sender<ModelEvent>,
+	metrics_holder: Option<MetricsHolder>,
+	app_theme: AppTheme,
+) -> (Shared<RootModel>, Shared<BackgroundProcessRegistry>) {
 	let background_process_registry = Shared::new(BackgroundProcessRegistry::new());
-	let model = RootModel::new(sender, background_process_registry.clone(), metrics_holder);
+	let model = RootModel::new(sender, background_process_registry.clone(), metrics_holder, app_theme);
 	model.get_mut_ref().set_file_name(args.file.as_deref());
 	(model, background_process_registry)
 }
 
-fn run_ui(receiver: Receiver<ModelEvent>, model_ref: Shared<RootModel>, background_process_registry: Shared<BackgroundProcessRegistry>) -> anyhow::Result<()> {
+fn run_ui(
+	receiver: Receiver<ModelEvent>,
+	model_ref: Shared<RootModel>,
+	background_process_registry: Shared<BackgroundProcessRegistry>,
+	theme: Theme,
+) -> anyhow::Result<()> {
 	describe_histogram!(METRIC_APP_CYCLE, Unit::Milliseconds, "Application cycle");
 
 	let backend = cursive::backends::crossterm::Backend::init()?;
 	let buffered_backend = cursive_buffered_backend::BufferedBackend::new(backend);
 
 	let mut app = Cursive::default().into_runner(Box::new(buffered_backend));
+	app.set_theme(theme);
 	app.clear_global_callbacks(Event::CtrlChar('c')); // Ctrl+C is for copy
 
 	app.add_global_callback(Key(Esc), |t: &mut Cursive| {
@@ -342,6 +358,13 @@ fn handle_model_update(app: &mut CursiveRunner<Cursive>, model: Shared<RootModel
 				handle_filter_dialog_model_event(&model, evt)
 			};
 			callback(app);
+			Ok(true)
+		},
+		ThemeEvent(app_theme_name) => {
+			let (app_theme, theme) = AppTheme::load(app_theme_name)
+				.map_err(|_| "Failed to load theme")?;
+			app.set_theme(theme);
+			model.get_mut_ref().app_theme = app_theme;
 			Ok(true)
 		},
 		Hint(hint) => {

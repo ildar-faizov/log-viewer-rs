@@ -53,4 +53,4 @@ paste = "*"
 [dependencies.cursive]
 version = "0.20.0"
 default-features = false
-features = ["crossterm-backend"]
+features = ["crossterm-backend", "toml"]

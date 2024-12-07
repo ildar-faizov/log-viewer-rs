@@ -12,6 +12,7 @@ pub mod progress_dialog;
 pub mod ui_utils;
 pub mod bgp_status;
 pub mod filter_dialog;
+pub mod palette_utils;
 mod span_producer;
 mod line_drawer;
 mod canvas;

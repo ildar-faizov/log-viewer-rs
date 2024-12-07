@@ -18,6 +18,9 @@ profile:
     - id: open_file
       description: Open file
       hotkeys: [Ctrl+o]
+    - id: switch_theme
+      description: Switch application theme
+      hotkeys: [Ctrl+t]
     # Scroll
     - id: scroll_up
       description: Scroll one line up

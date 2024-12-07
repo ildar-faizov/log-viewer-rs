@@ -22,6 +22,7 @@ use uuid::Uuid;
 use ModelEvent::*;
 
 use crate::actions::action_registry::ActionRegistry;
+use crate::app_theme::app_theme::{AppTheme, AppThemeName};
 use crate::background_process::background_process_handler::BackgroundProcessHandler;
 use crate::background_process::background_process_registry::BackgroundProcessRegistry;
 use crate::background_process::run_in_background::RunInBackground;
@@ -61,6 +62,7 @@ const OFFSET_THRESHOLD: u64 = 8192;
 pub struct RootModel {
     model_sender: Sender<ModelEvent>,
     background_process_registry: Shared<BackgroundProcessRegistry>,
+    pub app_theme: AppTheme,
     escape_handler: Shared<CompoundEscapeHandler>,
     action_registry: Shared<ActionRegistry>,
     open_file_model: Shared<OpenFileModel>,
@@ -113,6 +115,7 @@ pub enum ModelEvent {
     ProgressEvent(ProgressModelEvent),
     BGPEvent(BGPModelEvent),
     FilterEvent(FilterDialogModelEvent),
+    ThemeEvent(AppThemeName),
     Hint(String),
     Error(Option<String>),
     Quit,
@@ -130,6 +133,7 @@ impl RootModel {
         model_sender: Sender<ModelEvent>,
         background_process_registry: Shared<BackgroundProcessRegistry>,
         metrics_holder: Option<MetricsHolder>,
+        app_theme: AppTheme,
     ) -> Shared<RootModel> {
         let action_registry = Shared::new(ActionRegistry::new(&OS_PROFILE));
         let bgp_model = Shared::new(BGPModel::new(model_sender.clone(), background_process_registry.clone()));
@@ -147,6 +151,7 @@ impl RootModel {
         let root_model = RootModel {
             model_sender,
             background_process_registry,
+            app_theme,
             escape_handler,
             action_registry,
             open_file_model: Shared::new(open_file_model),
@@ -536,6 +541,14 @@ impl RootModel {
     pub fn quit(&self) {
         // TODO: close datasource
         self.model_sender.emit_event(Quit);
+    }
+
+    pub fn trigger_theme_switch(&self) {
+        let new_name = match &self.app_theme.name {
+            AppThemeName::SolarizedLight => AppThemeName::SolarizedDark,
+            AppThemeName::SolarizedDark => AppThemeName::SolarizedLight,
+        };
+        self.model_sender.emit_event(ThemeEvent(new_name));
     }
 
     pub fn is_show_line_numbers(&self) -> bool {

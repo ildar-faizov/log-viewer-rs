@@ -1,0 +1,29 @@
+# https://github.com/altercation/solarized
+
+shadow = true
+borders = "simple"
+
+[colors]
+background = "#fdf6e3"          # base3
+view = "#fdf6e3"                # base3
+shadow = "#eee8d5"              # base2
+
+primary = "#657b83"             # base00
+secondary = "#586e75"           # base01
+tertiary = "#073642"            # base02
+
+title_primary = "#268bd2"        # blue
+title_secondary = "#2aa198"      # cyan
+
+highlight = "#eee8d5"            # base2
+highlight_inactive = "#93a1a1"   # base1
+highlight_text = "#dc322f"       # red
+
+yellow =  "#b58900"
+orange =  "#cb4b16"
+red =     "#dc322f"
+magenta = "#d33682"
+violet =  "#6c71c4"
+blue =    "#268bd2"
+cyan =    "#2aa198"
+green =   "#859900"
